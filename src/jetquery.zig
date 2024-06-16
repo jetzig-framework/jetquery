@@ -1,5 +1,7 @@
 const std = @import("std");
 
+pub const Repo = @import("jetquery/Repo.zig");
+
 const TableOptions = struct {};
 
 /// Abstraction of a database table. Define a schema with:
@@ -109,7 +111,9 @@ pub fn Query(T: type) type {
                     where_nodes.append(new_node) catch @panic("OOM");
                 }
             }
-            if (!@hasField(@TypeOf(args), "where_nodes")) where_nodes.appendSlice(self.where_nodes) catch @panic("OOM");
+            if (!@hasField(@TypeOf(args), "where_nodes")) {
+                where_nodes.appendSlice(self.where_nodes) catch @panic("OOM");
+            }
 
             var select_columns = std.ArrayList(Column).init(self.allocator);
             for (if (@hasField(@TypeOf(args), "select_columns")) args.select_columns else &.{}) |name| {
@@ -133,7 +137,9 @@ pub fn Query(T: type) type {
                     }
                 }
             }
-            if (!@hasField(@TypeOf(args), "select_columns")) select_columns.appendSlice(self.select_columns) catch @panic("OOM");
+            if (!@hasField(@TypeOf(args), "select_columns")) {
+                select_columns.appendSlice(self.select_columns) catch @panic("OOM");
+            }
 
             const cloned: Self = .{
                 .allocator = self.allocator,
@@ -164,6 +170,10 @@ const WhereNode = struct {
     name: []const u8,
     value: Value,
 };
+
+test {
+    std.testing.refAllDeclsRecursive(@This());
+}
 
 test "select" {
     const Schema = struct {
