@@ -2,26 +2,14 @@ const std = @import("std");
 
 const jetquery = @import("../jetquery.zig");
 
-const Result = struct {
-    x: ?usize = null,
-};
-
 const Adapter = union(enum) {
-    postgresql: PostgreSQLAdapter,
+    postgresql: jetquery.adapters.PostgresqlAdapter,
 
-    pub fn execute(self: Adapter, sql: []const u8) !Result {
-        _ = self;
-        _ = sql;
-        return .{};
+    pub fn execute(self: Adapter, sql: []const u8) !jetquery.Result {
+        return switch (self) {
+            inline else => |adapter| try adapter.execute(sql),
+        };
     }
-};
-
-const PostgreSQLAdapter = struct {
-    database: []const u8,
-    username: []const u8,
-    password: []const u8,
-    hostname: []const u8,
-    port: u16 = 5432,
 };
 
 allocator: std.mem.Allocator,
@@ -35,7 +23,7 @@ pub fn init(allocator: std.mem.Allocator, adapter: Adapter) Repo {
 }
 
 /// Execute the given query and return results.
-pub fn execute(self: Repo, query: anytype) !Result {
+pub fn execute(self: Repo, query: anytype) !jetquery.Result {
     var buf: [4096]u8 = undefined;
     return try self.adapter.execute(try query.toSql(&buf));
 }

@@ -13,6 +13,9 @@ pub fn build(b: *std.Build) void {
 
     b.installArtifact(lib);
 
+    const pg_module = b.lazyDependency("pg", .{ .target = target, .optimize = optimize });
+    if (pg_module) |module| lib.root_module.addImport("pg", module.module("pg"));
+
     const lib_unit_tests = b.addTest(.{
         .root_source_file = b.path("src/jetquery.zig"),
         .target = target,

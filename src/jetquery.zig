@@ -1,6 +1,7 @@
 const std = @import("std");
 
 pub const Repo = @import("jetquery/Repo.zig");
+pub const adapters = @import("jetquery/adapters.zig");
 
 const TableOptions = struct {};
 
@@ -152,20 +153,25 @@ pub fn Query(T: type) type {
     };
 }
 
-// Abstraction of a database column.
-const Column = struct {
+/// A result of an executed query.
+pub const Result = struct {
+    x: ?usize = null,
+};
+
+/// A database column.
+pub const Column = struct {
     name: []const u8,
     type: enum { string, integer, float },
 };
 
-// Abstraction of a bound parameter (e.g. used in a where clause).
-const Value = union(enum) {
+/// A bound parameter (e.g. used in a where clause).
+pub const Value = union(enum) {
     string: []const u8,
     integer: usize,
     float: f64,
 };
 
-// A node in a where clause, e.g. `x = 10`.
+/// A node in a where clause, e.g. `x = 10`.
 const WhereNode = struct {
     name: []const u8,
     value: Value,
