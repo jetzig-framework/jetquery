@@ -154,8 +154,44 @@ pub fn Query(T: type) type {
 }
 
 /// A result of an executed query.
-pub const Result = struct {
-    x: ?usize = null,
+pub const Result = union(enum) {
+    postgresql: adapters.PostgresqlAdapter.Result,
+
+    pub fn deinit(self: *Result) void {
+        switch (self.*) {
+            inline else => |*adapted_result| adapted_result.deinit(),
+        }
+    }
+
+    pub fn next(self: *Result) !?Row {
+        return switch (self.*) {
+            inline else => |*adapted_result| try adapted_result.next(),
+        };
+    }
+};
+
+pub const Row = struct {
+    allocator: std.mem.Allocator,
+    values: []const Value,
+    columns: [][]const u8,
+
+    pub fn deinit(self: Row) void {
+        self.allocator.free(self.values);
+    }
+
+    /// Retrieve a typed value from a result row.
+    pub fn get(self: Row, T: type, column_name: []const u8) ?T {
+        for (self.columns, self.values) |column, value| {
+            if (std.mem.eql(u8, column_name, column)) return switch (T) {
+                []const u8 => value.string,
+                usize => value.integer,
+                f64 => value.float,
+                bool => value.boolean,
+                else => @compileError("Unsupported type: " ++ @typeName(T)),
+            };
+        }
+        return null;
+    }
 };
 
 /// A database column.
@@ -169,6 +205,8 @@ pub const Value = union(enum) {
     string: []const u8,
     integer: usize,
     float: f64,
+    boolean: bool,
+    Null: void,
 };
 
 /// A node in a where clause, e.g. `x = 10`.

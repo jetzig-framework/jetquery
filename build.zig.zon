@@ -6,7 +6,6 @@
         .pg = .{
             .url = "https://github.com/karlseguin/pg.zig/archive/1b4011d4c8218c70471477e283608daf919bee3a.tar.gz",
             .hash = "122086d9461b75535b630019374f8a068eff467e657a46d2bb577fe0a507f1cd2fca",
-            .lazy = true,
         },
     },
     .paths = .{
