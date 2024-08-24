@@ -2,6 +2,7 @@ const std = @import("std");
 
 pub const Repo = @import("jetquery/Repo.zig");
 pub const adapters = @import("jetquery/adapters.zig");
+const migrations = @import("migrations");
 
 const TableOptions = struct {};
 

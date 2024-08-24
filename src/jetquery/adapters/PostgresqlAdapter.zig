@@ -10,7 +10,7 @@ pool: *pg.Pool,
 allocator: std.mem.Allocator,
 
 pub const Result = struct {
-    result: pg.Result,
+    result: *pg.Result,
     allocator: std.mem.Allocator,
 
     pub fn deinit(self: *Result) void {
