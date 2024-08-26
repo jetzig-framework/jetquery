@@ -4,8 +4,13 @@
     .minimum_zig_version = "0.14.0",
     .dependencies = .{
         .pg = .{
-            .url = "https://github.com/karlseguin/pg.zig/archive/1b4011d4c8218c70471477e283608daf919bee3a.tar.gz",
-            .hash = "122086d9461b75535b630019374f8a068eff467e657a46d2bb577fe0a507f1cd2fca",
+            // .url = "https://github.com/karlseguin/pg.zig/archive/1b4011d4c8218c70471477e283608daf919bee3a.tar.gz",
+            // .hash = "122086d9461b75535b630019374f8a068eff467e657a46d2bb577fe0a507f1cd2fca",
+            .path = "../pg.zig",
+        },
+        .zul = .{
+            .url = "https://github.com/karlseguin/zul/archive/ae0c27350c0db6b460f22cba30b6b0c4a02d1ffd.tar.gz",
+            .hash = "1220457e2c8867f6734520d9b335f01e1d851d6fe7adaa7f6f0756158acaf6c5e87f",
         },
     },
     .paths = .{

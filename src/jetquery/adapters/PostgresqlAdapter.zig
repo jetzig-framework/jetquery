@@ -69,11 +69,38 @@ pub fn deinit(self: *PostgresqlAdapter) void {
 
 /// Execute the given query with a pooled connection.
 pub fn execute(self: *PostgresqlAdapter, sql: []const u8) !jetquery.Result {
+    const options: pg.Conn.QueryOpts = .{ .release_conn = true, .column_names = true };
+    var connection = try self.pool.acquire();
+    errdefer self.pool.release(connection);
+
     return .{
         .postgresql = .{
             .allocator = self.allocator,
             // TODO: values
-            .result = try self.pool.queryOpts(sql, .{}, .{ .column_names = true }),
+            .result = connection.queryOpts(sql, .{}, options) catch |err| {
+                if (connection.err) |connection_error| {
+                    std.debug.print("Error `{s}` while executing:\n{s}\n\n{s}\n", .{
+                        @errorName(err),
+                        sql,
+                        connection_error.message,
+                    });
+                } else {
+                    std.debug.print("Error `{s}` while executing:\n{s}\n", .{ @errorName(err), sql });
+                }
+                return err;
+            },
         },
+    };
+}
+
+/// Output column type as SQL.
+pub fn columnTypeSql(self: PostgresqlAdapter, column_type: jetquery.Column.Type) []const u8 {
+    _ = self;
+    return switch (column_type) {
+        .string => "VARCHAR(255)",
+        .integer => "INTEGER",
+        .float => "REAL",
+        .decimal => "NUMERIC",
+        .datetime => "TIMESTAMP",
     };
 }

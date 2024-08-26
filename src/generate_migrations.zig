@@ -11,25 +11,34 @@ pub fn main() !void {
 
     const args = try std.process.argsAlloc(allocator);
     const migrations_module_path = args[1];
-    const migrations_path = args[2];
-
-    const migrations = try findMigrations(allocator, migrations_path);
+    const migrations: [][]const u8 = if (args.len > 2) args[2..] else &.{};
     const migrations_file = try std.fs.createFileAbsolute(migrations_module_path, .{});
+    const migrations_module_dir = std.fs.path.dirname(migrations_module_path).?;
     const writer = migrations_file.writer();
     try writer.writeAll(
         \\const jetquery = @import("jetquery");
         \\pub const Migration = struct {
-        \\  migrationFn: *const fn(jetquery.Repo) anyerror!void,
+        \\    upFn: *const fn(*jetquery.Repo) anyerror!void,
+        \\    downFn: *const fn(*jetquery.Repo) anyerror!void,
         \\};
-        \\pub const migrations = []const Migration{
+        \\pub const migrations = [_]Migration{
         \\
     );
     for (migrations) |migration| {
+        const basename = std.fs.path.basename(migration);
+        try std.fs.copyFileAbsolute(
+            migration,
+            try std.fs.path.join(allocator, &.{ migrations_module_dir, basename }),
+            .{},
+        );
         try writer.print(
-            \\.{{ .migrationFn = @import("{s}").up }},
+            \\    .{{
+            \\        .upFn = @import("{0s}").up,
+            \\        .downFn = @import("{0s}").down,
+            \\    }},
             \\
         ,
-            .{try zigEscape(allocator, migration)},
+            .{try zigEscape(allocator, basename)},
         );
     }
     try writer.writeAll(
@@ -37,36 +46,6 @@ pub fn main() !void {
         \\
     );
     migrations_file.close();
-}
-
-fn findMigrations(allocator: std.mem.Allocator, path: []const u8) ![][]const u8 {
-    const absolute_path = if (std.fs.path.isAbsolute(path))
-        path
-    else
-        std.fs.cwd().realpathAlloc(allocator, path) catch |err| {
-            switch (err) {
-                error.FileNotFound => return &.{},
-                else => return err,
-            }
-        };
-
-    var dir = std.fs.openDirAbsolute(absolute_path, .{ .iterate = true }) catch |err| {
-        switch (err) {
-            error.FileNotFound => return &.{},
-            else => return err,
-        }
-    };
-    defer dir.close();
-
-    var migrations = std.ArrayList([]const u8).init(allocator);
-
-    var it = dir.iterate();
-    while (try it.next()) |entry| {
-        if (entry.kind != .file) continue;
-        try migrations.append(try allocator.dupe(u8, entry.name));
-    }
-
-    return try migrations.toOwnedSlice();
 }
 
 fn zigEscape(allocator: std.mem.Allocator, input: []const u8) ![]const u8 {

@@ -10,6 +10,12 @@ const Adapter = union(enum) {
             inline else => |*adapter| try adapter.execute(sql),
         };
     }
+
+    pub fn columnTypeSql(self: Adapter, column_type: jetquery.Column.Type) []const u8 {
+        return switch (self) {
+            inline else => |*adapter| adapter.columnTypeSql(column_type),
+        };
+    }
 };
 
 allocator: std.mem.Allocator,
@@ -47,6 +53,40 @@ pub fn deinit(self: *Repo) void {
 pub fn execute(self: *Repo, query: anytype) !jetquery.Result {
     var buf: [4096]u8 = undefined;
     return try self.adapter.execute(try query.toSql(&buf));
+}
+
+pub fn createTable(self: *Repo, name: []const u8, columns: []const jetquery.Column) !void {
+    var buf = std.ArrayList(u8).init(self.allocator);
+    defer buf.deinit();
+
+    const writer = buf.writer();
+
+    try writer.print(
+        \\create table "{s}" (
+    , .{name});
+
+    for (columns, 0..) |column, index| {
+        if (column.timestamps) {
+            try writer.print(
+                \\"created_at" {0s}, "updated_at" {0s}{1s}
+            , .{
+                self.adapter.columnTypeSql(.datetime),
+                if (index < columns.len - 1) ", " else "",
+            });
+        } else {
+            try writer.print(
+                \\"{s}" {s}{s}
+            , .{
+                column.name,
+                self.adapter.columnTypeSql(column.type),
+                if (index < columns.len - 1) ", " else "",
+            });
+        }
+    }
+
+    try writer.print(")", .{});
+    var result = try self.adapter.execute(buf.items);
+    defer result.deinit();
 }
 
 test "repo" {

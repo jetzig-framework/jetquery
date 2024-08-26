@@ -2,7 +2,8 @@ const std = @import("std");
 
 pub const Repo = @import("jetquery/Repo.zig");
 pub const adapters = @import("jetquery/adapters.zig");
-const migrations = @import("migrations");
+pub const Migration = @import("jetquery/Migration.zig");
+pub const columns = @import("jetquery/columns.zig");
 
 const TableOptions = struct {};
 
@@ -47,11 +48,12 @@ pub fn Query(T: type) type {
         pub fn deinit(self: Self) void {
             self.allocator.free(self.where_nodes);
             self.allocator.free(self.select_columns);
+            self.allocator.free(self.insert_nodes);
         }
 
         /// Specify columns to select in the query.
-        pub fn select(self: Self, columns: []const std.meta.FieldEnum(T.Definition)) Self {
-            return self.merge(.{ .select_columns = columns });
+        pub fn select(self: Self, select_columns: []const std.meta.FieldEnum(T.Definition)) Self {
+            return self.merge(.{ .select_columns = select_columns });
         }
 
         /// Specify a where clause for the query.
@@ -260,7 +262,17 @@ pub const Row = struct {
 /// A database column.
 pub const Column = struct {
     name: []const u8,
-    type: enum { string, integer, float },
+    type: Type,
+    options: Options,
+    primary_key: bool = false,
+    timestamps: bool = false,
+
+    pub const Type = enum { string, integer, float, decimal, datetime };
+    pub const Options = struct {};
+
+    pub fn init(name: []const u8, column_type: Type, options: Options) Column {
+        return .{ .name = name, .type = column_type, .options = options };
+    }
 };
 
 /// A bound parameter (e.g. used in a where clause).
@@ -349,6 +361,7 @@ test "insert" {
     };
     const query = Query(Schema.Cats).init(std.testing.allocator)
         .insert(.{ .name = "Hercules", .paws = 4 });
+    defer query.deinit();
     var buf: [1024]u8 = undefined;
     try std.testing.expectEqualStrings("insert into cats (name, paws) values ('Hercules', 4)", try query.toSql(&buf));
 }
