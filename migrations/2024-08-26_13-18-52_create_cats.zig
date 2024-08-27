@@ -1,15 +1,15 @@
 const std = @import("std");
 const jetquery = @import("jetquery");
-const columns = jetquery.columns;
+const t = jetquery.table;
 
 pub fn up(repo: *jetquery.Repo) !void {
     try repo.createTable(
         "cats",
         &.{
-            columns.primaryKey("id", .{}),
-            columns.column("name", .string, .{}),
-            columns.column("paws", .integer, .{}),
-            columns.timestamps(.{}),
+            t.primaryKey("id", .{}),
+            t.column("name", .string, .{}),
+            t.column("paws", .integer, .{}),
+            t.timestamps(.{}),
         },
     );
 }

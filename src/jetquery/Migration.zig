@@ -55,8 +55,3 @@ fn timestamp(buf: []u8) ![]const u8 {
     );
     return stream.getWritten();
 }
-
-test "timestamp" {
-    var buf: [19]u8 = undefined;
-    std.debug.print("timestamp: {s}\n", .{try timestamp(&buf)});
-}

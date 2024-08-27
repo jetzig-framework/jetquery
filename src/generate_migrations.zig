@@ -20,12 +20,14 @@ pub fn main() !void {
         \\pub const Migration = struct {
         \\    upFn: *const fn(*jetquery.Repo) anyerror!void,
         \\    downFn: *const fn(*jetquery.Repo) anyerror!void,
+        \\    version: []const u8,
         \\};
         \\pub const migrations = [_]Migration{
         \\
     );
     for (migrations) |migration| {
         const basename = std.fs.path.basename(migration);
+        const version = basename[0.."2000-01-01_12-00-00".len];
         try std.fs.copyFileAbsolute(
             migration,
             try std.fs.path.join(allocator, &.{ migrations_module_dir, basename }),
@@ -35,10 +37,11 @@ pub fn main() !void {
             \\    .{{
             \\        .upFn = @import("{0s}").up,
             \\        .downFn = @import("{0s}").down,
+            \\        .version = "{1s}",
             \\    }},
             \\
         ,
-            .{try zigEscape(allocator, basename)},
+            .{ try zigEscape(allocator, basename), version },
         );
     }
     try writer.writeAll(

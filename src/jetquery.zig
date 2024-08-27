@@ -3,7 +3,7 @@ const std = @import("std");
 pub const Repo = @import("jetquery/Repo.zig");
 pub const adapters = @import("jetquery/adapters.zig");
 pub const Migration = @import("jetquery/Migration.zig");
-pub const columns = @import("jetquery/columns.zig");
+pub const table = @import("jetquery/table.zig");
 
 const TableOptions = struct {};
 
@@ -77,14 +77,14 @@ pub fn Query(T: type) type {
         }
 
         /// Render the currenty query as SQL.
-        pub fn toSql(self: Self, buf: []u8) ![]const u8 {
+        pub fn toSql(self: Self, buf: []u8, adapter: adapters.Adapter) ![]const u8 {
             var stream = std.io.fixedBufferStream(buf);
             const writer = stream.writer();
 
             if (self.select_columns.len > 0) {
-                try self.renderSelect(writer);
+                try self.renderSelect(writer, adapter);
             } else if (self.insert_nodes.len > 0) {
-                try self.renderInsert(writer);
+                try self.renderInsert(writer, adapter);
             } else {
                 return error.JetQueryUndefinedQueryType;
             }
@@ -177,19 +177,22 @@ pub fn Query(T: type) type {
             return &nodes;
         }
 
-        fn renderSelect(self: Self, writer: anytype) !void {
+        fn renderSelect(self: Self, writer: anytype, adapter: adapters.Adapter) !void {
             try writer.print("select ", .{});
             for (self.select_columns, 0..) |column, index| {
-                try writer.print("{s}{s} ", .{
-                    column.name,
+                try writer.print("{}{s} ", .{
+                    adapter.identifier(column.name),
                     if (index < self.select_columns.len - 1) "," else "",
                 });
             }
-            try writer.print("from {s}", .{T.table_name});
+            try writer.print("from {}", .{adapter.identifier(T.table_name)});
             if (self.where_nodes.len > 0) try writer.print(" where ", .{});
             for (self.where_nodes, 0..) |node, index| {
                 var buf: [1024]u8 = undefined;
-                try writer.print("{s} = {s}", .{
+                try writer.print(
+                    \\{} = {s}{s}
+                , .{
+                    adapter.identifier(node.name),
                     try node.value.toSql(&buf),
                     if (index < self.select_columns.len - 1) " and " else "",
                 });
@@ -198,11 +201,11 @@ pub fn Query(T: type) type {
             if (self.limit_bound) |bound| try writer.print(" limit {}", .{bound});
         }
 
-        fn renderInsert(self: Self, writer: anytype) !void {
-            try writer.print("insert into {s} (", .{T.table_name});
+        fn renderInsert(self: Self, writer: anytype, adapter: adapters.Adapter) !void {
+            try writer.print("insert into {} (", .{adapter.identifier(T.table_name)});
             for (self.insert_nodes, 0..) |column, index| {
-                try writer.print("{s}{s}", .{
-                    column.name,
+                try writer.print("{}{s}", .{
+                    adapter.identifier(column.name),
                     if (index < self.insert_nodes.len - 1) ", " else "",
                 });
             }
@@ -235,6 +238,7 @@ pub const Result = union(enum) {
     }
 };
 
+/// A row returned in a `Result`.
 pub const Row = struct {
     allocator: std.mem.Allocator,
     values: []const Value,
@@ -263,7 +267,7 @@ pub const Row = struct {
 pub const Column = struct {
     name: []const u8,
     type: Type,
-    options: Options,
+    options: Options = .{},
     primary_key: bool = false,
     timestamps: bool = false,
 
@@ -298,6 +302,18 @@ pub const Value = union(enum) {
     }
 };
 
+pub const Identifier = struct {
+    name: []const u8,
+    quote_char: u8,
+
+    pub fn format(self: Identifier, actual_fmt: []const u8, options: anytype, writer: anytype) !void {
+        // TODO: SQL injection
+        _ = actual_fmt;
+        _ = options;
+        try writer.print("{0c}{1s}{0c}", .{ self.quote_char, self.name });
+    }
+};
+
 /// A node in a where clause, e.g. `x = 10`.
 const ParamNode = struct {
     name: []const u8,
@@ -317,8 +333,10 @@ test "select" {
     defer query.deinit();
 
     var buf: [1024]u8 = undefined;
-    const sql = try query.toSql(&buf);
-    try std.testing.expectEqualStrings("select name, paws from cats", sql);
+    const sql = try query.toSql(&buf, adapters.test_adapter);
+    try std.testing.expectEqualStrings(
+        \\select "name", "paws" from "cats"
+    , sql);
 }
 
 test "where" {
@@ -326,15 +344,17 @@ test "where" {
         pub const Cats = Table("cats", struct { name: []const u8, paws: usize }, .{});
     };
 
-    const paws = std.crypto.random.int(usize);
+    const paws = 4;
     const query = Query(Schema.Cats).init(std.testing.allocator)
         .select(&.{ .name, .paws })
         .where(.{ .name = "bar", .paws = paws });
     defer query.deinit();
 
     var buf: [1024]u8 = undefined;
-    const sql = try query.toSql(&buf);
-    try std.testing.expectEqualStrings("select name, paws from cats where name = ? and paws = ?", sql);
+    const sql = try query.toSql(&buf, adapters.test_adapter);
+    try std.testing.expectEqualStrings(
+        \\select "name", "paws" from "cats" where "name" = 'bar' and "paws" = 4
+    , sql);
     try std.testing.expectEqualStrings(query.where_nodes[0].name, "name");
     try std.testing.expectEqualStrings(query.where_nodes[0].value.string, "bar");
     try std.testing.expectEqualStrings(query.where_nodes[1].name, "paws");
@@ -351,8 +371,10 @@ test "limit" {
     defer query.deinit();
 
     var buf: [1024]u8 = undefined;
-    const sql = try query.toSql(&buf);
-    try std.testing.expectEqualStrings("select name, paws from cats limit 100", sql);
+    const sql = try query.toSql(&buf, adapters.test_adapter);
+    try std.testing.expectEqualStrings(
+        \\select "name", "paws" from "cats" limit 100
+    , sql);
 }
 
 test "insert" {
@@ -363,5 +385,9 @@ test "insert" {
         .insert(.{ .name = "Hercules", .paws = 4 });
     defer query.deinit();
     var buf: [1024]u8 = undefined;
-    try std.testing.expectEqualStrings("insert into cats (name, paws) values ('Hercules', 4)", try query.toSql(&buf));
+    try std.testing.expectEqualStrings(
+        \\insert into "cats" ("name", "paws") values ('Hercules', 4)
+    ,
+        try query.toSql(&buf, adapters.test_adapter),
+    );
 }

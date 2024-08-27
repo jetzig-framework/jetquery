@@ -32,10 +32,10 @@ pub fn build(b: *std.Build) !void {
     lib_unit_tests.root_module.addImport("pg", pg_module.module("pg"));
     lib_unit_tests.root_module.addImport("zul", zul_module.module("zul"));
 
-    // const run_lib_unit_tests = b.addRunArtifact(lib_unit_tests);
+    const run_lib_unit_tests = b.addRunArtifact(lib_unit_tests);
 
     const test_step = b.step("test", "Run unit tests");
-    // test_step.dependOn(&run_lib_unit_tests.step);
+    test_step.dependOn(&run_lib_unit_tests.step);
 
     const exe_generate_migrations = b.addExecutable(.{
         .name = "migrations",

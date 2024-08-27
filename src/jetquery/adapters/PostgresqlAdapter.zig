@@ -6,8 +6,8 @@ const jetquery = @import("../../jetquery.zig");
 
 const PostgresqlAdapter = @This();
 
-pool: *pg.Pool,
-allocator: std.mem.Allocator,
+pool: *pg.Pool = undefined,
+allocator: std.mem.Allocator = undefined,
 
 pub const Result = struct {
     result: *pg.Result,
@@ -79,7 +79,7 @@ pub fn execute(self: *PostgresqlAdapter, sql: []const u8) !jetquery.Result {
             // TODO: values
             .result = connection.queryOpts(sql, .{}, options) catch |err| {
                 if (connection.err) |connection_error| {
-                    std.debug.print("Error `{s}` while executing:\n{s}\n\n{s}\n", .{
+                    std.debug.print("{s} error while executing:\n{s}\n\n{s}\n", .{
                         @errorName(err),
                         sql,
                         connection_error.message,
@@ -103,4 +103,10 @@ pub fn columnTypeSql(self: PostgresqlAdapter, column_type: jetquery.Column.Type)
         .decimal => "NUMERIC",
         .datetime => "TIMESTAMP",
     };
+}
+
+/// Output quoted identifier.
+pub fn identifier(self: PostgresqlAdapter, name: []const u8) jetquery.Identifier {
+    _ = self;
+    return .{ .name = name, .quote_char = '"' };
 }
