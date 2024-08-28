@@ -17,15 +17,22 @@ pub const Result = struct {
         self.result.deinit();
     }
 
-    pub fn next(self: *Result) !?jetquery.Row {
+    pub fn next(self: *Result, query: anytype) !?@TypeOf(query).Definition {
         if (try self.result.next()) |row| {
-            var array = std.ArrayList(jetquery.Value).init(self.allocator);
-            for (row.values) |value| try array.append(.{ .string = value.data });
-            return .{
-                .allocator = self.allocator,
-                .columns = self.result.column_names,
-                .values = try array.toOwnedSlice(),
-            };
+            var result_row: @TypeOf(query).Definition = undefined;
+            for (self.result.column_names, 0..) |column_name, index| {
+                inline for (std.meta.fields(@TypeOf(query).Definition)) |field| {
+                    if (std.mem.eql(u8, field.name, column_name)) {
+                        @field(result_row, field.name) = switch (field.type) {
+                            // TODO: Other types, strict number types only
+                            []const u8 => row.get([]const u8, index),
+                            usize => @intCast(row.get(i32, index)),
+                            else => @compileError("Unsupported type: " ++ @typeName(field.type)),
+                        };
+                    }
+                }
+            }
+            return result_row;
         } else {
             return null;
         }

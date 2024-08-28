@@ -4,6 +4,9 @@ pub const Repo = @import("jetquery/Repo.zig");
 pub const adapters = @import("jetquery/adapters.zig");
 pub const Migration = @import("jetquery/Migration.zig");
 pub const table = @import("jetquery/table.zig");
+pub const Row = @import("jetquery/Row.zig");
+pub const Result = @import("jetquery/Result.zig").Result;
+pub const DateTime = @import("jetquery/DateTime.zig");
 
 const TableOptions = struct {};
 
@@ -32,6 +35,7 @@ pub fn Table(name: []const u8, T: type, options: TableOptions) type {
 pub fn Query(T: type) type {
     return struct {
         const Self = @This();
+        pub const Definition = T.Definition;
 
         allocator: std.mem.Allocator,
         where_nodes: []const ParamNode = &.{},
@@ -127,15 +131,18 @@ pub fn Query(T: type) type {
                 } else {
                     inline for (std.meta.fields(T.Definition)) |field| {
                         if (std.mem.eql(u8, field.name, @tagName(name))) {
-                            const column = Column{
-                                .name = @tagName(name),
-                                .type = switch (@typeInfo(field.type)) {
-                                    .Pointer, .Array => .string,
-                                    .Int, .ComptimeInt => .integer,
-                                    .Float, .ComptimeFloat => .float,
-                                    else => @compileError("Unsupported type " ++ @typeName(field.type)),
-                                },
-                            };
+                            const column = if (field.type == DateTime)
+                                Column{ .name = @tagName(name), .type = .datetime }
+                            else
+                                Column{
+                                    .name = @tagName(name),
+                                    .type = switch (@typeInfo(field.type)) {
+                                        .Pointer, .Array => .string,
+                                        .Int, .ComptimeInt => .integer,
+                                        .Float, .ComptimeFloat => .float,
+                                        else => @compileError("Unsupported type " ++ @typeName(field.type)),
+                                    },
+                                };
                             select_columns.append(column) catch @panic("OOM");
                             break;
                         }
@@ -220,48 +227,6 @@ pub fn Query(T: type) type {
         }
     };
 }
-
-/// A result of an executed query.
-pub const Result = union(enum) {
-    postgresql: adapters.PostgresqlAdapter.Result,
-
-    pub fn deinit(self: *Result) void {
-        switch (self.*) {
-            inline else => |*adapted_result| adapted_result.deinit(),
-        }
-    }
-
-    pub fn next(self: *Result) !?Row {
-        return switch (self.*) {
-            inline else => |*adapted_result| try adapted_result.next(),
-        };
-    }
-};
-
-/// A row returned in a `Result`.
-pub const Row = struct {
-    allocator: std.mem.Allocator,
-    values: []const Value,
-    columns: [][]const u8,
-
-    pub fn deinit(self: Row) void {
-        self.allocator.free(self.values);
-    }
-
-    /// Retrieve a typed value from a result row.
-    pub fn get(self: Row, T: type, column_name: []const u8) ?T {
-        for (self.columns, self.values) |column, value| {
-            if (std.mem.eql(u8, column_name, column)) return switch (T) {
-                []const u8 => value.string,
-                usize => value.integer,
-                f64 => value.float,
-                bool => value.boolean,
-                else => @compileError("Unsupported type: " ++ @typeName(T)),
-            };
-        }
-        return null;
-    }
-};
 
 /// A database column.
 pub const Column = struct {

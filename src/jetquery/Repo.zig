@@ -103,10 +103,8 @@ test "repo" {
     var result = try repo.execute(query);
     defer result.deinit();
 
-    while (try result.next()) |row| {
-        defer row.deinit();
-        const value = row.get([]const u8, "name") orelse return std.testing.expect(false);
-        try std.testing.expectEqualStrings("Hercules", value);
+    while (try result.next(query)) |row| {
+        try std.testing.expectEqualStrings("Hercules", row.name);
         break;
     } else {
         try std.testing.expect(false);

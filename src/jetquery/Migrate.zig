@@ -44,8 +44,7 @@ fn isMigrated(self: Migrate, migration: Migration) !bool {
     var result = try self.repo.execute(query);
     defer result.deinit();
 
-    while (try result.next()) |row| {
-        defer row.deinit();
+    while (try result.next(query)) |_| {
         return true;
     }
 
@@ -77,4 +76,24 @@ test "migrate" {
     defer repo.deinit();
     const migrate = Migrate.init(&repo);
     try migrate.run();
+
+    const query1 = jetquery.Query(Schema.Migrations).init(std.testing.allocator)
+        .select(&.{.version});
+    defer query1.deinit();
+    var result1 = try repo.execute(query1);
+    defer result1.deinit();
+
+    while (try result1.next(query1)) |row| {
+        try std.testing.expectEqualStrings("2024-08-26_13-18-52", row.version);
+        break;
+    } else {
+        try std.testing.expect(false);
+    }
+
+    const query2 = jetquery.Query(jetquery.Table("cats", struct { name: []const u8, paws: usize, created_at: jetquery.DateTime, updated_at: jetquery.DateTime }, .{}))
+        .init(std.testing.allocator)
+        .select(&.{ .name, .paws, .created_at, .updated_at });
+    defer query2.deinit();
+    var result2 = try repo.execute(query2);
+    defer result2.deinit();
 }
