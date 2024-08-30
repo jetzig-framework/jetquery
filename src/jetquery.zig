@@ -137,9 +137,9 @@ pub fn Query(T: type) type {
                                 Column{
                                     .name = @tagName(name),
                                     .type = switch (@typeInfo(field.type)) {
-                                        .Pointer, .Array => .string,
-                                        .Int, .ComptimeInt => .integer,
-                                        .Float, .ComptimeFloat => .float,
+                                        .pointer, .array => .string,
+                                        .int, .comptime_int => .integer,
+                                        .float, .comptime_float => .float,
                                         else => @compileError("Unsupported type " ++ @typeName(field.type)),
                                     },
                                 };
@@ -174,9 +174,9 @@ pub fn Query(T: type) type {
             inline for (std.meta.fields(@TypeOf(args)), 0..) |field, index| {
                 if (!@hasField(T.Definition, field.name)) @compileError("Unknown field: " ++ field.name);
                 const value = switch (@typeInfo(@TypeOf(@field(args, field.name)))) {
-                    .Pointer, .Array => .{ .string = @field(args, field.name) },
-                    .Int, .ComptimeInt => .{ .integer = @field(args, field.name) },
-                    .Float, .ComptimeFloat => .{ .float = @field(args, field.name) },
+                    .pointer, .array => .{ .string = @field(args, field.name) },
+                    .int, .comptime_int => .{ .integer = @field(args, field.name) },
+                    .float, .comptime_float => .{ .float = @field(args, field.name) },
                     else => @compileError("Unsupported type for field: " ++ field.name),
                 };
                 nodes[index] = .{ .name = field.name, .value = value };
