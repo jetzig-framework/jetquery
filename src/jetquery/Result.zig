@@ -12,6 +12,12 @@ pub const Result = union(enum) {
         }
     }
 
+    pub fn drain(self: *Result) !void {
+        switch (self.*) {
+            inline else => |*adapted_result| try adapted_result.drain(),
+        }
+    }
+
     pub fn next(self: *Result, query: anytype) !?@TypeOf(query).Definition {
         return switch (self.*) {
             inline else => |*adapted_result| try adapted_result.next(query),

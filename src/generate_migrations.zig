@@ -21,6 +21,7 @@ pub fn main() !void {
         \\    upFn: *const fn(*jetquery.Repo) anyerror!void,
         \\    downFn: *const fn(*jetquery.Repo) anyerror!void,
         \\    version: []const u8,
+        \\    name: []const u8,
         \\};
         \\pub const migrations = [_]Migration{
         \\
@@ -38,10 +39,11 @@ pub fn main() !void {
             \\        .upFn = @import("{0s}").up,
             \\        .downFn = @import("{0s}").down,
             \\        .version = "{1s}",
+            \\        .name = "{0s}",
             \\    }},
             \\
         ,
-            .{ try zigEscape(allocator, basename), version },
+            .{ try zigEscape(allocator, basename), try zigEscape(allocator, version) },
         );
     }
     try writer.writeAll(

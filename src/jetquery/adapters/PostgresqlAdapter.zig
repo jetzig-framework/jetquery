@@ -17,6 +17,10 @@ pub const Result = struct {
         self.result.deinit();
     }
 
+    pub fn drain(self: *Result) !void {
+        try self.result.drain();
+    }
+
     pub fn next(self: *Result, query: anytype) !?@TypeOf(query).Definition {
         if (try self.result.next()) |row| {
             var result_row: @TypeOf(query).Definition = undefined;
@@ -75,27 +79,31 @@ pub fn deinit(self: *PostgresqlAdapter) void {
 }
 
 /// Execute the given query with a pooled connection.
-pub fn execute(self: *PostgresqlAdapter, sql: []const u8) !jetquery.Result {
-    const options: pg.Conn.QueryOpts = .{ .release_conn = true, .column_names = true };
+pub fn execute(self: *PostgresqlAdapter, sql: []const u8, repo: *const jetquery.Repo) !jetquery.Result {
+    const options: pg.Conn.QueryOpts = .{ .column_names = true };
     var connection = try self.pool.acquire();
     errdefer self.pool.release(connection);
+
+    // TODO: values
+    const result = connection.queryOpts(sql, .{}, options) catch |err| {
+        if (connection.err) |connection_error| {
+            try repo.eventCallback(.{
+                .sql = sql,
+                .err = .{ .message = connection_error.message },
+                .status = .fail,
+            });
+        } else {
+            try repo.eventCallback(.{ .sql = sql, .err = .{ .message = "Unknown error" }, .status = .fail });
+        }
+        return err;
+    };
+
+    try repo.eventCallback(.{ .sql = sql });
 
     return .{
         .postgresql = .{
             .allocator = self.allocator,
-            // TODO: values
-            .result = connection.queryOpts(sql, .{}, options) catch |err| {
-                if (connection.err) |connection_error| {
-                    std.debug.print("{s} error while executing:\n{s}\n\n{s}\n", .{
-                        @errorName(err),
-                        sql,
-                        connection_error.message,
-                    });
-                } else {
-                    std.debug.print("Error `{s}` while executing:\n{s}\n", .{ @errorName(err), sql });
-                }
-                return err;
-            },
+            .result = result,
         },
     };
 }
@@ -109,6 +117,7 @@ pub fn columnTypeSql(self: PostgresqlAdapter, column_type: jetquery.Column.Type)
         .float => "REAL",
         .decimal => "NUMERIC",
         .datetime => "TIMESTAMP",
+        .text => "TEXT",
     };
 }
 

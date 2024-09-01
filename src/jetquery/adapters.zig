@@ -5,9 +5,9 @@ pub const Adapter = union(enum) {
     postgresql: PostgresqlAdapter,
 
     /// Execute SQL with the active adapter.
-    pub fn execute(self: *Adapter, sql: []const u8) !jetquery.Result {
+    pub fn execute(self: *Adapter, sql: []const u8, repo: *const jetquery.Repo) !jetquery.Result {
         return switch (self.*) {
-            inline else => |*adapter| try adapter.execute(sql),
+            inline else => |*adapter| try adapter.execute(sql, repo),
         };
     }
 

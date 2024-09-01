@@ -7,6 +7,7 @@ pub const table = @import("jetquery/table.zig");
 pub const Row = @import("jetquery/Row.zig");
 pub const Result = @import("jetquery/Result.zig").Result;
 pub const DateTime = @import("jetquery/DateTime.zig");
+pub const events = @import("jetquery/events.zig");
 
 const TableOptions = struct {};
 
@@ -73,6 +74,7 @@ pub fn Query(T: type) type {
             return self.merge(.{ .limit_bound = bound });
         }
 
+        /// Specify values to insert.
         pub fn insert(self: Self, args: anytype) Self {
             validateFields(args);
             const nodes = buildParamNodes(args);
@@ -236,7 +238,7 @@ pub const Column = struct {
     primary_key: bool = false,
     timestamps: bool = false,
 
-    pub const Type = enum { string, integer, float, decimal, datetime };
+    pub const Type = enum { string, integer, float, decimal, datetime, text };
     pub const Options = struct {};
 
     pub fn init(name: []const u8, column_type: Type, options: Options) Column {

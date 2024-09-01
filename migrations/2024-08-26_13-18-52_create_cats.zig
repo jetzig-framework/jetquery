@@ -11,6 +11,7 @@ pub fn up(repo: *jetquery.Repo) !void {
             t.column("paws", .integer, .{}),
             t.timestamps(.{}),
         },
+        .{},
     );
 }
 

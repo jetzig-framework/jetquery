@@ -21,18 +21,38 @@ const Schema = struct {
 pub fn run(self: Migrate) !void {
     try self.createMigrationsTable();
 
-    for (migrations) |migration| {
-        if (try self.isMigrated(migration)) continue;
+    try self.repo.eventCallback(.{
+        .context = .migration,
+        .message = "Running migrations.",
+    });
 
-        const query = jetquery.Query(Schema.Migrations).init(self.repo.allocator)
-            .insert(.{ .version = migration.version });
-        defer query.deinit();
+    inline for (migrations) |migration| {
+        if (!try self.isMigrated(migration)) {
+            try self.repo.eventCallback(.{
+                .context = .migration,
+                .message = "Executing migration: " ++ migration.name,
+            });
 
-        try migration.upFn(self.repo);
+            const query = jetquery.Query(Schema.Migrations).init(self.repo.allocator)
+                .insert(.{ .version = migration.version });
+            defer query.deinit();
 
-        var result = try self.repo.execute(query);
-        defer result.deinit();
+            try migration.upFn(self.repo);
+
+            var result = try self.repo.execute(query);
+            defer result.deinit();
+
+            try self.repo.eventCallback(.{
+                .context = .migration,
+                .message = "Completed migration: " ++ migration.name,
+            });
+        }
     }
+
+    try self.repo.eventCallback(.{
+        .context = .migration,
+        .message = "Migrations completed.",
+    });
 }
 
 fn isMigrated(self: Migrate, migration: Migration) !bool {
@@ -57,6 +77,7 @@ fn createMigrationsTable(self: Migrate) !void {
         &.{
             jetquery.table.column("version", .string, .{}),
         },
+        .{ .if_not_exists = true },
     );
 }
 
@@ -64,16 +85,22 @@ test "migrate" {
     var repo = try jetquery.Repo.init(
         std.testing.allocator,
         .{
-            .postgresql = .{
-                .database = "postgres",
-                .username = "postgres",
-                .hostname = "127.0.0.1",
-                .password = "password",
-                .port = 5432,
+            .adapter = .{
+                .postgresql = .{
+                    .database = "postgres",
+                    .username = "postgres",
+                    .hostname = "127.0.0.1",
+                    .password = "password",
+                    .port = 5432,
+                },
             },
         },
     );
     defer repo.deinit();
+
+    try repo.dropTable("jetquery_migrations", .{ .if_exists = true });
+    try repo.dropTable("cats", .{ .if_exists = true });
+
     const migrate = Migrate.init(&repo);
     try migrate.run();
 
@@ -90,7 +117,12 @@ test "migrate" {
         try std.testing.expect(false);
     }
 
-    const query2 = jetquery.Query(jetquery.Table("cats", struct { name: []const u8, paws: usize, created_at: jetquery.DateTime, updated_at: jetquery.DateTime }, .{}))
+    const query2 = jetquery.Query(jetquery.Table("cats", struct {
+        name: []const u8,
+        paws: usize,
+        created_at: jetquery.DateTime,
+        updated_at: jetquery.DateTime,
+    }, .{}))
         .init(std.testing.allocator)
         .select(&.{ .name, .paws, .created_at, .updated_at });
     defer query2.deinit();

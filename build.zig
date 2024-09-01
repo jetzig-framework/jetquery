@@ -14,8 +14,9 @@ pub fn build(b: *std.Build) !void {
     b.installArtifact(lib);
 
     const pg_module = b.dependency("pg", .{ .target = target, .optimize = optimize });
-    lib.root_module.addImport("pg", pg_module.module("pg"));
     const zul_module = b.dependency("zul", .{ .target = target, .optimize = optimize });
+
+    lib.root_module.addImport("pg", pg_module.module("pg"));
     lib.root_module.addImport("zul", zul_module.module("zul"));
 
     const jetquery_module = b.addModule("jetquery", .{ .root_source_file = b.path("src/jetquery.zig") });
@@ -64,6 +65,13 @@ pub fn build(b: *std.Build) !void {
     migrations_module.addImport("jetquery", jetquery_module);
     migration_unit_tests.root_module.addImport("migrations", migrations_module);
     migration_unit_tests.root_module.addImport("jetquery", jetquery_module);
+
+    const jetquery_migrate_module = b.addModule(
+        "jetquery_migrate",
+        .{ .root_source_file = b.path("src/jetquery/Migrate.zig") },
+    );
+    jetquery_migrate_module.addImport("jetquery", jetquery_module);
+    jetquery_migrate_module.addImport("migrations", migrations_module);
 }
 
 fn findMigrations(allocator: std.mem.Allocator, path: []const u8) ![][]const u8 {

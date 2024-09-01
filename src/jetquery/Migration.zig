@@ -30,14 +30,25 @@ pub fn save(self: Migration) !void {
     defer migration_file.close();
     const writer = migration_file.writer();
     try writer.writeAll(
+        \\const std = @import("std");
         \\const jetquery = @import("jetquery");
+        \\const t = jetquery.table;
         \\
         \\pub fn up(repo: *jetquery.Repo) !void {
-        \\    _ = repo;
+        \\    try repo.createTable(
+        \\        "my_table",
+        \\        &.{
+        \\            t.primaryKey("id", .{}),
+        \\            t.column("my_string", .string, .{}),
+        \\            t.column("my_integer", .integer, .{}),
+        \\            t.timestamps(.{}),
+        \\        },
+        \\        .{},
+        \\    );
         \\}
         \\
         \\pub fn down(repo: *jetquery.Repo) !void {
-        \\    _ = repo;
+        \\    try repo.dropTable("my_table", .{});
         \\}
         \\
     );
