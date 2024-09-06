@@ -40,9 +40,11 @@ pub fn Query(T: type) type {
 
         allocator: std.mem.Allocator,
         where_nodes: []const ParamNode = &.{},
-        insert_nodes: []const ParamNode = &.{},
         select_columns: []const Column = &.{},
+        insert_nodes: []const ParamNode = &.{},
+        update_nodes: []const ParamNode = &.{},
         limit_bound: ?usize = null,
+        is_delete: bool = false,
 
         /// Initialize a new Query.
         pub fn init(allocator: std.mem.Allocator) Self {
@@ -54,6 +56,7 @@ pub fn Query(T: type) type {
             self.allocator.free(self.where_nodes);
             self.allocator.free(self.select_columns);
             self.allocator.free(self.insert_nodes);
+            self.allocator.free(self.update_nodes);
         }
 
         /// Specify columns to select in the query.
@@ -82,15 +85,35 @@ pub fn Query(T: type) type {
             return self.merge(.{ .insert_nodes = nodes });
         }
 
+        /// Specify values to update.
+        pub fn update(self: Self, args: anytype) Self {
+            validateFields(args);
+            const nodes = buildParamNodes(args);
+
+            return self.merge(.{ .update_nodes = nodes });
+        }
+
+        /// Specify delete query.
+        pub fn delete(self: Self) Self {
+            return self.merge(.{ .is_delete = true });
+        }
+
         /// Render the currenty query as SQL.
         pub fn toSql(self: Self, buf: []u8, adapter: adapters.Adapter) ![]const u8 {
             var stream = std.io.fixedBufferStream(buf);
             const writer = stream.writer();
 
+            // TODO: Error on incompatible commands - do something like `try detectQueryType()`
+            // and switch on result (`enum { select, insert, update, delete }`).
+
             if (self.select_columns.len > 0) {
                 try self.renderSelect(writer, adapter);
             } else if (self.insert_nodes.len > 0) {
                 try self.renderInsert(writer, adapter);
+            } else if (self.update_nodes.len > 0) {
+                try self.renderUpdate(writer, adapter);
+            } else if (self.is_delete) {
+                try self.renderDelete(writer, adapter);
             } else {
                 return error.JetQueryUndefinedQueryType;
             }
@@ -124,6 +147,18 @@ pub fn Query(T: type) type {
             }
             if (!@hasField(@TypeOf(args), "insert_nodes")) {
                 insert_nodes.appendSlice(self.insert_nodes) catch @panic("OOM");
+            }
+
+            var update_nodes = std.ArrayList(ParamNode).init(self.allocator);
+            for (if (@hasField(@TypeOf(args), "update_nodes")) args.update_nodes else &.{}) |new_node| {
+                for (self.update_nodes) |node| {
+                    if (std.mem.eql(u8, node.name, new_node.name)) break;
+                } else {
+                    update_nodes.append(new_node) catch @panic("OOM");
+                }
+            }
+            if (!@hasField(@TypeOf(args), "update_nodes")) {
+                update_nodes.appendSlice(self.update_nodes) catch @panic("OOM");
             }
 
             var select_columns = std.ArrayList(Column).init(self.allocator);
@@ -160,7 +195,9 @@ pub fn Query(T: type) type {
                 .where_nodes = where_nodes.toOwnedSlice() catch @panic("OOM"),
                 .select_columns = select_columns.toOwnedSlice() catch @panic("OOM"),
                 .insert_nodes = insert_nodes.toOwnedSlice() catch @panic("OOM"),
+                .update_nodes = update_nodes.toOwnedSlice() catch @panic("OOM"),
                 .limit_bound = if (@hasField(@TypeOf(args), "limit_bound")) args.limit_bound else null,
+                .is_delete = self.is_delete or (@hasField(@TypeOf(args), "is_delete") and args.is_delete),
             };
             return cloned;
         }
@@ -195,26 +232,15 @@ pub fn Query(T: type) type {
                 });
             }
             try writer.print("from {}", .{adapter.identifier(T.table_name)});
-            if (self.where_nodes.len > 0) try writer.print(" where ", .{});
-            for (self.where_nodes, 0..) |node, index| {
-                var buf: [1024]u8 = undefined;
-                try writer.print(
-                    \\{} = {s}{s}
-                , .{
-                    adapter.identifier(node.name),
-                    try node.value.toSql(&buf),
-                    if (index < self.select_columns.len - 1) " and " else "",
-                });
-            }
-
+            try self.renderWhere(writer, adapter);
             if (self.limit_bound) |bound| try writer.print(" limit {}", .{bound});
         }
 
         fn renderInsert(self: Self, writer: anytype, adapter: adapters.Adapter) !void {
             try writer.print("insert into {} (", .{adapter.identifier(T.table_name)});
-            for (self.insert_nodes, 0..) |column, index| {
+            for (self.insert_nodes, 0..) |node, index| {
                 try writer.print("{}{s}", .{
-                    adapter.identifier(column.name),
+                    adapter.identifier(node.name),
                     if (index < self.insert_nodes.len - 1) ", " else "",
                 });
             }
@@ -223,7 +249,41 @@ pub fn Query(T: type) type {
                 var buf: [1024]u8 = undefined;
                 try writer.print("{s}{s}", .{
                     try node.value.toSql(&buf),
-                    if (index < self.insert_nodes.len - 1) ", " else ")",
+                    if (index + 1 < self.insert_nodes.len) ", " else ")",
+                });
+            }
+        }
+
+        fn renderUpdate(self: Self, writer: anytype, adapter: adapters.Adapter) !void {
+            try writer.print("update {} set ", .{adapter.identifier(T.table_name)});
+            for (self.update_nodes, 0..) |node, index| {
+                var buf: [1024]u8 = undefined;
+                try writer.print("{} = {s}{s}", .{
+                    adapter.identifier(node.name),
+                    try node.value.toSql(&buf),
+                    if (index < self.update_nodes.len - 1) ", " else "",
+                });
+            }
+            try self.renderWhere(writer, adapter);
+        }
+
+        fn renderDelete(self: Self, writer: anytype, adapter: adapters.Adapter) !void {
+            try writer.print("delete from {}", .{adapter.identifier(T.table_name)});
+            try self.renderWhere(writer, adapter);
+        }
+
+        fn renderWhere(self: Self, writer: anytype, adapter: adapters.Adapter) !void {
+            if (self.where_nodes.len == 0) return;
+
+            try writer.print(" where ", .{});
+            for (self.where_nodes, 0..) |node, index| {
+                var buf: [1024]u8 = undefined;
+                try writer.print(
+                    \\{} = {s}{s}
+                , .{
+                    adapter.identifier(node.name),
+                    try node.value.toSql(&buf),
+                    if (index + 1 < self.select_columns.len) " and " else "",
                 });
             }
         }
@@ -351,9 +411,44 @@ test "insert" {
     const query = Query(Schema.Cats).init(std.testing.allocator)
         .insert(.{ .name = "Hercules", .paws = 4 });
     defer query.deinit();
+
     var buf: [1024]u8 = undefined;
     try std.testing.expectEqualStrings(
         \\insert into "cats" ("name", "paws") values ('Hercules', 4)
+    ,
+        try query.toSql(&buf, adapters.test_adapter),
+    );
+}
+
+test "update" {
+    const Schema = struct {
+        pub const Cats = Table("cats", struct { name: []const u8, paws: usize }, .{});
+    };
+    const query = Query(Schema.Cats).init(std.testing.allocator)
+        .update(.{ .name = "Heracles", .paws = 2 })
+        .where(.{ .name = "Hercules" });
+
+    defer query.deinit();
+    var buf: [1024]u8 = undefined;
+    try std.testing.expectEqualStrings(
+        \\update "cats" set "name" = 'Heracles', "paws" = 2 where "name" = 'Hercules'
+    ,
+        try query.toSql(&buf, adapters.test_adapter),
+    );
+}
+
+test "delete" {
+    const Schema = struct {
+        pub const Cats = Table("cats", struct { name: []const u8, paws: usize }, .{});
+    };
+    const query = Query(Schema.Cats).init(std.testing.allocator)
+        .delete()
+        .where(.{ .name = "Hercules" });
+    defer query.deinit();
+
+    var buf: [1024]u8 = undefined;
+    try std.testing.expectEqualStrings(
+        \\delete from "cats" where "name" = 'Hercules'
     ,
         try query.toSql(&buf, adapters.test_adapter),
     );
