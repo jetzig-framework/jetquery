@@ -120,3 +120,20 @@ test "delete" {
         try query.toSql(&buf, adapters.test_adapter),
     );
 }
+
+test "incompatible query type" {
+    const Schema = struct {
+        pub const Cats = Table("cats", struct { name: []const u8, paws: usize }, .{});
+    };
+    const query = Query(Schema.Cats).init(std.testing.allocator)
+        .update(.{ .name = "Heracles", .paws = 2 })
+        .select(&.{.name})
+        .where(.{ .name = "Hercules" });
+
+    defer query.deinit();
+    var buf: [1024]u8 = undefined;
+    try std.testing.expectError(
+        error.JetQueryIncompatibleQueryType,
+        query.toSql(&buf, adapters.test_adapter),
+    );
+}

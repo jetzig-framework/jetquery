@@ -11,6 +11,7 @@ const Repo = @This();
 const Options = struct {
     adapter: union(enum) {
         postgresql: jetquery.adapters.PostgresqlAdapter.Options,
+        null,
     },
     eventCallback: *const fn (event: jetquery.events.Event) anyerror!void = jetquery.events.defaultCallback,
 };
@@ -26,6 +27,7 @@ pub fn init(allocator: std.mem.Allocator, options: Options) !Repo {
                     adapter_options,
                 ),
             },
+            .null => .{ .null = jetquery.adapters.NullAdapter{} },
         },
         .eventCallback = options.eventCallback,
     };

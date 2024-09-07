@@ -1,8 +1,11 @@
-pub const PostgresqlAdapter = @import("adapters/PostgresqlAdapter.zig");
 const jetquery = @import("../jetquery.zig");
+
+pub const PostgresqlAdapter = @import("adapters/PostgresqlAdapter.zig");
+pub const NullAdapter = @import("adapters/NullAdapter.zig");
 
 pub const Adapter = union(enum) {
     postgresql: PostgresqlAdapter,
+    null: NullAdapter,
 
     /// Execute SQL with the active adapter.
     pub fn execute(self: *Adapter, sql: []const u8, repo: *const jetquery.Repo) !jetquery.Result {
