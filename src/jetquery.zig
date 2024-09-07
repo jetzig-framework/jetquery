@@ -34,6 +34,8 @@ pub fn Table(name: []const u8, T: type, options: TableOptions) type {
 /// const query = Query(Schema.Cats).init(allocator);
 /// ```
 pub fn Query(T: type) type {
+    const QueryType = enum { select, insert, update, delete };
+
     return struct {
         const Self = @This();
         pub const Definition = T.Definition;
@@ -103,22 +105,38 @@ pub fn Query(T: type) type {
             var stream = std.io.fixedBufferStream(buf);
             const writer = stream.writer();
 
-            // TODO: Error on incompatible commands - do something like `try detectQueryType()`
-            // and switch on result (`enum { select, insert, update, delete }`).
+            try self.validateQueryType();
 
-            if (self.select_columns.len > 0) {
-                try self.renderSelect(writer, adapter);
-            } else if (self.insert_nodes.len > 0) {
-                try self.renderInsert(writer, adapter);
-            } else if (self.update_nodes.len > 0) {
-                try self.renderUpdate(writer, adapter);
-            } else if (self.is_delete) {
-                try self.renderDelete(writer, adapter);
-            } else {
-                return error.JetQueryUndefinedQueryType;
-            }
+            if (self.detectQueryType()) |query_type| {
+                switch (query_type) {
+                    .select => try self.renderSelect(writer, adapter),
+                    .insert => try self.renderInsert(writer, adapter),
+                    .update => try self.renderUpdate(writer, adapter),
+                    .delete => try self.renderDelete(writer, adapter),
+                }
+            } else return error.JetQueryUndefinedQueryType;
 
             return stream.getWritten();
+        }
+
+        fn validateQueryType(self: Self) !void {
+            var count: u3 = 0;
+
+            if (self.select_columns.len > 0) count += 1;
+            if (self.insert_nodes.len > 0) count += 1;
+            if (self.update_nodes.len > 0) count += 1;
+            if (self.is_delete) count += 1;
+
+            if (count != 1) return error.JetQueryIncompatibleQueryType;
+        }
+
+        fn detectQueryType(self: Self) ?QueryType {
+            if (self.select_columns.len > 0) return .select;
+            if (self.insert_nodes.len > 0) return .insert;
+            if (self.update_nodes.len > 0) return .update;
+            if (self.is_delete) return .delete;
+
+            return null;
         }
 
         // Merge the current query with given arguments.
@@ -128,7 +146,7 @@ pub fn Query(T: type) type {
             var where_nodes = std.ArrayList(ParamNode).init(self.allocator);
             for (if (@hasField(@TypeOf(args), "where_nodes")) args.where_nodes else &.{}) |new_node| {
                 for (self.where_nodes) |node| {
-                    if (std.mem.eql(u8, node.name, new_node.name)) break;
+                    if (std.mem.eql(u8, node.name, new_node.name) and node.value.eql(new_node.value)) continue;
                 } else {
                     where_nodes.append(new_node) catch @panic("OOM");
                 }
@@ -140,7 +158,7 @@ pub fn Query(T: type) type {
             var insert_nodes = std.ArrayList(ParamNode).init(self.allocator);
             for (if (@hasField(@TypeOf(args), "insert_nodes")) args.insert_nodes else &.{}) |new_node| {
                 for (self.insert_nodes) |node| {
-                    if (std.mem.eql(u8, node.name, new_node.name)) break;
+                    if (std.mem.eql(u8, node.name, new_node.name) and node.value.eql(new_node.value)) continue;
                 } else {
                     insert_nodes.append(new_node) catch @panic("OOM");
                 }
@@ -152,7 +170,7 @@ pub fn Query(T: type) type {
             var update_nodes = std.ArrayList(ParamNode).init(self.allocator);
             for (if (@hasField(@TypeOf(args), "update_nodes")) args.update_nodes else &.{}) |new_node| {
                 for (self.update_nodes) |node| {
-                    if (std.mem.eql(u8, node.name, new_node.name)) break;
+                    if (std.mem.eql(u8, node.name, new_node.name) and node.value.eql(new_node.value)) continue;
                 } else {
                     update_nodes.append(new_node) catch @panic("OOM");
                 }
@@ -164,7 +182,7 @@ pub fn Query(T: type) type {
             var select_columns = std.ArrayList(Column).init(self.allocator);
             for (if (@hasField(@TypeOf(args), "select_columns")) args.select_columns else &.{}) |name| {
                 for (self.select_columns) |column| {
-                    if (std.mem.eql(u8, column.name, @tagName(name))) break;
+                    if (std.mem.eql(u8, column.name, @tagName(name))) continue;
                 } else {
                     inline for (std.meta.fields(T.Definition)) |field| {
                         if (std.mem.eql(u8, field.name, @tagName(name))) {
@@ -326,6 +344,16 @@ pub const Value = union(enum) {
             .Null => try writer.print("NULL", .{}),
         }
         return stream.getWritten();
+    }
+
+    pub fn eql(self: Value, other: Value) bool {
+        return switch (self) {
+            .string => |value| other == .string and std.mem.eql(u8, value, other.string),
+            .integer => |value| other == .integer and value == other.integer,
+            .float => |value| other == .float and value == other.float,
+            .boolean => |value| other == .boolean and value == other.boolean,
+            .Null => other == .Null,
+        };
     }
 };
 
