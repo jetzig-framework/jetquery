@@ -44,6 +44,12 @@ pub const Result = struct {
             return null;
         }
     }
+
+    pub fn all(self: *Result, query: anytype) ![]const @TypeOf(query).Definition {
+        var array = std.ArrayList(@TypeOf(query).Definition).init(self.allocator);
+        while (try self.next(query)) |row| try array.append(row);
+        return try array.toOwnedSlice();
+    }
 };
 
 pub const Options = struct {

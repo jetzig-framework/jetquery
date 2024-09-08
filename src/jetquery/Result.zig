@@ -23,4 +23,10 @@ pub const Result = union(enum) {
             inline else => |*adapted_result| try adapted_result.next(query),
         };
     }
+
+    pub fn all(self: *Result, query: anytype) ![]const @TypeOf(query).Definition {
+        return switch (self.*) {
+            inline else => |*adapted_result| try adapted_result.all(query),
+        };
+    }
 };
