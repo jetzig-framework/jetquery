@@ -29,4 +29,9 @@ pub const Adapter = union(enum) {
     }
 };
 
-pub const test_adapter = Adapter{ .postgresql = .{} };
+pub const test_adapter = Adapter{ .postgresql = .{
+    .options = undefined,
+    .pool = undefined,
+    .allocator = undefined,
+    .connected = undefined,
+} };

@@ -6,8 +6,11 @@ const jetquery = @import("../../jetquery.zig");
 
 const PostgresqlAdapter = @This();
 
-pool: *pg.Pool = undefined,
-allocator: std.mem.Allocator = undefined,
+pool: *pg.Pool,
+allocator: std.mem.Allocator,
+options: Options,
+connected: bool,
+lazy_connect: bool = false,
 
 pub const Result = struct {
     result: *pg.Result,
@@ -51,25 +54,24 @@ pub const Options = struct {
     port: u16 = 5432,
     pool_size: u16 = 8,
     timeout: u32 = 10_000,
+    lazy_connect: bool = false,
 };
 
 /// Initialize a new PostgreSQL adapter and connection pool.
 pub fn init(allocator: std.mem.Allocator, options: Options) !PostgresqlAdapter {
+    if (options.lazy_connect) return .{
+        .allocator = allocator,
+        .options = options,
+        .pool = undefined,
+        .lazy_connect = true,
+        .connected = false,
+    };
+
     return .{
         .allocator = allocator,
-        .pool = try pg.Pool.init(allocator, .{
-            .size = options.pool_size,
-            .connect = .{
-                .port = options.port,
-                .host = options.hostname,
-            },
-            .auth = .{
-                .username = options.username,
-                .database = options.database,
-                .password = options.password,
-                .timeout = options.timeout,
-            },
-        }),
+        .options = options,
+        .pool = try initPool(allocator, options),
+        .connected = true,
     };
 }
 
@@ -80,6 +82,8 @@ pub fn deinit(self: *PostgresqlAdapter) void {
 
 /// Execute the given query with a pooled connection.
 pub fn execute(self: *PostgresqlAdapter, sql: []const u8, repo: *const jetquery.Repo) !jetquery.Result {
+    if (!self.connected and self.lazy_connect) self.pool = try initPool(self.allocator, self.options);
+
     const options: pg.Conn.QueryOpts = .{ .column_names = true };
     var connection = try self.pool.acquire();
     errdefer self.pool.release(connection);
@@ -125,4 +129,20 @@ pub fn columnTypeSql(self: PostgresqlAdapter, column_type: jetquery.Column.Type)
 pub fn identifier(self: PostgresqlAdapter, name: []const u8) jetquery.Identifier {
     _ = self;
     return .{ .name = name, .quote_char = '"' };
+}
+
+fn initPool(allocator: std.mem.Allocator, options: Options) !*pg.Pool {
+    return try pg.Pool.init(allocator, .{
+        .size = options.pool_size,
+        .connect = .{
+            .port = options.port,
+            .host = options.hostname,
+        },
+        .auth = .{
+            .username = options.username,
+            .database = options.database,
+            .password = options.password,
+            .timeout = options.timeout,
+        },
+    });
 }

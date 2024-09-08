@@ -26,3 +26,13 @@ pub fn defaultCallback(event: Event) !void {
         });
     }
 }
+
+pub fn EventCallback(T: type) type {
+    return struct {
+        ptr: ?*const T = null,
+        callback: *const fn (Event, *const T) anyerror!void,
+        pub fn callbackFn(self: @This(), event: Event) !void {
+            try self.callback(event, self.ptr);
+        }
+    };
+}
