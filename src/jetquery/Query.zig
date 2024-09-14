@@ -280,7 +280,7 @@ pub fn Query(T: type) type {
                 , .{
                     adapter.identifier(node.name),
                     try node.value.toSql(&buf),
-                    if (index + 1 < self.select_columns.len) " and " else "",
+                    if (index + 1 < self.where_nodes.len) " and " else "",
                 });
             }
         }

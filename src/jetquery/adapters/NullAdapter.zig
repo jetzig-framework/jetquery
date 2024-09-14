@@ -24,3 +24,8 @@ pub fn identifier(self: NullAdapter, name: []const u8) jetquery.Identifier {
     _ = name;
     return .{ .name = "", .quote_char = 0 };
 }
+
+pub fn primaryKeySql(self: NullAdapter) []const u8 {
+    _ = self;
+    return "";
+}

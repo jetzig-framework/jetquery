@@ -57,23 +57,26 @@ pub fn createTable(self: *Repo, name: []const u8, columns: []const jetquery.Colu
     const writer = buf.writer();
 
     try writer.print(
-        \\create table{s} "{s}" (
-    , .{ if (options.if_not_exists) " if not exists" else "", name });
+        \\create table{s} {} (
+    , .{ if (options.if_not_exists) " if not exists" else "", self.adapter.identifier(name) });
 
     for (columns, 0..) |column, index| {
         if (column.timestamps) {
             try writer.print(
-                \\"created_at" {0s}, "updated_at" {0s}{1s}
+                \\{0} {2s}, {1} {2s}{3s}
             , .{
+                self.adapter.identifier("created_at"),
+                self.adapter.identifier("updated_at"),
                 self.adapter.columnTypeSql(.datetime),
                 if (index < columns.len - 1) ", " else "",
             });
         } else {
             try writer.print(
-                \\"{s}" {s}{s}
+                \\{} {s} {s}{s}
             , .{
-                column.name,
+                self.adapter.identifier(column.name),
                 self.adapter.columnTypeSql(column.type),
+                if (column.primary_key) self.adapter.primaryKeySql() else "",
                 if (index < columns.len - 1) ", " else "",
             });
         }

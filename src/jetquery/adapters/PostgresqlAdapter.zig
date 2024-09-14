@@ -50,6 +50,10 @@ pub const Result = struct {
         while (try self.next(query)) |row| try array.append(row);
         return try array.toOwnedSlice();
     }
+
+    pub fn first(self: *Result, query: anytype) !?@TypeOf(query).Definition {
+        return try self.next(query);
+    }
 };
 
 pub const Options = struct {
@@ -135,6 +139,11 @@ pub fn columnTypeSql(self: PostgresqlAdapter, column_type: jetquery.Column.Type)
 pub fn identifier(self: PostgresqlAdapter, name: []const u8) jetquery.Identifier {
     _ = self;
     return .{ .name = name, .quote_char = '"' };
+}
+
+pub fn primaryKeySql(self: PostgresqlAdapter) []const u8 {
+    _ = self;
+    return "PRIMARY KEY";
 }
 
 fn initPool(allocator: std.mem.Allocator, options: Options) !*pg.Pool {

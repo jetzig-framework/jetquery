@@ -27,6 +27,13 @@ pub const Adapter = union(enum) {
             inline else => |*adapter| adapter.identifier(name),
         };
     }
+
+    /// SQL fragment used to indicate a primary key.
+    pub fn primaryKeySql(self: Adapter) []const u8 {
+        return switch (self) {
+            inline else => |*adapter| adapter.primaryKeySql(),
+        };
+    }
 };
 
 pub const test_adapter = Adapter{ .postgresql = .{

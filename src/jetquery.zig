@@ -137,3 +137,11 @@ test "incompatible query type" {
         query.toSql(&buf, adapters.test_adapter),
     );
 }
+
+test "timestamps (create)" {
+    // TODO
+}
+
+test "timestamps (update)" {
+    // TODO
+}
