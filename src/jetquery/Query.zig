@@ -174,6 +174,7 @@ pub fn Query(T: type) type {
                                         .pointer, .array => .string,
                                         .int, .comptime_int => .integer,
                                         .float, .comptime_float => .float,
+                                        .bool => .boolean,
                                         else => @compileError("Unsupported type " ++ @typeName(field.type)),
                                     },
                                 };
@@ -211,52 +212,34 @@ pub fn Query(T: type) type {
                 if (!@hasField(T.Definition, field.name)) @compileError("Unknown field: " ++ field.name);
                 const value = switch (@typeInfo(@TypeOf(@field(args, field.name)))) {
                     .pointer => |info| switch (info.size) {
-                        .Slice => .{ .string = @field(args, field.name) },
+                        .Slice => coerceString(FieldType(field.name), field.name, @field(args, field.name)),
                         else => blk: {
                             const child_info = @typeInfo(info.child);
                             if (child_info == .array) {
                                 const arr = &child_info.array;
-                                if (arr.child == u8) break :blk .{ .string = @field(args, field.name) };
+                                if (arr.child == u8) break :blk coerceString(
+                                    FieldType(field.name),
+                                    field.name,
+                                    @field(args, field.name),
+                                );
                             }
-                            if (@hasDecl(info.child, "toJetquery")) break :blk self.coerceValue(args, field.name);
-                            @compileError("Unsupported type for field: " ++ field.name ++ "(" ++ @typeName(info.child) ++ ")");
+                            if (@hasDecl(info.child, "toJetQuery")) break :blk self.delegateCoerceValue(args, field.name);
+                            @compileError("Unsupported type for field: " ++ field.name ++ " (" ++ @typeName(info.child) ++ ")");
                         },
                     },
                     .array => .{ .string = @field(args, field.name) },
                     .int, .comptime_int => .{ .integer = @field(args, field.name) },
                     .float, .comptime_float => .{ .float = @field(args, field.name) },
-                    else => if (@hasDecl(@TypeOf(@field(args, field.name)), "toJetquery")) self.coerceValue(args, field.name) else @compileError(
-                        "Unsupported type for field: " ++ field.name ++ "(" ++ @typeName(field.type) ++ ")",
-                    ),
+                    else => if (@hasDecl(@TypeOf(@field(args, field.name)), "toJetQuery"))
+                        self.delegateCoerceValue(args, field.name)
+                    else
+                        @compileError(
+                            "Unsupported type for field: " ++ field.name ++ " (" ++ @typeName(field.type) ++ ")",
+                        ),
                 };
                 nodes[index] = .{ .name = field.name, .value = value };
             }
             return &nodes;
-        }
-
-        fn FieldType(C: type, comptime name: []const u8) type {
-            inline for (std.meta.fields(C)) |field| {
-                if (std.mem.eql(u8, field.name, name)) return field.type;
-            }
-            @compileError("Type `" ++ @typeName(T) ++ "` does not define field `" ++ name ++ "`");
-        }
-
-        fn coerceValue(self: Self, args: anytype, comptime field_name: []const u8) jetquery.Value {
-            return switch (FieldType(T.Definition, field_name)) {
-                []const u8 => .{
-                    .string = @field(args, field_name).toJetquery([]const u8, self.allocator),
-                },
-                usize => .{
-                    .integer = @field(args, field_name).toJetquery(usize, self.allocator),
-                },
-                f64 => .{
-                    .float = @field(args, field_name).toJetquery(f64, self.allocator),
-                },
-                bool => .{
-                    .boolean = @field(args, field_name).toJetquery(bool, self.allocator),
-                },
-                else => |C| @compileError("Unsupported schema field type `" ++ @typeName(C) ++ "` for field `" ++ field_name ++ "`"),
-            };
         }
 
         fn renderSelect(self: Self, writer: anytype, adapter: jetquery.adapters.Adapter) !void {
@@ -322,6 +305,78 @@ pub fn Query(T: type) type {
                     if (index + 1 < self.where_nodes.len) " and " else "",
                 });
             }
+        }
+
+        fn FieldType(comptime name: []const u8) type {
+            inline for (std.meta.fields(T.Definition)) |field| {
+                if (std.mem.eql(u8, field.name, name)) return field.type;
+            }
+            @compileError("Type `" ++ @typeName(T) ++ "` does not define field `" ++ name ++ "`");
+        }
+
+        fn delegateCoerceValue(self: Self, args: anytype, comptime field_name: []const u8) jetquery.Value {
+            return switch (FieldType(field_name)) {
+                []const u8 => .{
+                    .string = @field(args, field_name).toJetQuery([]const u8, self.allocator),
+                },
+                usize => .{
+                    .integer = @field(args, field_name).toJetQuery(usize, self.allocator),
+                },
+                f64 => .{
+                    .float = @field(args, field_name).toJetQuery(f64, self.allocator),
+                },
+                bool => .{
+                    .boolean = @field(args, field_name).toJetQuery(bool, self.allocator),
+                },
+                else => |C| @compileError("Unsupported schema field type `" ++ @typeName(C) ++ "` for field `" ++ field_name ++ "`"),
+            };
+        }
+
+        // Try to coerce a string to the appropriate value, e.g. parse a string to an int, etc. On
+        // failure, `jetquery.Value.err` is active, which will prevent the query from executing.
+        // We store errors instead of returning them to allow simple method chaining
+        // (`.select().where()`, etc.).
+        fn coerceString(FT: type, comptime field_name: []const u8, value: []const u8) jetquery.Value {
+            return switch (FT) {
+                []const u8 => .{ .string = value },
+                usize => parseIntegerOrError(value),
+                f64 => parseFloatOrError(value),
+                bool => parseBooleanOrError(value),
+                else => |C| @compileError("Unsupported schema field type `" ++ @typeName(C) ++ "` for field `" ++ field_name ++ "`"),
+            };
+        }
+
+        // Parse a string into a `Value.integer`, otherwise a `Value.err`.
+        fn parseIntegerOrError(input: []const u8) jetquery.Value {
+            const integer = std.fmt.parseInt(usize, input, 10) catch |err| {
+                return .{ .err = err };
+            };
+            return .{ .integer = integer };
+        }
+
+        // Parse a string into a `Value.float`, otherwise a `Value.err`.
+        fn parseFloatOrError(input: []const u8) jetquery.Value {
+            const float = std.fmt.parseFloat(f64, input) catch |err| {
+                return .{ .err = err };
+            };
+            return .{ .float = float };
+        }
+
+        // Parse a string into a `Value.boolean`, otherwise a `Value.err`.
+        // "1" and "0" are considered as `true` and `false` respectively.
+        fn parseBooleanOrError(input: []const u8) jetquery.Value {
+            if (input.len != 1) return .{ .err = error.JetQueryUnrecognizedBoolean };
+
+            const maybe_boolean = switch (input[0]) {
+                '1' => true,
+                '0' => false,
+                else => null,
+            };
+
+            return if (maybe_boolean) |boolean|
+                .{ .boolean = boolean }
+            else
+                .{ .err = error.JetQueryUnrecognizedBoolean };
         }
     };
 }

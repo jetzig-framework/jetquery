@@ -128,6 +128,7 @@ pub fn columnTypeSql(self: PostgresqlAdapter, column_type: jetquery.Column.Type)
     return switch (column_type) {
         .string => "VARCHAR(255)",
         .integer => "INTEGER",
+        .boolean => "BOOLEAN",
         .float => "REAL",
         .decimal => "NUMERIC",
         .datetime => "TIMESTAMP",

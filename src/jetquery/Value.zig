@@ -7,6 +7,7 @@ pub const Value = union(enum) {
     float: f64,
     boolean: bool,
     Null: void,
+    err: anyerror,
 
     pub fn toSql(self: Value, buf: []u8) ![]const u8 {
         // TODO: Prevent SQL injection
@@ -15,9 +16,10 @@ pub const Value = union(enum) {
         switch (self) {
             .string => |value| try writer.print("'{s}'", .{value}),
             .integer => |value| try writer.print("{}", .{value}),
-            .float => |value| try writer.print("{}", .{value}),
+            .float => |value| try writer.print("{d}", .{value}),
             .boolean => |value| try writer.print("{}", .{@as(u1, if (value) 1 else 0)}),
             .Null => try writer.print("NULL", .{}),
+            .err => |err| return err,
         }
         return stream.getWritten();
     }
@@ -29,6 +31,7 @@ pub const Value = union(enum) {
             .float => |value| other == .float and value == other.float,
             .boolean => |value| other == .boolean and value == other.boolean,
             .Null => other == .Null,
+            .err => false,
         };
     }
 };

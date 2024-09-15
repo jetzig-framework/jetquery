@@ -7,7 +7,7 @@ options: Options = .{},
 primary_key: bool = false,
 timestamps: bool = false,
 
-pub const Type = enum { string, integer, float, decimal, datetime, text };
+pub const Type = enum { string, integer, float, decimal, boolean, datetime, text };
 pub const Options = struct {};
 
 pub fn init(name: []const u8, column_type: Type, options: Options) Column {
