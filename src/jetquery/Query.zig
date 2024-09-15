@@ -242,6 +242,7 @@ pub fn Query(T: type) type {
             return &nodes;
         }
 
+        // Render the query's `select` statement as SQL.
         fn renderSelect(self: Self, writer: anytype, adapter: jetquery.adapters.Adapter) !void {
             try writer.print("select ", .{});
             for (self.select_columns, 0..) |column, index| {
@@ -255,6 +256,7 @@ pub fn Query(T: type) type {
             if (self.limit_bound) |bound| try writer.print(" limit {}", .{bound});
         }
 
+        // Render the query's `insert` statement as SQL.
         fn renderInsert(self: Self, writer: anytype, adapter: jetquery.adapters.Adapter) !void {
             try writer.print("insert into {} (", .{adapter.identifier(T.table_name)});
             for (self.insert_nodes, 0..) |node, index| {
@@ -273,6 +275,7 @@ pub fn Query(T: type) type {
             }
         }
 
+        // Render the query's `update` statement as SQL.
         fn renderUpdate(self: Self, writer: anytype, adapter: jetquery.adapters.Adapter) !void {
             try writer.print("update {} set ", .{adapter.identifier(T.table_name)});
             for (self.update_nodes, 0..) |node, index| {
@@ -286,11 +289,13 @@ pub fn Query(T: type) type {
             try self.renderWhere(writer, adapter);
         }
 
+        // Render the query's `delete` statement as SQL.
         fn renderDelete(self: Self, writer: anytype, adapter: jetquery.adapters.Adapter) !void {
             try writer.print("delete from {}", .{adapter.identifier(T.table_name)});
             try self.renderWhere(writer, adapter);
         }
 
+        // Render the query's `where` clause as SQL.
         fn renderWhere(self: Self, writer: anytype, adapter: jetquery.adapters.Adapter) !void {
             if (self.where_nodes.len == 0) return;
 
@@ -307,6 +312,7 @@ pub fn Query(T: type) type {
             }
         }
 
+        // Get the type for a given field name from the table's definition struct.
         fn FieldType(comptime name: []const u8) type {
             inline for (std.meta.fields(T.Definition)) |field| {
                 if (std.mem.eql(u8, field.name, name)) return field.type;
@@ -314,6 +320,12 @@ pub fn Query(T: type) type {
             @compileError("Type `" ++ @typeName(T) ++ "` does not define field `" ++ name ++ "`");
         }
 
+        // Call `toJetQuery` with a given type and an allocator on the given arg field. Although
+        // this function expects a return value not specific to JetQuery, the intention is that
+        // arbitrary types can implement `toJetQuery` if the author wants them to be used with
+        // JetQuery, otherwise a typical Zig compile error will occur. This feature is used by
+        // Zmpl for converting Zmpl Values, allowing e.g. request params in Jetzig to be used as
+        // JetQuery whereclause/etc. params.
         fn delegateCoerceValue(self: Self, args: anytype, comptime field_name: []const u8) jetquery.Value {
             return switch (FieldType(field_name)) {
                 []const u8 => .{
