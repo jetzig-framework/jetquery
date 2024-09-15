@@ -143,7 +143,7 @@ pub fn identifier(self: PostgresqlAdapter, name: []const u8) jetquery.Identifier
 
 pub fn primaryKeySql(self: PostgresqlAdapter) []const u8 {
     _ = self;
-    return "PRIMARY KEY";
+    return "SERIAL PRIMARY KEY";
 }
 
 fn initPool(allocator: std.mem.Allocator, options: Options) !*pg.Pool {

@@ -72,10 +72,10 @@ pub fn createTable(self: *Repo, name: []const u8, columns: []const jetquery.Colu
             });
         } else {
             try writer.print(
-                \\{} {s} {s}{s}
+                \\{0} {1s} {2s}{3s}
             , .{
                 self.adapter.identifier(column.name),
-                self.adapter.columnTypeSql(column.type),
+                if (column.primary_key) "" else self.adapter.columnTypeSql(column.type),
                 if (column.primary_key) self.adapter.primaryKeySql() else "",
                 if (index < columns.len - 1) ", " else "",
             });

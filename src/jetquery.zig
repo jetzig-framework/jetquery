@@ -138,6 +138,45 @@ test "incompatible query type" {
     );
 }
 
+test "toJetquery()" {
+    const Schema = struct {
+        pub const Cats = Table("cats", struct { name: []const u8, paws: usize }, .{});
+    };
+
+    const Name = struct {
+        pub fn toJetquery(self: @This(), T: type, allocator: std.mem.Allocator) T {
+            _ = self;
+            _ = allocator;
+            return switch (T) {
+                []const u8 => "Hercules",
+                else => @compileError("Cannot coerce to " ++ @typeName(T)),
+            };
+        }
+    };
+
+    const Paws = struct {
+        pub fn toJetquery(self: @This(), T: type, allocator: std.mem.Allocator) T {
+            _ = self;
+            _ = allocator;
+            return switch (T) {
+                usize => 4,
+                else => @compileError("Cannot coerce to " ++ @typeName(T)),
+            };
+        }
+    };
+
+    const name = Name{};
+    const paws = Paws{};
+
+    const query = Query(Schema.Cats).init(std.testing.allocator)
+        .insert(.{ .name = name, .paws = paws });
+    defer query.deinit();
+    var buf: [1024]u8 = undefined;
+    try std.testing.expectEqualStrings(
+        \\insert into "cats" ("name", "paws") values ('Hercules', 4)
+    , try query.toSql(&buf, adapters.test_adapter));
+}
+
 test "timestamps (create)" {
     // TODO
 }

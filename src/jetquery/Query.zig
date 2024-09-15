@@ -48,7 +48,7 @@ pub fn Query(T: type) type {
         /// Specify a where clause for the query.
         pub fn where(self: Self, args: anytype) Self {
             validateFields(args);
-            const nodes = buildParamNodes(args);
+            const nodes = self.buildParamNodes(args);
 
             return self.merge(.{ .where_nodes = nodes });
         }
@@ -61,7 +61,7 @@ pub fn Query(T: type) type {
         /// Specify values to insert.
         pub fn insert(self: Self, args: anytype) Self {
             validateFields(args);
-            const nodes = buildParamNodes(args);
+            const nodes = self.buildParamNodes(args);
 
             return self.merge(.{ .insert_nodes = nodes });
         }
@@ -69,7 +69,7 @@ pub fn Query(T: type) type {
         /// Specify values to update.
         pub fn update(self: Self, args: anytype) Self {
             validateFields(args);
-            const nodes = buildParamNodes(args);
+            const nodes = self.buildParamNodes(args);
 
             return self.merge(.{ .update_nodes = nodes });
         }
@@ -205,19 +205,58 @@ pub fn Query(T: type) type {
             }
         }
 
-        fn buildParamNodes(args: anytype) []const ParamNode {
+        fn buildParamNodes(self: Self, args: anytype) []const ParamNode {
             var nodes: [std.meta.fields(@TypeOf(args)).len]ParamNode = undefined;
             inline for (std.meta.fields(@TypeOf(args)), 0..) |field, index| {
                 if (!@hasField(T.Definition, field.name)) @compileError("Unknown field: " ++ field.name);
                 const value = switch (@typeInfo(@TypeOf(@field(args, field.name)))) {
-                    .pointer, .array => .{ .string = @field(args, field.name) },
+                    .pointer => |info| switch (info.size) {
+                        .Slice => .{ .string = @field(args, field.name) },
+                        else => blk: {
+                            const child_info = @typeInfo(info.child);
+                            if (child_info == .array) {
+                                const arr = &child_info.array;
+                                if (arr.child == u8) break :blk .{ .string = @field(args, field.name) };
+                            }
+                            if (@hasDecl(info.child, "toJetquery")) break :blk self.coerceValue(args, field.name);
+                            @compileError("Unsupported type for field: " ++ field.name ++ "(" ++ @typeName(info.child) ++ ")");
+                        },
+                    },
+                    .array => .{ .string = @field(args, field.name) },
                     .int, .comptime_int => .{ .integer = @field(args, field.name) },
                     .float, .comptime_float => .{ .float = @field(args, field.name) },
-                    else => @compileError("Unsupported type for field: " ++ field.name),
+                    else => if (@hasDecl(@TypeOf(@field(args, field.name)), "toJetquery")) self.coerceValue(args, field.name) else @compileError(
+                        "Unsupported type for field: " ++ field.name ++ "(" ++ @typeName(field.type) ++ ")",
+                    ),
                 };
                 nodes[index] = .{ .name = field.name, .value = value };
             }
             return &nodes;
+        }
+
+        fn FieldType(C: type, comptime name: []const u8) type {
+            inline for (std.meta.fields(C)) |field| {
+                if (std.mem.eql(u8, field.name, name)) return field.type;
+            }
+            @compileError("Type `" ++ @typeName(T) ++ "` does not define field `" ++ name ++ "`");
+        }
+
+        fn coerceValue(self: Self, args: anytype, comptime field_name: []const u8) jetquery.Value {
+            return switch (FieldType(T.Definition, field_name)) {
+                []const u8 => .{
+                    .string = @field(args, field_name).toJetquery([]const u8, self.allocator),
+                },
+                usize => .{
+                    .integer = @field(args, field_name).toJetquery(usize, self.allocator),
+                },
+                f64 => .{
+                    .float = @field(args, field_name).toJetquery(f64, self.allocator),
+                },
+                bool => .{
+                    .boolean = @field(args, field_name).toJetquery(bool, self.allocator),
+                },
+                else => |C| @compileError("Unsupported schema field type `" ++ @typeName(C) ++ "` for field `" ++ field_name ++ "`"),
+            };
         }
 
         fn renderSelect(self: Self, writer: anytype, adapter: jetquery.adapters.Adapter) !void {
