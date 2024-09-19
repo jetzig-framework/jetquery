@@ -91,15 +91,19 @@ pub fn deinit(self: *PostgresqlAdapter) void {
 }
 
 /// Execute the given query with a pooled connection.
-pub fn execute(self: *PostgresqlAdapter, sql: []const u8, repo: *const jetquery.Repo) !jetquery.Result {
+pub fn execute(
+    self: *PostgresqlAdapter,
+    repo: *const jetquery.Repo,
+    sql: []const u8,
+    values: []const jetquery.Value,
+) !jetquery.Result {
     if (!self.connected and self.lazy_connect) self.pool = try initPool(self.allocator, self.options);
 
     const options: pg.Conn.QueryOpts = .{ .column_names = true };
     var connection = try self.pool.acquire();
     errdefer self.pool.release(connection);
 
-    // TODO: values
-    const result = connection.queryOpts(sql, .{}, options) catch |err| {
+    const result = connection.queryOpts(sql, values, options) catch |err| {
         if (connection.err) |connection_error| {
             try repo.eventCallback(.{
                 .sql = sql,
@@ -142,9 +146,20 @@ pub fn identifier(self: PostgresqlAdapter, name: []const u8) jetquery.Identifier
     return .{ .name = name, .quote_char = '"' };
 }
 
+/// SQL fragment used to indicate a primary key.
 pub fn primaryKeySql(self: PostgresqlAdapter) []const u8 {
     _ = self;
     return "SERIAL PRIMARY KEY";
+}
+
+/// SQL representing a bind parameter, e.g. `$1`.
+pub fn paramSql(self: PostgresqlAdapter, buf: []u8, value: jetquery.Value, index: usize) ![]const u8 {
+    _ = value;
+    _ = self;
+    var stream = std.io.fixedBufferStream(buf);
+    const writer = stream.writer();
+    try writer.print("${}", .{index + 1});
+    return stream.getWritten();
 }
 
 fn initPool(allocator: std.mem.Allocator, options: Options) !*pg.Pool {

@@ -43,7 +43,7 @@ pub fn deinit(self: *Repo) void {
 /// Execute the given query and return results.
 pub fn execute(self: *Repo, query: anytype) !jetquery.Result {
     var buf: [4096]u8 = undefined;
-    return try self.adapter.execute(try query.toSql(&buf, self.adapter), self);
+    return try self.adapter.execute(self, try query.toSql(&buf, self.adapter), try query.values());
 }
 
 pub const CreateTableOptions = struct { if_not_exists: bool = false };
@@ -83,7 +83,7 @@ pub fn createTable(self: *Repo, name: []const u8, columns: []const jetquery.Colu
     }
 
     try writer.print(")", .{});
-    var result = try self.adapter.execute(buf.items, self);
+    var result = try self.adapter.execute(self, buf.items, &.{});
     try result.drain();
     defer result.deinit();
 }
@@ -102,7 +102,7 @@ pub fn dropTable(self: *Repo, name: []const u8, options: DropTableOptions) !void
         \\drop table{s} "{s}"
     , .{ if (options.if_exists) " if exists" else "", name });
 
-    var result = try self.adapter.execute(buf.items, self);
+    var result = try self.adapter.execute(self, buf.items, &.{});
     try result.drain();
     defer result.deinit();
 }
@@ -128,12 +128,12 @@ test "repo" {
         pub const Cats = jetquery.Table("cats", struct { name: []const u8, paws: usize }, .{});
     };
 
-    var drop_table = try repo.adapter.execute("drop table if exists cats", &repo);
+    var drop_table = try repo.adapter.execute(&repo, "drop table if exists cats", &.{});
     defer drop_table.deinit();
 
-    var create_table = try repo.adapter.execute("create table cats (name varchar(255), paws int)", &repo);
+    var create_table = try repo.adapter.execute(&repo, "create table cats (name varchar(255), paws int)", &.{});
     defer create_table.deinit();
-    var insert = try repo.adapter.execute("insert into cats (name, paws) values ('Hercules', 4)", &repo);
+    var insert = try repo.adapter.execute(&repo, "insert into cats (name, paws) values ('Hercules', 4)", &.{});
     defer insert.deinit();
 
     const query = jetquery.Query(Schema.Cats).init(std.testing.allocator).select(&.{ .name, .paws });

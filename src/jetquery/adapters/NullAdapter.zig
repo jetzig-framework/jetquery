@@ -2,10 +2,11 @@ const jetquery = @import("../../jetquery.zig");
 
 const NullAdapter = @This();
 
-pub fn execute(self: *const NullAdapter, sql: []const u8, repo: *const jetquery.Repo) !jetquery.Result {
+pub fn execute(self: *const NullAdapter, repo: *const jetquery.Repo, sql: []const u8, values: anytype) !jetquery.Result {
     _ = self;
-    _ = sql;
     _ = repo;
+    _ = sql;
+    _ = values;
     return error.JetQueryNullAdapterError;
 }
 
@@ -27,5 +28,13 @@ pub fn identifier(self: NullAdapter, name: []const u8) jetquery.Identifier {
 
 pub fn primaryKeySql(self: NullAdapter) []const u8 {
     _ = self;
+    return "";
+}
+
+pub fn paramSql(self: NullAdapter, buf: []u8, value: jetquery.Value, index: usize) ![]const u8 {
+    _ = buf;
+    _ = value;
+    _ = self;
+    _ = index;
     return "";
 }

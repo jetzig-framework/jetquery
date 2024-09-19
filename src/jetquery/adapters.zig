@@ -8,9 +8,14 @@ pub const Adapter = union(enum) {
     null: NullAdapter,
 
     /// Execute SQL with the active adapter.
-    pub fn execute(self: *Adapter, sql: []const u8, repo: *const jetquery.Repo) !jetquery.Result {
+    pub fn execute(
+        self: *Adapter,
+        repo: *const jetquery.Repo,
+        sql: []const u8,
+        values: []const jetquery.Value,
+    ) !jetquery.Result {
         return switch (self.*) {
-            inline else => |*adapter| try adapter.execute(sql, repo),
+            inline else => |*adapter| try adapter.execute(repo, sql, values),
         };
     }
 
@@ -32,6 +37,13 @@ pub const Adapter = union(enum) {
     pub fn primaryKeySql(self: Adapter) []const u8 {
         return switch (self) {
             inline else => |*adapter| adapter.primaryKeySql(),
+        };
+    }
+
+    /// SQL representing a bind parameter, e.g. `$1`.
+    pub fn paramSql(self: Adapter, buf: []u8, value: jetquery.Value, index: usize) ![]const u8 {
+        return switch (self) {
+            inline else => |*adapter| try adapter.paramSql(buf, value, index),
         };
     }
 };

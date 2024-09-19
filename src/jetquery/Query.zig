@@ -14,6 +14,7 @@ const ParamNode = struct {
 /// ```
 pub fn Query(T: type) type {
     const QueryType = enum { select, insert, update, delete };
+    const ParamType = enum { insert, update, where };
 
     return struct {
         const Self = @This();
@@ -98,6 +99,14 @@ pub fn Query(T: type) type {
             return stream.getWritten();
         }
 
+        pub fn values(self: Self) ![]const jetquery.Value {
+            var buf = std.ArrayList(jetquery.Value).init(self.allocator);
+            for (self.where_nodes) |item| try buf.append(item.value);
+            for (self.insert_nodes) |item| try buf.append(item.value);
+            for (self.update_nodes) |item| try buf.append(item.value);
+            return try buf.toOwnedSlice();
+        }
+
         fn validateQueryType(self: Self) !void {
             var count: u3 = 0;
 
@@ -116,6 +125,16 @@ pub fn Query(T: type) type {
             if (self.is_delete) return .delete;
 
             return null;
+        }
+
+        // Calculate param index for a given parameter type, guaranteeing non-overlapping indices
+        // for insert/update and where (insert and update cannot be used in the same query so
+        // cannot overlap). Used for generating bind param strings.
+        fn paramIndex(self: Self, param_type: ParamType, index: usize) usize {
+            return switch (param_type) {
+                .insert, .update => self.where_nodes.len + index,
+                .where => index,
+            };
         }
 
         // Merge the current query with given arguments.
@@ -267,9 +286,9 @@ pub fn Query(T: type) type {
             }
             try writer.print(") values (", .{});
             for (self.insert_nodes, 0..) |node, index| {
-                var buf: [1024]u8 = undefined;
+                var buf: [8]u8 = undefined;
                 try writer.print("{s}{s}", .{
-                    try node.value.toSql(&buf),
+                    try node.value.toSql(&buf, adapter, self.paramIndex(.insert, index)),
                     if (index + 1 < self.insert_nodes.len) ", " else ")",
                 });
             }
@@ -279,10 +298,10 @@ pub fn Query(T: type) type {
         fn renderUpdate(self: Self, writer: anytype, adapter: jetquery.adapters.Adapter) !void {
             try writer.print("update {} set ", .{adapter.identifier(T.table_name)});
             for (self.update_nodes, 0..) |node, index| {
-                var buf: [1024]u8 = undefined;
+                var buf: [8]u8 = undefined;
                 try writer.print("{} = {s}{s}", .{
                     adapter.identifier(node.name),
-                    try node.value.toSql(&buf),
+                    try node.value.toSql(&buf, adapter, self.paramIndex(.update, index)),
                     if (index < self.update_nodes.len - 1) ", " else "",
                 });
             }
@@ -301,12 +320,12 @@ pub fn Query(T: type) type {
 
             try writer.print(" where ", .{});
             for (self.where_nodes, 0..) |node, index| {
-                var buf: [1024]u8 = undefined;
+                var buf: [8]u8 = undefined;
                 try writer.print(
                     \\{} = {s}{s}
                 , .{
                     adapter.identifier(node.name),
-                    try node.value.toSql(&buf),
+                    try node.value.toSql(&buf, adapter, self.paramIndex(.where, index)),
                     if (index + 1 < self.where_nodes.len) " and " else "",
                 });
             }

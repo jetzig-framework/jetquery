@@ -39,7 +39,7 @@ pub fn run(self: Migrate) !void {
 
             try migration.upFn(self.repo);
 
-            var result = try self.repo.execute(query);
+            var result = try self.repo.execute(query, &.{});
             defer result.deinit();
 
             try self.repo.eventCallback(.{
@@ -61,7 +61,7 @@ fn isMigrated(self: Migrate, migration: Migration) !bool {
         .where(.{ .version = migration.version });
     defer query.deinit();
 
-    var result = try self.repo.execute(query);
+    var result = try self.repo.execute(query, &.{});
     defer result.deinit();
 
     while (try result.next(query)) |_| {
@@ -107,7 +107,7 @@ test "migrate" {
     const query1 = jetquery.Query(Schema.Migrations).init(std.testing.allocator)
         .select(&.{.version});
     defer query1.deinit();
-    var result1 = try repo.execute(query1);
+    var result1 = try repo.execute(query1, &.{});
     defer result1.deinit();
 
     while (try result1.next(query1)) |row| {
@@ -126,6 +126,6 @@ test "migrate" {
         .init(std.testing.allocator)
         .select(&.{ .name, .paws, .created_at, .updated_at });
     defer query2.deinit();
-    var result2 = try repo.execute(query2);
+    var result2 = try repo.execute(query2, &.{});
     defer result2.deinit();
 }

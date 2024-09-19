@@ -4,8 +4,7 @@
     .minimum_zig_version = "0.14.0",
     .dependencies = .{
         .pg = .{
-            .url = "https://github.com/karlseguin/pg.zig/archive/adc728df1f19d4ef67d009b80f4cf53aae2bcbd1.tar.gz",
-            .hash = "1220914ac9634b448c910064b2097e7f856e0729a21d78194da8ebfc3cf676723b56",
+            .path = "../pg.zig",
         },
         .zul = .{
             .url = "https://github.com/karlseguin/zul/archive/ae0c27350c0db6b460f22cba30b6b0c4a02d1ffd.tar.gz",
