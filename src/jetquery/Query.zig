@@ -2,307 +2,185 @@ const std = @import("std");
 
 const jetquery = @import("../jetquery.zig");
 
-/// A node in a where clause, e.g. `x = 10`.
-const ParamNode = struct {
-    name: []const u8,
-    value: jetquery.Value,
-};
+/// Available SQL statement types.
+const QueryType = enum { select, update, insert, delete };
 
 /// Create a new query by passing a table definition.
 /// ```zig
 /// const query = Query(Schema.Cats).init(allocator);
 /// ```
 pub fn Query(T: type) type {
-    const QueryType = enum { select, insert, update, delete };
-    const ParamType = enum { insert, update, where };
-
     return struct {
-        const Self = @This();
+        table: T,
+
         pub const Definition = T.Definition;
 
-        allocator: std.mem.Allocator,
-        where_nodes: []const ParamNode = &.{},
-        select_columns: []const jetquery.Column = &.{},
-        insert_nodes: []const ParamNode = &.{},
-        update_nodes: []const ParamNode = &.{},
+        pub fn select(comptime columns: []const std.meta.FieldEnum(T.Definition)) Statement(.select, T, columns) {
+            return Statement(.select, T, columns){ .columns = columns };
+        }
+
+        pub fn update(args: anytype) Clause(T, @TypeOf(args)) {
+            var clause: Clause(T, @TypeOf(args)) = undefined;
+            inline for (std.meta.fields(@TypeOf(args)), 0..) |field, index| {
+                const value = @field(args, field.name);
+                @field(clause.field_values, std.fmt.comptimePrint("{}", .{index})) = value;
+                clause.field_names[index] = field.name;
+            }
+            clause.columns = &.{};
+            clause.query_type = .update;
+            clause.limit_bound = null;
+            return clause;
+        }
+
+        pub fn insert(args: anytype) Clause(T, @TypeOf(args)) {
+            var clause: Clause(T, @TypeOf(args)) = undefined;
+            inline for (std.meta.fields(@TypeOf(args)), 0..) |field, index| {
+                const value = @field(args, field.name);
+                @field(clause.field_values, std.fmt.comptimePrint("{}", .{index})) = value;
+                clause.field_names[index] = field.name;
+            }
+            clause.columns = &.{};
+            clause.query_type = .insert;
+            clause.limit_bound = null;
+            return clause;
+        }
+
+        pub fn delete() Clause(T, @TypeOf(.{})) {
+            var clause: Clause(T, @TypeOf(.{})) = undefined;
+            clause.columns = &.{};
+            clause.query_type = .delete;
+            clause.limit_bound = null;
+            return clause;
+        }
+    };
+}
+
+fn Fields(T: type) type {
+    var fields: [std.meta.fields(T).len]std.builtin.Type.StructField = undefined;
+    for (std.meta.fields(T), 0..) |field, index| {
+        fields[index] = .{
+            .name = std.fmt.comptimePrint("{}", .{index}),
+            .type = FieldType(field.type),
+            .default_value = null,
+            .is_comptime = false,
+            .alignment = @alignOf(FieldType(field.type)),
+        };
+    }
+    return @Type(.{
+        .@"struct" = .{
+            .layout = .auto,
+            .fields = &fields,
+            .decls = &.{},
+            .is_tuple = true,
+        },
+    });
+}
+
+fn FieldType(T: type) type {
+    return switch (@typeInfo(T)) {
+        .comptime_int, .int => usize,
+        .float, .comptime_float => f64,
+        .bool => bool,
+        .pointer => []const u8,
+        else => @compileError("Unsupported type: " ++ @typeName(T)),
+    };
+}
+
+fn Clause(T: type, Args: type) type {
+    return struct {
+        field_values: Fields(Args),
+        field_names: [std.meta.fields(Args).len][]const u8,
+        columns: []const std.meta.FieldEnum(T.Definition) = &.{},
         limit_bound: ?usize = null,
-        is_delete: bool = false,
+        query_type: QueryType,
 
-        /// Initialize a new Query.
-        pub fn init(allocator: std.mem.Allocator) Self {
-            return .{ .allocator = allocator };
+        pub const Definition = T.Definition;
+
+        const Self = @This();
+
+        pub fn where(self: Self, args: anytype) Clause(T, @TypeOf(args)) {
+            var clause: Clause(T, @TypeOf(args)) = undefined;
+            inline for (std.meta.fields(@TypeOf(args)), 0..) |field, index| {
+                const value = @field(args, field.name);
+                @field(clause.field_values, std.fmt.comptimePrint("{}", .{index})) = value;
+                clause.field_names[index] = field.name;
+            }
+            clause.columns = self.columns;
+            clause.query_type = self.query_type;
+            clause.limit_bound = self.limit_bound;
+            return clause;
         }
 
-        /// Free resources associated with this query.
-        pub fn deinit(self: Self) void {
-            self.allocator.free(self.where_nodes);
-            self.allocator.free(self.select_columns);
-            self.allocator.free(self.insert_nodes);
-            self.allocator.free(self.update_nodes);
+        pub fn limit(self: Self, limit_bound: usize) Self {
+            return .{
+                .field_values = self.field_values,
+                .field_names = self.field_names,
+                .query_type = self.query_type,
+                .columns = self.columns,
+                .limit_bound = limit_bound,
+            };
         }
 
-        /// Specify columns to select in the query.
-        pub fn select(self: Self, select_columns: []const std.meta.FieldEnum(T.Definition)) Self {
-            return self.merge(.{ .select_columns = select_columns });
-        }
-
-        /// Specify a where clause for the query.
-        pub fn where(self: Self, args: anytype) Self {
-            validateFields(args);
-            const nodes = self.buildParamNodes(args);
-
-            return self.merge(.{ .where_nodes = nodes });
-        }
-
-        /// Apply a limit to the query's results.
-        pub fn limit(self: Self, bound: usize) Self {
-            return self.merge(.{ .limit_bound = bound });
-        }
-
-        /// Specify values to insert.
-        pub fn insert(self: Self, args: anytype) Self {
-            validateFields(args);
-            const nodes = self.buildParamNodes(args);
-
-            return self.merge(.{ .insert_nodes = nodes });
-        }
-
-        /// Specify values to update.
-        pub fn update(self: Self, args: anytype) Self {
-            validateFields(args);
-            const nodes = self.buildParamNodes(args);
-
-            return self.merge(.{ .update_nodes = nodes });
-        }
-
-        /// Specify delete query.
-        pub fn delete(self: Self) Self {
-            return self.merge(.{ .is_delete = true });
-        }
-
-        /// Render the currenty query as SQL.
         pub fn toSql(self: Self, buf: []u8, adapter: jetquery.adapters.Adapter) ![]const u8 {
             var stream = std.io.fixedBufferStream(buf);
             const writer = stream.writer();
-
-            try self.validateQueryType();
-
-            if (self.detectQueryType()) |query_type| {
-                switch (query_type) {
-                    .select => try self.renderSelect(writer, adapter),
-                    .insert => try self.renderInsert(writer, adapter),
-                    .update => try self.renderUpdate(writer, adapter),
-                    .delete => try self.renderDelete(writer, adapter),
-                }
-            } else return error.JetQueryUndefinedQueryType;
+            switch (self.query_type) {
+                .select => try self.renderSelect(writer, adapter),
+                .insert => try self.renderInsert(writer, adapter),
+                .update => try self.renderUpdate(writer, adapter),
+                .delete => try self.renderDelete(writer, adapter),
+            }
 
             return stream.getWritten();
         }
 
-        pub fn values(self: Self) ![]const jetquery.Value {
-            var buf = std.ArrayList(jetquery.Value).init(self.allocator);
-            for (self.where_nodes) |item| try buf.append(item.value);
-            for (self.insert_nodes) |item| try buf.append(item.value);
-            for (self.update_nodes) |item| try buf.append(item.value);
-            return try buf.toOwnedSlice();
-        }
-
-        fn validateQueryType(self: Self) !void {
-            var count: u3 = 0;
-
-            if (self.select_columns.len > 0) count += 1;
-            if (self.insert_nodes.len > 0) count += 1;
-            if (self.update_nodes.len > 0) count += 1;
-            if (self.is_delete) count += 1;
-
-            if (count != 1) return error.JetQueryIncompatibleQueryType;
-        }
-
-        fn detectQueryType(self: Self) ?QueryType {
-            if (self.select_columns.len > 0) return .select;
-            if (self.insert_nodes.len > 0) return .insert;
-            if (self.update_nodes.len > 0) return .update;
-            if (self.is_delete) return .delete;
-
-            return null;
-        }
-
-        // Calculate param index for a given parameter type, guaranteeing non-overlapping indices
-        // for insert/update and where (insert and update cannot be used in the same query so
-        // cannot overlap). Used for generating bind param strings.
-        fn paramIndex(self: Self, param_type: ParamType, index: usize) usize {
-            return switch (param_type) {
-                .insert, .update => self.where_nodes.len + index,
-                .where => index,
-            };
-        }
-
-        // Merge the current query with given arguments.
-        fn merge(self: Self, args: anytype) Self {
-            defer self.deinit();
-
-            var where_nodes = std.ArrayList(ParamNode).init(self.allocator);
-            for (if (@hasField(@TypeOf(args), "where_nodes")) args.where_nodes else &.{}) |new_node| {
-                for (self.where_nodes) |node| {
-                    if (std.mem.eql(u8, node.name, new_node.name) and node.value.eql(new_node.value)) continue;
-                } else {
-                    where_nodes.append(new_node) catch @panic("OOM");
-                }
-            }
-            if (!@hasField(@TypeOf(args), "where_nodes")) {
-                where_nodes.appendSlice(self.where_nodes) catch @panic("OOM");
-            }
-
-            var insert_nodes = std.ArrayList(ParamNode).init(self.allocator);
-            for (if (@hasField(@TypeOf(args), "insert_nodes")) args.insert_nodes else &.{}) |new_node| {
-                for (self.insert_nodes) |node| {
-                    if (std.mem.eql(u8, node.name, new_node.name) and node.value.eql(new_node.value)) continue;
-                } else {
-                    insert_nodes.append(new_node) catch @panic("OOM");
-                }
-            }
-            if (!@hasField(@TypeOf(args), "insert_nodes")) {
-                insert_nodes.appendSlice(self.insert_nodes) catch @panic("OOM");
-            }
-
-            var update_nodes = std.ArrayList(ParamNode).init(self.allocator);
-            for (if (@hasField(@TypeOf(args), "update_nodes")) args.update_nodes else &.{}) |new_node| {
-                for (self.update_nodes) |node| {
-                    if (std.mem.eql(u8, node.name, new_node.name) and node.value.eql(new_node.value)) continue;
-                } else {
-                    update_nodes.append(new_node) catch @panic("OOM");
-                }
-            }
-            if (!@hasField(@TypeOf(args), "update_nodes")) {
-                update_nodes.appendSlice(self.update_nodes) catch @panic("OOM");
-            }
-
-            var select_columns = std.ArrayList(jetquery.Column).init(self.allocator);
-            for (if (@hasField(@TypeOf(args), "select_columns")) args.select_columns else &.{}) |name| {
-                for (self.select_columns) |column| {
-                    if (std.mem.eql(u8, column.name, @tagName(name))) continue;
-                } else {
-                    inline for (std.meta.fields(T.Definition)) |field| {
-                        if (std.mem.eql(u8, field.name, @tagName(name))) {
-                            const column = if (field.type == jetquery.DateTime)
-                                jetquery.Column{ .name = @tagName(name), .type = .datetime }
-                            else
-                                jetquery.Column{
-                                    .name = @tagName(name),
-                                    .type = switch (@typeInfo(field.type)) {
-                                        .pointer, .array => .string,
-                                        .int, .comptime_int => .integer,
-                                        .float, .comptime_float => .float,
-                                        .bool => .boolean,
-                                        else => @compileError("Unsupported type " ++ @typeName(field.type)),
-                                    },
-                                };
-                            select_columns.append(column) catch @panic("OOM");
-                            break;
-                        }
-                    }
-                }
-            }
-            if (!@hasField(@TypeOf(args), "select_columns")) {
-                select_columns.appendSlice(self.select_columns) catch @panic("OOM");
-            }
-
-            const cloned: Self = .{
-                .allocator = self.allocator,
-                .where_nodes = where_nodes.toOwnedSlice() catch @panic("OOM"),
-                .select_columns = select_columns.toOwnedSlice() catch @panic("OOM"),
-                .insert_nodes = insert_nodes.toOwnedSlice() catch @panic("OOM"),
-                .update_nodes = update_nodes.toOwnedSlice() catch @panic("OOM"),
-                .limit_bound = if (@hasField(@TypeOf(args), "limit_bound")) args.limit_bound else null,
-                .is_delete = self.is_delete or (@hasField(@TypeOf(args), "is_delete") and args.is_delete),
-            };
-            return cloned;
-        }
-
-        fn validateFields(args: anytype) void {
-            inline for (std.meta.fields(@TypeOf(args))) |field| {
-                if (!@hasField(T.Definition, field.name)) @compileError("Unknown field: " ++ field.name);
-            }
-        }
-
-        fn buildParamNodes(self: Self, args: anytype) []const ParamNode {
-            var nodes: [std.meta.fields(@TypeOf(args)).len]ParamNode = undefined;
-            inline for (std.meta.fields(@TypeOf(args)), 0..) |field, index| {
-                if (!@hasField(T.Definition, field.name)) @compileError("Unknown field: " ++ field.name);
-                const value = switch (@typeInfo(@TypeOf(@field(args, field.name)))) {
-                    .pointer => |info| switch (info.size) {
-                        .Slice => coerceString(FieldType(field.name), field.name, @field(args, field.name)),
-                        else => blk: {
-                            const child_info = @typeInfo(info.child);
-                            if (child_info == .array) {
-                                const arr = &child_info.array;
-                                if (arr.child == u8) break :blk coerceString(
-                                    FieldType(field.name),
-                                    field.name,
-                                    @field(args, field.name),
-                                );
-                            }
-                            if (@hasDecl(info.child, "toJetQuery")) break :blk self.delegateCoerceValue(args, field.name);
-                            @compileError("Unsupported type for field: " ++ field.name ++ " (" ++ @typeName(info.child) ++ ")");
-                        },
-                    },
-                    .array => .{ .string = @field(args, field.name) },
-                    .int, .comptime_int => .{ .integer = @field(args, field.name) },
-                    .float, .comptime_float => .{ .float = @field(args, field.name) },
-                    else => if (@hasDecl(@TypeOf(@field(args, field.name)), "toJetQuery"))
-                        self.delegateCoerceValue(args, field.name)
-                    else
-                        @compileError(
-                            "Unsupported type for field: " ++ field.name ++ " (" ++ @typeName(field.type) ++ ")",
-                        ),
-                };
-                nodes[index] = .{ .name = field.name, .value = value };
-            }
-            return &nodes;
+        pub fn values(self: Self) Fields(Args) {
+            return self.field_values;
         }
 
         // Render the query's `select` statement as SQL.
         fn renderSelect(self: Self, writer: anytype, adapter: jetquery.adapters.Adapter) !void {
-            try writer.print("select ", .{});
-            for (self.select_columns, 0..) |column, index| {
+            try writer.print("SELECT ", .{});
+            for (self.columns, 0..) |column, index| {
                 try writer.print("{}{s} ", .{
-                    adapter.identifier(column.name),
-                    if (index < self.select_columns.len - 1) "," else "",
+                    adapter.identifier(@tagName(column)),
+                    if (index < self.columns.len - 1) "," else "",
                 });
             }
-            try writer.print("from {}", .{adapter.identifier(T.table_name)});
+            try writer.print("FROM {}", .{adapter.identifier(T.table_name)});
             try self.renderWhere(writer, adapter);
-            if (self.limit_bound) |bound| try writer.print(" limit {}", .{bound});
+            if (self.limit_bound) |bound| try writer.print(" LIMIT {}", .{bound});
         }
 
         // Render the query's `insert` statement as SQL.
         fn renderInsert(self: Self, writer: anytype, adapter: jetquery.adapters.Adapter) !void {
-            try writer.print("insert into {} (", .{adapter.identifier(T.table_name)});
-            for (self.insert_nodes, 0..) |node, index| {
+            try writer.print("INSERT INTO {} (", .{adapter.identifier(T.table_name)});
+            for (self.field_names, 0..) |field_name, index| {
                 try writer.print("{}{s}", .{
-                    adapter.identifier(node.name),
-                    if (index < self.insert_nodes.len - 1) ", " else "",
+                    adapter.identifier(field_name),
+                    if (index < self.field_names.len - 1) ", " else "",
                 });
             }
-            try writer.print(") values (", .{});
-            for (self.insert_nodes, 0..) |node, index| {
+            try writer.print(") VALUES (", .{});
+            inline for (self.field_names, self.field_values, 0..) |field_name, field_value, index| {
+                _ = field_name; // may use later with named bind-params
                 var buf: [8]u8 = undefined;
                 try writer.print("{s}{s}", .{
-                    try node.value.toSql(&buf, adapter, self.paramIndex(.insert, index)),
-                    if (index + 1 < self.insert_nodes.len) ", " else ")",
+                    try adapter.paramSql(&buf, field_value, index),
+                    if (index + 1 < self.field_names.len) ", " else ")",
                 });
             }
         }
 
         // Render the query's `update` statement as SQL.
         fn renderUpdate(self: Self, writer: anytype, adapter: jetquery.adapters.Adapter) !void {
-            try writer.print("update {} set ", .{adapter.identifier(T.table_name)});
-            for (self.update_nodes, 0..) |node, index| {
+            try writer.print("UPDATE {} SET ", .{adapter.identifier(T.table_name)});
+            inline for (self.field_names, self.field_values, 0..) |field_name, field_value, index| {
                 var buf: [8]u8 = undefined;
                 try writer.print("{} = {s}{s}", .{
-                    adapter.identifier(node.name),
-                    try node.value.toSql(&buf, adapter, self.paramIndex(.update, index)),
-                    if (index < self.update_nodes.len - 1) ", " else "",
+                    adapter.identifier(field_name),
+                    try adapter.paramSql(&buf, field_value, index),
+                    if (index < self.field_names.len - 1) ", " else "",
                 });
             }
             try self.renderWhere(writer, adapter);
@@ -310,29 +188,29 @@ pub fn Query(T: type) type {
 
         // Render the query's `delete` statement as SQL.
         fn renderDelete(self: Self, writer: anytype, adapter: jetquery.adapters.Adapter) !void {
-            try writer.print("delete from {}", .{adapter.identifier(T.table_name)});
+            try writer.print("DELETE FROM {}", .{adapter.identifier(T.table_name)});
             try self.renderWhere(writer, adapter);
         }
 
         // Render the query's `where` clause as SQL.
         fn renderWhere(self: Self, writer: anytype, adapter: jetquery.adapters.Adapter) !void {
-            if (self.where_nodes.len == 0) return;
+            if (self.field_names.len == 0) return;
 
-            try writer.print(" where ", .{});
-            for (self.where_nodes, 0..) |node, index| {
+            try writer.print(" WHERE ", .{});
+            inline for (self.field_names, self.field_values, 0..) |field_name, field_value, index| {
                 var buf: [8]u8 = undefined;
                 try writer.print(
                     \\{} = {s}{s}
                 , .{
-                    adapter.identifier(node.name),
-                    try node.value.toSql(&buf, adapter, self.paramIndex(.where, index)),
-                    if (index + 1 < self.where_nodes.len) " and " else "",
+                    adapter.identifier(field_name),
+                    try adapter.paramSql(&buf, field_value, index),
+                    if (index + 1 < self.field_names.len) " AND " else "",
                 });
             }
         }
 
         // Get the type for a given field name from the table's definition struct.
-        fn FieldType(comptime name: []const u8) type {
+        fn CoerceFieldType(comptime name: []const u8) type {
             inline for (std.meta.fields(T.Definition)) |field| {
                 if (std.mem.eql(u8, field.name, name)) return field.type;
             }
@@ -346,7 +224,7 @@ pub fn Query(T: type) type {
         // Zmpl for converting Zmpl Values, allowing e.g. request params in Jetzig to be used as
         // JetQuery whereclause/etc. params.
         fn delegateCoerceValue(self: Self, args: anytype, comptime field_name: []const u8) jetquery.Value {
-            return switch (FieldType(field_name)) {
+            return switch (CoerceFieldType(field_name)) {
                 []const u8 => .{
                     .string = @field(args, field_name).toJetQuery([]const u8, self.allocator),
                 },
@@ -408,6 +286,50 @@ pub fn Query(T: type) type {
                 .{ .boolean = boolean }
             else
                 .{ .err = error.JetQueryUnrecognizedBoolean };
+        }
+    };
+}
+
+fn Statement(comptime query_type: QueryType, T: type, comptime columns: []const std.meta.FieldEnum(T.Definition)) type {
+    return struct {
+        columns: []const std.meta.FieldEnum(T.Definition),
+        query_type: QueryType = query_type,
+        field_values: []struct {} = &.{},
+
+        pub const Definition = T.Definition;
+
+        pub fn where(self: @This(), args: anytype) Clause(T, @TypeOf(args)) {
+            _ = self;
+            var clause: Clause(T, @TypeOf(args)) = undefined;
+            inline for (std.meta.fields(@TypeOf(args)), 0..) |field, index| {
+                const value = @field(args, field.name);
+                @field(clause.field_values, std.fmt.comptimePrint("{}", .{index})) = value;
+                clause.field_names[index] = field.name;
+            }
+            clause.columns = columns;
+            clause.query_type = query_type;
+            clause.limit_bound = null;
+            return clause;
+        }
+
+        pub fn limit(self: @This(), limit_bound: usize) Clause(T, @TypeOf(.{})) {
+            _ = self;
+            return .{
+                .field_names = .{},
+                .field_values = .{},
+                .columns = columns,
+                .limit_bound = limit_bound,
+                .query_type = query_type,
+            };
+        }
+
+        pub fn toSql(self: @This(), buf: []u8, adapter: jetquery.adapters.Adapter) ![]const u8 {
+            return try self.where(.{}).toSql(buf, adapter);
+        }
+
+        pub fn values(self: @This()) []struct {} {
+            _ = self;
+            return &.{};
         }
     };
 }

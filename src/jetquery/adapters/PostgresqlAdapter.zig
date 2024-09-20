@@ -95,7 +95,7 @@ pub fn execute(
     self: *PostgresqlAdapter,
     repo: *const jetquery.Repo,
     sql: []const u8,
-    values: []const jetquery.Value,
+    values: anytype,
 ) !jetquery.Result {
     if (!self.connected and self.lazy_connect) self.pool = try initPool(self.allocator, self.options);
 
@@ -153,7 +153,7 @@ pub fn primaryKeySql(self: PostgresqlAdapter) []const u8 {
 }
 
 /// SQL representing a bind parameter, e.g. `$1`.
-pub fn paramSql(self: PostgresqlAdapter, buf: []u8, value: jetquery.Value, index: usize) ![]const u8 {
+pub fn paramSql(self: PostgresqlAdapter, buf: []u8, value: anytype, index: usize) ![]const u8 {
     _ = value;
     _ = self;
     var stream = std.io.fixedBufferStream(buf);

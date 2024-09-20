@@ -33,13 +33,12 @@ pub fn run(self: Migrate) !void {
                 .message = "Executing migration: " ++ migration.name,
             });
 
-            const query = jetquery.Query(Schema.Migrations).init(self.repo.allocator)
+            const query = jetquery.Query(Schema.Migrations)
                 .insert(.{ .version = migration.version });
-            defer query.deinit();
 
             try migration.upFn(self.repo);
 
-            var result = try self.repo.execute(query, &.{});
+            var result = try self.repo.execute(query);
             defer result.deinit();
 
             try self.repo.eventCallback(.{
@@ -56,12 +55,11 @@ pub fn run(self: Migrate) !void {
 }
 
 fn isMigrated(self: Migrate, migration: Migration) !bool {
-    const query = jetquery.Query(Schema.Migrations).init(self.repo.allocator)
+    const query = jetquery.Query(Schema.Migrations)
         .select(&.{.version})
         .where(.{ .version = migration.version });
-    defer query.deinit();
 
-    var result = try self.repo.execute(query, &.{});
+    var result = try self.repo.execute(query);
     defer result.deinit();
 
     while (try result.next(query)) |_| {
@@ -104,10 +102,10 @@ test "migrate" {
     const migrate = Migrate.init(&repo);
     try migrate.run();
 
-    const query1 = jetquery.Query(Schema.Migrations).init(std.testing.allocator)
+    const query1 = jetquery.Query(Schema.Migrations)
         .select(&.{.version});
     defer query1.deinit();
-    var result1 = try repo.execute(query1, &.{});
+    var result1 = try repo.execute(query1);
     defer result1.deinit();
 
     while (try result1.next(query1)) |row| {
@@ -123,9 +121,8 @@ test "migrate" {
         created_at: jetquery.DateTime,
         updated_at: jetquery.DateTime,
     }, .{}))
-        .init(std.testing.allocator)
         .select(&.{ .name, .paws, .created_at, .updated_at });
     defer query2.deinit();
-    var result2 = try repo.execute(query2, &.{});
+    var result2 = try repo.execute(query2);
     defer result2.deinit();
 }

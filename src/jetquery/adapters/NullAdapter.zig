@@ -31,7 +31,7 @@ pub fn primaryKeySql(self: NullAdapter) []const u8 {
     return "";
 }
 
-pub fn paramSql(self: NullAdapter, buf: []u8, value: jetquery.Value, index: usize) ![]const u8 {
+pub fn paramSql(self: NullAdapter, buf: []u8, value: anytype, index: usize) ![]const u8 {
     _ = buf;
     _ = value;
     _ = self;

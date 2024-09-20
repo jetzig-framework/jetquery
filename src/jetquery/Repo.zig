@@ -43,7 +43,7 @@ pub fn deinit(self: *Repo) void {
 /// Execute the given query and return results.
 pub fn execute(self: *Repo, query: anytype) !jetquery.Result {
     var buf: [4096]u8 = undefined;
-    return try self.adapter.execute(self, try query.toSql(&buf, self.adapter), try query.values());
+    return try self.adapter.execute(self, try query.toSql(&buf, self.adapter), query.field_values);
 }
 
 pub const CreateTableOptions = struct { if_not_exists: bool = false };
@@ -136,8 +136,7 @@ test "repo" {
     var insert = try repo.adapter.execute(&repo, "insert into cats (name, paws) values ('Hercules', 4)", &.{});
     defer insert.deinit();
 
-    const query = jetquery.Query(Schema.Cats).init(std.testing.allocator).select(&.{ .name, .paws });
-    defer query.deinit();
+    const query = jetquery.Query(Schema.Cats).select(&.{ .name, .paws });
 
     var result = try repo.execute(query);
     defer result.deinit();
