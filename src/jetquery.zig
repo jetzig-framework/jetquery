@@ -88,7 +88,7 @@ test "update" {
 
     var buf: [1024]u8 = undefined;
     try std.testing.expectEqualStrings(
-        \\UPDATE "cats" SET "name" = $1, "paws" = $2 WHERE "name" = $3 AND "paws" = $4
+        \\UPDATE "cats" SET "name" = $1, "paws" = $2 WHERE "name" = $3
     ,
         try query.toSql(&buf, adapters.test_adapter),
     );

@@ -19,8 +19,8 @@ pub fn Query(T: type) type {
             return Statement(.select, T, columns){ .columns = columns };
         }
 
-        pub fn update(args: anytype) Clause(T, @TypeOf(args)) {
-            var clause: Clause(T, @TypeOf(args)) = undefined;
+        pub fn update(args: anytype) Clause(T, std.meta.fields(@TypeOf(args))) {
+            var clause: Clause(T, std.meta.fields(@TypeOf(args))) = undefined;
             inline for (std.meta.fields(@TypeOf(args)), 0..) |field, index| {
                 const value = @field(args, field.name);
                 @field(clause.field_values, std.fmt.comptimePrint("{}", .{index})) = value;
@@ -32,8 +32,8 @@ pub fn Query(T: type) type {
             return clause;
         }
 
-        pub fn insert(args: anytype) Clause(T, @TypeOf(args)) {
-            var clause: Clause(T, @TypeOf(args)) = undefined;
+        pub fn insert(args: anytype) Clause(T, std.meta.fields(@TypeOf(args))) {
+            var clause: Clause(T, std.meta.fields(@TypeOf(args))) = undefined;
             inline for (std.meta.fields(@TypeOf(args)), 0..) |field, index| {
                 const value = @field(args, field.name);
                 @field(clause.field_values, std.fmt.comptimePrint("{}", .{index})) = value;
@@ -45,8 +45,8 @@ pub fn Query(T: type) type {
             return clause;
         }
 
-        pub fn delete() Clause(T, @TypeOf(.{})) {
-            var clause: Clause(T, @TypeOf(.{})) = undefined;
+        pub fn delete() Clause(T, &.{}) {
+            var clause: Clause(T, &.{}) = undefined;
             clause.columns = &.{};
             clause.query_type = .delete;
             clause.limit_bound = null;
@@ -55,10 +55,10 @@ pub fn Query(T: type) type {
     };
 }
 
-fn Fields(T: type) type {
-    var fields: [std.meta.fields(T).len]std.builtin.Type.StructField = undefined;
-    for (std.meta.fields(T), 0..) |field, index| {
-        fields[index] = .{
+fn Fields(comptime fields: []const std.builtin.Type.StructField) type {
+    var new_fields: [fields.len]std.builtin.Type.StructField = undefined;
+    for (fields, 0..) |field, index| {
+        new_fields[index] = .{
             .name = std.fmt.comptimePrint("{}", .{index}),
             .type = FieldType(field.type),
             .default_value = null,
@@ -69,7 +69,7 @@ fn Fields(T: type) type {
     return @Type(.{
         .@"struct" = .{
             .layout = .auto,
-            .fields = &fields,
+            .fields = &new_fields,
             .decls = &.{},
             .is_tuple = true,
         },
@@ -86,21 +86,27 @@ fn FieldType(T: type) type {
     };
 }
 
-fn Clause(T: type, Args: type) type {
+fn Clause(T: type, comptime fields: []const std.builtin.Type.StructField) type {
     return struct {
-        field_values: Fields(Args),
-        field_names: [std.meta.fields(Args).len][]const u8,
+        field_values: Fields(fields),
+        field_names: [fields.len][]const u8,
         columns: []const std.meta.FieldEnum(T.Definition) = &.{},
         limit_bound: ?usize = null,
         query_type: QueryType,
+        where_index: usize = 0,
 
         pub const Definition = T.Definition;
 
         const Self = @This();
 
-        pub fn where(self: Self, args: anytype) Clause(T, @TypeOf(args)) {
-            var clause: Clause(T, @TypeOf(args)) = undefined;
-            inline for (std.meta.fields(@TypeOf(args)), 0..) |field, index| {
+        pub fn where(self: Self, args: anytype) Clause(T, fields ++ std.meta.fields(@TypeOf(args))) {
+            var clause: Clause(T, fields ++ std.meta.fields(@TypeOf(args))) = undefined;
+            inline for (fields, 0..) |field, index| {
+                const value = self.field_values[index];
+                @field(clause.field_values, std.fmt.comptimePrint("{}", .{index})) = value;
+                clause.field_names[index] = field.name;
+            }
+            inline for (std.meta.fields(@TypeOf(args)), fields.len..) |field, index| {
                 const value = @field(args, field.name);
                 @field(clause.field_values, std.fmt.comptimePrint("{}", .{index})) = value;
                 clause.field_names[index] = field.name;
@@ -108,6 +114,7 @@ fn Clause(T: type, Args: type) type {
             clause.columns = self.columns;
             clause.query_type = self.query_type;
             clause.limit_bound = self.limit_bound;
+            clause.where_index = fields.len;
             return clause;
         }
 
@@ -117,6 +124,7 @@ fn Clause(T: type, Args: type) type {
                 .field_names = self.field_names,
                 .query_type = self.query_type,
                 .columns = self.columns,
+                .where_index = self.where_index,
                 .limit_bound = limit_bound,
             };
         }
@@ -134,7 +142,7 @@ fn Clause(T: type, Args: type) type {
             return stream.getWritten();
         }
 
-        pub fn values(self: Self) Fields(Args) {
+        pub fn values(self: Self) Fields(fields) {
             return self.field_values;
         }
 
@@ -295,12 +303,13 @@ fn Statement(comptime query_type: QueryType, T: type, comptime columns: []const 
         columns: []const std.meta.FieldEnum(T.Definition),
         query_type: QueryType = query_type,
         field_values: []struct {} = &.{},
+        where_index: usize = 0,
 
         pub const Definition = T.Definition;
 
-        pub fn where(self: @This(), args: anytype) Clause(T, @TypeOf(args)) {
+        pub fn where(self: @This(), args: anytype) Clause(T, std.meta.fields(@TypeOf(args))) {
             _ = self;
-            var clause: Clause(T, @TypeOf(args)) = undefined;
+            var clause: Clause(T, std.meta.fields(@TypeOf(args))) = undefined;
             inline for (std.meta.fields(@TypeOf(args)), 0..) |field, index| {
                 const value = @field(args, field.name);
                 @field(clause.field_values, std.fmt.comptimePrint("{}", .{index})) = value;
@@ -312,7 +321,7 @@ fn Statement(comptime query_type: QueryType, T: type, comptime columns: []const 
             return clause;
         }
 
-        pub fn limit(self: @This(), limit_bound: usize) Clause(T, @TypeOf(.{})) {
+        pub fn limit(self: @This(), limit_bound: usize) Clause(T, &.{}) {
             _ = self;
             return .{
                 .field_names = .{},
