@@ -19,5 +19,9 @@ pub fn Table(name: []const u8, T: type, options: TableOptions) type {
         pub fn insert(repo: jetquery.Repo, args: anytype) !void {
             try repo.insert(T, args);
         }
+
+        pub fn columns() []const std.meta.FieldEnum(Definition) {
+            return std.enums.values(std.meta.FieldEnum(Definition));
+        }
     };
 }

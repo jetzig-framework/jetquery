@@ -127,6 +127,89 @@ test "delete" {
     );
 }
 
+test "delete (without where clause)" {
+    const Schema = struct {
+        pub const Cats = Table("cats", struct { name: []const u8, paws: usize }, .{});
+    };
+    const query = Query(Schema.Cats).delete();
+
+    var buf: [1024]u8 = undefined;
+    try std.testing.expectError(
+        error.JetQueryUnsafeDelete,
+        query.toSql(&buf, adapters.test_adapter),
+    );
+}
+
+test "deleteAll" {
+    const Schema = struct {
+        pub const Cats = Table("cats", struct { name: []const u8, paws: usize }, .{});
+    };
+    const query = Query(Schema.Cats)
+        .deleteAll();
+
+    var buf: [1024]u8 = undefined;
+    try std.testing.expectEqualStrings(
+        \\DELETE FROM "cats"
+    ,
+        try query.toSql(&buf, adapters.test_adapter),
+    );
+}
+
+test "find" {
+    const Schema = struct {
+        pub const Cats = Table("cats", struct { id: usize, name: []const u8, paws: usize }, .{});
+    };
+    const query = Query(Schema.Cats).find(1000);
+
+    var buf: [1024]u8 = undefined;
+    try std.testing.expectEqualStrings(
+        \\SELECT "id", "name", "paws" FROM "cats" WHERE "id" = $1 LIMIT 1
+    ,
+        try query.toSql(&buf, adapters.test_adapter),
+    );
+}
+
+test "find (with coerced id)" {
+    const Schema = struct {
+        pub const Cats = Table("cats", struct { id: usize, name: []const u8, paws: usize }, .{});
+    };
+    const query = Query(Schema.Cats).find("1000");
+
+    var buf: [1024]u8 = undefined;
+    try std.testing.expectEqualStrings(
+        \\SELECT "id", "name", "paws" FROM "cats" WHERE "id" = $1 LIMIT 1
+    ,
+        try query.toSql(&buf, adapters.test_adapter),
+    );
+}
+
+test "find (without id column)" {
+    const Schema = struct {
+        pub const Cats = Table("cats", struct { name: []const u8, paws: usize }, .{});
+    };
+    const query = Query(Schema.Cats).find(1000);
+
+    var buf: [1024]u8 = undefined;
+    try std.testing.expectError(
+        error.JetQueryMissingIdField,
+        query.toSql(&buf, adapters.test_adapter),
+    );
+}
+
+test "findBy" {
+    const Schema = struct {
+        pub const Cats = Table("cats", struct { id: usize, name: []const u8, paws: usize }, .{});
+    };
+    const query = Query(Schema.Cats).findBy(.{ .name = "Hercules", .paws = 4 });
+
+    var buf: [1024]u8 = undefined;
+    try std.testing.expectEqualStrings(
+        \\SELECT "id", "name", "paws" FROM "cats" WHERE "name" = $1 AND "paws" = $2 LIMIT 1
+    ,
+        try query.toSql(&buf, adapters.test_adapter),
+    );
+}
+
 test "runtime field values" {
     const Schema = struct {
         pub const Cats = Table("cats", struct { name: []const u8, paws: usize }, .{});

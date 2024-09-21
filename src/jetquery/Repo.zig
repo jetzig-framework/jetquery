@@ -43,7 +43,6 @@ pub fn deinit(self: *Repo) void {
 /// Execute the given query and return results.
 pub fn execute(self: *Repo, query: anytype) !jetquery.Result {
     var buf: [4096]u8 = undefined;
-    try query.validateValues();
     return try self.adapter.execute(self, try query.toSql(&buf, self.adapter), query.field_values);
 }
 
