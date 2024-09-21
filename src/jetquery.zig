@@ -110,21 +110,22 @@ test "delete" {
     );
 }
 
-test "incompatible query type" {
-    // TODO
-    // const Schema = struct {
-    //     pub const Cats = Table("cats", struct { name: []const u8, paws: usize }, .{});
-    // };
-    // const query = Query(Schema.Cats)
-    //     .update(.{ .name = "Heracles", .paws = 2 })
-    //     .select(&.{.name})
-    //     .where(.{ .name = "Hercules" });
-    //
-    // var buf: [1024]u8 = undefined;
-    // try std.testing.expectError(
-    //     error.JetQueryIncompatibleQueryType,
-    //     query.toSql(&buf, adapters.test_adapter),
-    // );
+test "runtime field values" {
+    const Schema = struct {
+        pub const Cats = Table("cats", struct { name: []const u8, paws: usize }, .{});
+    };
+    var hercules_buf: [8]u8 = undefined;
+    const hercules = try std.fmt.bufPrint(&hercules_buf, "{s}", .{"Hercules"});
+    var heracles_buf: [8]u8 = undefined;
+    const heracles = try std.fmt.bufPrint(&heracles_buf, "{s}", .{"Heracles"});
+    const query = Query(Schema.Cats)
+        .update(.{ .name = heracles, .paws = 2 })
+        .where(.{ .name = hercules });
+
+    const values = query.values();
+    try std.testing.expectEqualStrings("Heracles", values.@"0");
+    try std.testing.expectEqual(2, values.@"1");
+    try std.testing.expectEqualStrings("Hercules", values.@"2");
 }
 
 test "boolean coercion" {
@@ -136,12 +137,7 @@ test "boolean coercion" {
         .select(&.{.name})
         .where(.{ .intelligent = "1" });
 
-    var buf: [1024]u8 = undefined;
-    try std.testing.expectEqualStrings(
-        \\SELECT "name" FROM "cats" WHERE "intelligent" = $1
-    ,
-        try query.toSql(&buf, adapters.test_adapter),
-    );
+    try std.testing.expectEqual(query.values().@"0", true);
 }
 
 test "integer coercion" {

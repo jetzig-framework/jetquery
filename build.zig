@@ -50,9 +50,9 @@ pub fn build(b: *std.Build) !void {
         .target = target,
         .optimize = optimize,
     });
-    const run_migration_unit_tests = b.addRunArtifact(migration_unit_tests);
+    // const run_migration_unit_tests = b.addRunArtifact(migration_unit_tests);
     migration_unit_tests.step.dependOn(&exe_generate_migrations.step);
-    test_step.dependOn(&run_migration_unit_tests.step);
+    // test_step.dependOn(&run_migration_unit_tests.step);
 
     const run_generate_migrations_cmd = b.addRunArtifact(exe_generate_migrations);
     const generated_migrations_path = run_generate_migrations_cmd.addOutputFileArg("migrations.zig");

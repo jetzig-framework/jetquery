@@ -81,9 +81,26 @@ fn FieldType(T: type) type {
         .comptime_int, .int => usize,
         .float, .comptime_float => f64,
         .bool => bool,
-        .pointer => []const u8,
+        .pointer => []const u8, // TODO
         else => @compileError("Unsupported type: " ++ @typeName(T)),
     };
+}
+
+fn initClause(C: type, clause: *C, S: type, self: S, fields: []const std.builtin.Type.StructField, args: anytype) void {
+    inline for (fields, 0..) |field, index| {
+        const value = clause.field_values[index];
+        @field(clause.field_values, std.fmt.comptimePrint("{}", .{index})) = value;
+        clause.field_names[index] = field.name;
+    }
+    inline for (std.meta.fields(@TypeOf(args)), fields.len..) |field, index| {
+        const value = @field(args, field.name);
+        @field(clause.field_values, std.fmt.comptimePrint("{}", .{index})) = value;
+        clause.field_names[index] = field.name;
+    }
+    clause.columns = self.columns;
+    clause.query_type = self.query_type;
+    clause.limit_bound = self.limit_bound;
+    clause.where_index = fields.len;
 }
 
 fn Clause(T: type, comptime fields: []const std.builtin.Type.StructField) type {
@@ -93,7 +110,7 @@ fn Clause(T: type, comptime fields: []const std.builtin.Type.StructField) type {
         columns: []const std.meta.FieldEnum(T.Definition) = &.{},
         limit_bound: ?usize = null,
         query_type: QueryType,
-        where_index: usize = 0,
+        where_index: ?usize = null,
 
         pub const Definition = T.Definition;
 
@@ -101,20 +118,7 @@ fn Clause(T: type, comptime fields: []const std.builtin.Type.StructField) type {
 
         pub fn where(self: Self, args: anytype) Clause(T, fields ++ std.meta.fields(@TypeOf(args))) {
             var clause: Clause(T, fields ++ std.meta.fields(@TypeOf(args))) = undefined;
-            inline for (fields, 0..) |field, index| {
-                const value = self.field_values[index];
-                @field(clause.field_values, std.fmt.comptimePrint("{}", .{index})) = value;
-                clause.field_names[index] = field.name;
-            }
-            inline for (std.meta.fields(@TypeOf(args)), fields.len..) |field, index| {
-                const value = @field(args, field.name);
-                @field(clause.field_values, std.fmt.comptimePrint("{}", .{index})) = value;
-                clause.field_names[index] = field.name;
-            }
-            clause.columns = self.columns;
-            clause.query_type = self.query_type;
-            clause.limit_bound = self.limit_bound;
-            clause.where_index = fields.len;
+            initClause(@TypeOf(clause), &clause, Self, self, fields, args);
             return clause;
         }
 
@@ -184,12 +188,14 @@ fn Clause(T: type, comptime fields: []const std.builtin.Type.StructField) type {
         fn renderUpdate(self: Self, writer: anytype, adapter: jetquery.adapters.Adapter) !void {
             try writer.print("UPDATE {} SET ", .{adapter.identifier(T.table_name)});
             inline for (self.field_names, self.field_values, 0..) |field_name, field_value, index| {
-                var buf: [8]u8 = undefined;
-                try writer.print("{} = {s}{s}", .{
-                    adapter.identifier(field_name),
-                    try adapter.paramSql(&buf, field_value, index),
-                    if (index < self.field_names.len - 1) ", " else "",
-                });
+                if (self.where_index == null or index < self.where_index.?) {
+                    var buf: [8]u8 = undefined;
+                    try writer.print("{} = {s}{s}", .{
+                        adapter.identifier(field_name),
+                        try adapter.paramSql(&buf, field_value, index),
+                        if (index < self.field_names[0 .. self.where_index orelse self.field_names.len - 1].len - 1) ", " else "",
+                    });
+                }
             }
             try self.renderWhere(writer, adapter);
         }
@@ -203,17 +209,20 @@ fn Clause(T: type, comptime fields: []const std.builtin.Type.StructField) type {
         // Render the query's `where` clause as SQL.
         fn renderWhere(self: Self, writer: anytype, adapter: jetquery.adapters.Adapter) !void {
             if (self.field_names.len == 0) return;
+            const where_index = self.where_index orelse return;
 
             try writer.print(" WHERE ", .{});
             inline for (self.field_names, self.field_values, 0..) |field_name, field_value, index| {
-                var buf: [8]u8 = undefined;
-                try writer.print(
-                    \\{} = {s}{s}
-                , .{
-                    adapter.identifier(field_name),
-                    try adapter.paramSql(&buf, field_value, index),
-                    if (index + 1 < self.field_names.len) " AND " else "",
-                });
+                if (index >= where_index) {
+                    var buf: [8]u8 = undefined;
+                    try writer.print(
+                        \\{} = {s}{s}
+                    , .{
+                        adapter.identifier(field_name),
+                        try adapter.paramSql(&buf, field_value, index),
+                        if (index - where_index + 1 < self.field_names[where_index..].len) " AND " else "",
+                    });
+                }
             }
         }
 
@@ -303,7 +312,7 @@ fn Statement(comptime query_type: QueryType, T: type, comptime columns: []const 
         columns: []const std.meta.FieldEnum(T.Definition),
         query_type: QueryType = query_type,
         field_values: []struct {} = &.{},
-        where_index: usize = 0,
+        where_index: ?usize = null,
 
         pub const Definition = T.Definition;
 
@@ -318,17 +327,18 @@ fn Statement(comptime query_type: QueryType, T: type, comptime columns: []const 
             clause.columns = columns;
             clause.query_type = query_type;
             clause.limit_bound = null;
+            clause.where_index = 0;
             return clause;
         }
 
         pub fn limit(self: @This(), limit_bound: usize) Clause(T, &.{}) {
-            _ = self;
             return .{
                 .field_names = .{},
                 .field_values = .{},
                 .columns = columns,
                 .limit_bound = limit_bound,
                 .query_type = query_type,
+                .where_index = self.where_index,
             };
         }
 
