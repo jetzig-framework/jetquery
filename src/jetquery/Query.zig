@@ -25,7 +25,7 @@ pub fn Query(Table: type) type {
             statement.columns = columns;
             statement.field_names = .{};
             statement.field_contexts = .{};
-            statement.coerce_errors = .{};
+            statement.field_errors = .{};
             statement.query_type = .select;
             statement.limit_bound = null;
             return statement;
@@ -41,7 +41,7 @@ pub fn Query(Table: type) type {
                 const value = @field(args, field.name);
                 const coerced = coerce(Table, field, value);
                 @field(statement.field_values, std.fmt.comptimePrint("{}", .{index})) = coerced.value;
-                statement.coerce_errors[index] = coerced.err;
+                statement.field_errors[index] = coerced.err;
                 statement.field_names[index] = field.name;
                 statement.field_contexts[index] = .update;
             }
@@ -61,7 +61,7 @@ pub fn Query(Table: type) type {
                 const value = @field(args, field.name);
                 const coerced = coerce(Table, field, value);
                 @field(statement.field_values, std.fmt.comptimePrint("{}", .{index})) = coerced.value;
-                statement.coerce_errors[index] = coerced.err;
+                statement.field_errors[index] = coerced.err;
                 statement.field_names[index] = field.name;
                 statement.field_contexts[index] = .insert;
             }
@@ -83,7 +83,7 @@ pub fn Query(Table: type) type {
             statement.query_type = .delete;
             statement.limit_bound = null;
             statement.field_contexts = .{};
-            statement.coerce_errors = .{};
+            statement.field_errors = .{};
             return statement;
         }
 
@@ -98,7 +98,7 @@ pub fn Query(Table: type) type {
             statement.query_type = .delete_all;
             statement.limit_bound = null;
             statement.field_contexts = .{};
-            statement.coerce_errors = .{};
+            statement.field_errors = .{};
             return statement;
         }
 
@@ -118,13 +118,13 @@ pub fn Query(Table: type) type {
             if (@hasField(Table.Definition, "id")) {
                 const coerced = coerce(Table, std.meta.fieldInfo(Table.Definition, .id), id);
                 if (coerced.err) |err| {
-                    statement.coerce_errors = .{err};
+                    statement.field_errors = .{err};
                 } else {
                     statement.field_values = .{coerced.value};
-                    statement.coerce_errors = .{null};
+                    statement.field_errors = .{null};
                 }
             } else {
-                statement.coerce_errors = .{error.JetQueryMissingIdField};
+                statement.field_errors = .{error.JetQueryMissingIdField};
             }
             statement.query_type = .select;
             statement.limit_bound = 1;
@@ -148,7 +148,7 @@ pub fn Query(Table: type) type {
                 const value = @field(args, field.name);
                 const coerced = coerce(Table, field, value);
                 @field(statement.field_values, std.fmt.comptimePrint("{}", .{index})) = coerced.value;
-                statement.coerce_errors[index] = coerced.err;
+                statement.field_errors[index] = coerced.err;
                 statement.field_names[index] = field.name;
                 statement.field_contexts[index] = .where;
             }
@@ -240,18 +240,18 @@ fn initStatement(
         @field(statement.field_values, std.fmt.comptimePrint("{}", .{index})) = value;
         statement.field_names[index] = field.name;
         statement.field_contexts[index] = self.field_contexts[index];
-        statement.coerce_errors[index] = self.coerce_errors[index];
+        statement.field_errors[index] = self.field_errors[index];
     }
     inline for (std.meta.fields(@TypeOf(args)), fields.len..) |field, index| {
         const value = @field(args, field.name);
         const coerced = coerce(Table, field, value);
         @field(statement.field_values, std.fmt.comptimePrint("{}", .{index})) = coerced.value;
-        statement.coerce_errors[index] = coerced.err;
+        statement.field_errors[index] = coerced.err;
         statement.field_names[index] = field.name;
         statement.field_contexts[index] = field_context;
     }
     if (fields.len + std.meta.fields(@TypeOf(args)).len == 0) {
-        statement.coerce_errors = .{};
+        statement.field_errors = .{};
         statement.field_names = .{};
         statement.field_contexts = .{};
     }
@@ -368,7 +368,7 @@ fn Statement(Table: type, comptime fields: []const std.builtin.Type.StructField)
         columns: []const std.meta.FieldEnum(Table.Definition) = &.{},
         limit_bound: ?usize = null,
         query_type: QueryType,
-        coerce_errors: [fields.len]?anyerror,
+        field_errors: [fields.len]?anyerror,
 
         pub const Definition = Table.Definition;
 
@@ -384,11 +384,11 @@ fn Statement(Table: type, comptime fields: []const std.builtin.Type.StructField)
             return .{
                 .field_values = self.field_values,
                 .field_names = self.field_names,
+                .field_contexts = self.field_contexts,
+                .field_errors = self.field_errors,
                 .query_type = self.query_type,
                 .columns = self.columns,
-                .field_contexts = self.field_contexts,
                 .limit_bound = limit_bound,
-                .coerce_errors = self.coerce_errors,
             };
         }
 
@@ -411,7 +411,7 @@ fn Statement(Table: type, comptime fields: []const std.builtin.Type.StructField)
         }
 
         pub fn validateValues(self: Self) !void {
-            inline for (self.coerce_errors) |maybe_err| {
+            inline for (self.field_errors) |maybe_err| {
                 if (maybe_err) |err| return err;
             }
         }
