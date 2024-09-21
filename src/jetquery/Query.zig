@@ -9,61 +9,83 @@ const QueryType = enum { select, update, insert, delete };
 /// ```zig
 /// const query = Query(Schema.Cats).init(allocator);
 /// ```
-pub fn Query(T: type) type {
+pub fn Query(Table: type) type {
     return struct {
-        table: T,
+        table: Table,
 
-        pub const Definition = T.Definition;
+        pub const Definition = Table.Definition;
 
-        pub fn select(comptime columns: []const std.meta.FieldEnum(T.Definition)) Statement(.select, T, columns) {
-            return Statement(.select, T, columns){ .columns = columns };
+        pub fn select(comptime columns: []const std.meta.FieldEnum(Table.Definition)) Statement(Table, std.meta.fields(@TypeOf(.{}))) {
+            var statement: Statement(Table, std.meta.fields(@TypeOf(.{}))) = undefined;
+            inline for (std.meta.fields(@TypeOf(.{})), 0..) |field, index| {
+                const value = @field(.{}, field.name);
+                const coerced = coerce(Table, field, value);
+                @field(statement.field_values, std.fmt.comptimePrint("{}", .{index})) = coerced.value;
+                statement.coerce_errors[index] = coerced.err;
+                statement.field_names[index] = field.name;
+            }
+            statement.columns = columns;
+            statement.query_type = .select;
+            statement.limit_bound = null;
+            return statement;
         }
 
-        pub fn update(args: anytype) Clause(T, std.meta.fields(@TypeOf(args))) {
-            var clause: Clause(T, std.meta.fields(@TypeOf(args))) = undefined;
+        pub fn update(args: anytype) Statement(Table, std.meta.fields(@TypeOf(args))) {
+            var statement: Statement(Table, std.meta.fields(@TypeOf(args))) = undefined;
             inline for (std.meta.fields(@TypeOf(args)), 0..) |field, index| {
                 const value = @field(args, field.name);
-                @field(clause.field_values, std.fmt.comptimePrint("{}", .{index})) = value;
-                clause.field_names[index] = field.name;
+                const coerced = coerce(Table, field, value);
+                @field(statement.field_values, std.fmt.comptimePrint("{}", .{index})) = coerced.value;
+                statement.coerce_errors[index] = coerced.err;
+                statement.field_names[index] = field.name;
             }
-            clause.columns = &.{};
-            clause.query_type = .update;
-            clause.limit_bound = null;
-            return clause;
+            statement.columns = &.{};
+            statement.query_type = .update;
+            statement.limit_bound = null;
+            return statement;
         }
 
-        pub fn insert(args: anytype) Clause(T, std.meta.fields(@TypeOf(args))) {
-            var clause: Clause(T, std.meta.fields(@TypeOf(args))) = undefined;
+        pub fn insert(args: anytype) Statement(Table, std.meta.fields(@TypeOf(args))) {
+            var statement: Statement(Table, std.meta.fields(@TypeOf(args))) = undefined;
             inline for (std.meta.fields(@TypeOf(args)), 0..) |field, index| {
                 const value = @field(args, field.name);
-                @field(clause.field_values, std.fmt.comptimePrint("{}", .{index})) = value;
-                clause.field_names[index] = field.name;
+                const coerced = coerce(Table, field, value);
+                @field(statement.field_values, std.fmt.comptimePrint("{}", .{index})) = coerced.value;
+                statement.coerce_errors[index] = coerced.err;
+                statement.field_names[index] = field.name;
             }
-            clause.columns = &.{};
-            clause.query_type = .insert;
-            clause.limit_bound = null;
-            return clause;
+            statement.columns = &.{};
+            statement.query_type = .insert;
+            statement.limit_bound = null;
+            return statement;
         }
 
-        pub fn delete() Clause(T, &.{}) {
-            var clause: Clause(T, &.{}) = undefined;
-            clause.columns = &.{};
-            clause.query_type = .delete;
-            clause.limit_bound = null;
-            return clause;
+        pub fn delete() Statement(Table, &.{}) {
+            var statement: Statement(Table, &.{}) = undefined;
+            statement.columns = &.{};
+            statement.query_type = .delete;
+            statement.limit_bound = null;
+            return statement;
         }
     };
 }
 
-fn Fields(comptime fields: []const std.builtin.Type.StructField) type {
+fn ColumnType(Table: type, comptime name: []const u8) type {
+    return std.meta.FieldType(
+        Table.Definition,
+        std.enums.nameCast(std.meta.FieldEnum(Table.Definition), name),
+    );
+}
+
+fn Fields(Table: type, comptime fields: []const std.builtin.Type.StructField) type {
     var new_fields: [fields.len]std.builtin.Type.StructField = undefined;
     for (fields, 0..) |field, index| {
         new_fields[index] = .{
             .name = std.fmt.comptimePrint("{}", .{index}),
-            .type = FieldType(field.type),
+            .type = ColumnType(Table, field.name),
             .default_value = null,
             .is_comptime = false,
-            .alignment = @alignOf(FieldType(field.type)),
+            .alignment = @alignOf(ColumnType(Table, field.name)),
         };
     }
     return @Type(.{
@@ -76,7 +98,7 @@ fn Fields(comptime fields: []const std.builtin.Type.StructField) type {
     });
 }
 
-fn FieldType(T: type) type {
+fn ValueType(T: type) type {
     return switch (@typeInfo(T)) {
         .comptime_int, .int => usize,
         .float, .comptime_float => f64,
@@ -86,40 +108,128 @@ fn FieldType(T: type) type {
     };
 }
 
-fn initClause(C: type, clause: *C, S: type, self: S, fields: []const std.builtin.Type.StructField, args: anytype) void {
+fn coerceJetQuery(Target: type, Source: type, value: anytype) CoercedValue(Target) {
+    if (@hasDecl(Source, "toJetQuery")) {
+        const coerced = value.toJetQuery(Target) catch |err| {
+            return .{ .err = err };
+        };
+        return .{ .value = coerced, .err = null };
+    } else {
+        @compileError("Incompatible types: `" ++ @typeName(Target) ++ "` and `" ++ @typeName(Source) ++ "`");
+    }
+}
+
+fn initStatement(
+    Table: type,
+    C: type,
+    statement: *C,
+    S: type,
+    self: S,
+    fields: []const std.builtin.Type.StructField,
+    args: anytype,
+) void {
     inline for (fields, 0..) |field, index| {
-        const value = clause.field_values[index];
-        @field(clause.field_values, std.fmt.comptimePrint("{}", .{index})) = value;
-        clause.field_names[index] = field.name;
+        const value = self.field_values[index];
+        @field(statement.field_values, std.fmt.comptimePrint("{}", .{index})) = value;
+        statement.field_names[index] = field.name;
     }
     inline for (std.meta.fields(@TypeOf(args)), fields.len..) |field, index| {
         const value = @field(args, field.name);
-        @field(clause.field_values, std.fmt.comptimePrint("{}", .{index})) = value;
-        clause.field_names[index] = field.name;
+        const coerced = coerce(Table, field, value);
+        @field(statement.field_values, std.fmt.comptimePrint("{}", .{index})) = coerced.value;
+        statement.coerce_errors[index] = coerced.err;
+        statement.field_names[index] = field.name;
     }
-    clause.columns = self.columns;
-    clause.query_type = self.query_type;
-    clause.limit_bound = self.limit_bound;
-    clause.where_index = fields.len;
+    statement.columns = self.columns;
+    statement.query_type = self.query_type;
+    statement.limit_bound = self.limit_bound;
+    statement.where_index = fields.len;
 }
 
-fn Clause(T: type, comptime fields: []const std.builtin.Type.StructField) type {
+fn CoercedValue(Target: type) type {
     return struct {
-        field_values: Fields(fields),
+        value: Target = undefined, // Never used if `err` is present
+        err: ?anyerror = null,
+    };
+}
+
+fn coerce(
+    Table: type,
+    field: std.builtin.Type.StructField,
+    value: anytype,
+) CoercedValue(ColumnType(Table, field.name)) {
+    const T = ColumnType(Table, field.name);
+    return switch (@typeInfo(field.type)) {
+        .int, .comptime_int => switch (@typeInfo(T)) {
+            .int => .{ .value = value },
+            else => coerceJetQuery(T, field.type, value),
+        },
+        .float, .comptime_float => switch (@typeInfo(T)) {
+            .float => .{ .value = value },
+            else => coerceJetQuery(T, field.type, value),
+        },
+        .pointer => switch (@typeInfo(T)) {
+            .int => coerceInt(T, value),
+            .float => coerceFloat(T, value),
+            .bool => coerceBool(T, value),
+            .pointer => .{ .value = value }, // TODO: Ensure string
+            else => coerceJetQuery(T, field.type, value),
+        },
+        else => coerceJetQuery(T, field.type, value),
+    };
+}
+
+fn coerceInt(T: type, value: []const u8) CoercedValue(T) {
+    const coerced = std.fmt.parseInt(T, value, 10) catch |err| {
+        return .{
+            .err = switch (err) {
+                error.InvalidCharacter, error.Overflow => error.JetQueryInvalidIntegerString,
+            },
+        };
+    };
+    return .{ .value = coerced };
+}
+
+fn coerceFloat(T: type, value: []const u8) CoercedValue(T) {
+    const coerced = std.fmt.parseFloat(T, value) catch |err| {
+        return .{
+            .err = switch (err) {
+                error.InvalidCharacter => error.JetQueryInvalidFloatString,
+            },
+        };
+    };
+    return .{ .value = coerced };
+}
+
+fn coerceBool(T: type, value: []const u8) CoercedValue(T) {
+    const coerced = if (std.mem.eql(u8, value, "1"))
+        true
+    else if (std.mem.eql(u8, value, "0"))
+        false
+    else
+        return .{ .err = error.JetQueryInvalidBooleanString, .value = false };
+
+    return .{ .value = coerced };
+}
+
+fn Statement(Table: type, comptime fields: []const std.builtin.Type.StructField) type {
+    return struct {
+        field_values: Fields(Table, fields),
         field_names: [fields.len][]const u8,
-        columns: []const std.meta.FieldEnum(T.Definition) = &.{},
+        columns: []const std.meta.FieldEnum(Table.Definition) = &.{},
         limit_bound: ?usize = null,
         query_type: QueryType,
         where_index: ?usize = null,
+        coerce_errors: [fields.len]?anyerror,
 
-        pub const Definition = T.Definition;
+        pub const Definition = Table.Definition;
 
         const Self = @This();
 
-        pub fn where(self: Self, args: anytype) Clause(T, fields ++ std.meta.fields(@TypeOf(args))) {
-            var clause: Clause(T, fields ++ std.meta.fields(@TypeOf(args))) = undefined;
-            initClause(@TypeOf(clause), &clause, Self, self, fields, args);
-            return clause;
+        pub fn where(self: Self, args: anytype) Statement(Table, fields ++ std.meta.fields(@TypeOf(args))) {
+            var statement: Statement(Table, fields ++ std.meta.fields(@TypeOf(args))) = undefined;
+            initStatement(Table, @TypeOf(statement), &statement, Self, self, fields, args);
+            return statement;
         }
 
         pub fn limit(self: Self, limit_bound: usize) Self {
@@ -130,6 +240,7 @@ fn Clause(T: type, comptime fields: []const std.builtin.Type.StructField) type {
                 .columns = self.columns,
                 .where_index = self.where_index,
                 .limit_bound = limit_bound,
+                .coerce_errors = self.coerce_errors,
             };
         }
 
@@ -146,8 +257,14 @@ fn Clause(T: type, comptime fields: []const std.builtin.Type.StructField) type {
             return stream.getWritten();
         }
 
-        pub fn values(self: Self) Fields(fields) {
+        pub fn values(self: Self) Fields(Table, fields) {
             return self.field_values;
+        }
+
+        pub fn validateValues(self: Self) !void {
+            inline for (self.coerce_errors) |maybe_err| {
+                if (maybe_err) |err| return err;
+            }
         }
 
         // Render the query's `select` statement as SQL.
@@ -159,14 +276,14 @@ fn Clause(T: type, comptime fields: []const std.builtin.Type.StructField) type {
                     if (index < self.columns.len - 1) "," else "",
                 });
             }
-            try writer.print("FROM {}", .{adapter.identifier(T.table_name)});
+            try writer.print("FROM {}", .{adapter.identifier(Table.table_name)});
             try self.renderWhere(writer, adapter);
             if (self.limit_bound) |bound| try writer.print(" LIMIT {}", .{bound});
         }
 
         // Render the query's `insert` statement as SQL.
         fn renderInsert(self: Self, writer: anytype, adapter: jetquery.adapters.Adapter) !void {
-            try writer.print("INSERT INTO {} (", .{adapter.identifier(T.table_name)});
+            try writer.print("INSERT INTO {} (", .{adapter.identifier(Table.table_name)});
             for (self.field_names, 0..) |field_name, index| {
                 try writer.print("{}{s}", .{
                     adapter.identifier(field_name),
@@ -186,7 +303,7 @@ fn Clause(T: type, comptime fields: []const std.builtin.Type.StructField) type {
 
         // Render the query's `update` statement as SQL.
         fn renderUpdate(self: Self, writer: anytype, adapter: jetquery.adapters.Adapter) !void {
-            try writer.print("UPDATE {} SET ", .{adapter.identifier(T.table_name)});
+            try writer.print("UPDATE {} SET ", .{adapter.identifier(Table.table_name)});
             inline for (self.field_names, self.field_values, 0..) |field_name, field_value, index| {
                 if (self.where_index == null or index < self.where_index.?) {
                     var buf: [8]u8 = undefined;
@@ -202,7 +319,7 @@ fn Clause(T: type, comptime fields: []const std.builtin.Type.StructField) type {
 
         // Render the query's `delete` statement as SQL.
         fn renderDelete(self: Self, writer: anytype, adapter: jetquery.adapters.Adapter) !void {
-            try writer.print("DELETE FROM {}", .{adapter.identifier(T.table_name)});
+            try writer.print("DELETE FROM {}", .{adapter.identifier(Table.table_name)});
             try self.renderWhere(writer, adapter);
         }
 
@@ -228,10 +345,10 @@ fn Clause(T: type, comptime fields: []const std.builtin.Type.StructField) type {
 
         // Get the type for a given field name from the table's definition struct.
         fn CoerceFieldType(comptime name: []const u8) type {
-            inline for (std.meta.fields(T.Definition)) |field| {
+            inline for (std.meta.fields(Table.Definition)) |field| {
                 if (std.mem.eql(u8, field.name, name)) return field.type;
             }
-            @compileError("Type `" ++ @typeName(T) ++ "` does not define field `" ++ name ++ "`");
+            @compileError("Type `" ++ @typeName(Table) ++ "` does not define field `" ++ name ++ "`");
         }
 
         // Call `toJetQuery` with a given type and an allocator on the given arg field. Although
@@ -303,52 +420,6 @@ fn Clause(T: type, comptime fields: []const std.builtin.Type.StructField) type {
                 .{ .boolean = boolean }
             else
                 .{ .err = error.JetQueryUnrecognizedBoolean };
-        }
-    };
-}
-
-fn Statement(comptime query_type: QueryType, T: type, comptime columns: []const std.meta.FieldEnum(T.Definition)) type {
-    return struct {
-        columns: []const std.meta.FieldEnum(T.Definition),
-        query_type: QueryType = query_type,
-        field_values: []struct {} = &.{},
-        where_index: ?usize = null,
-
-        pub const Definition = T.Definition;
-
-        pub fn where(self: @This(), args: anytype) Clause(T, std.meta.fields(@TypeOf(args))) {
-            _ = self;
-            var clause: Clause(T, std.meta.fields(@TypeOf(args))) = undefined;
-            inline for (std.meta.fields(@TypeOf(args)), 0..) |field, index| {
-                const value = @field(args, field.name);
-                @field(clause.field_values, std.fmt.comptimePrint("{}", .{index})) = value;
-                clause.field_names[index] = field.name;
-            }
-            clause.columns = columns;
-            clause.query_type = query_type;
-            clause.limit_bound = null;
-            clause.where_index = 0;
-            return clause;
-        }
-
-        pub fn limit(self: @This(), limit_bound: usize) Clause(T, &.{}) {
-            return .{
-                .field_names = .{},
-                .field_values = .{},
-                .columns = columns,
-                .limit_bound = limit_bound,
-                .query_type = query_type,
-                .where_index = self.where_index,
-            };
-        }
-
-        pub fn toSql(self: @This(), buf: []u8, adapter: jetquery.adapters.Adapter) ![]const u8 {
-            return try self.where(.{}).toSql(buf, adapter);
-        }
-
-        pub fn values(self: @This()) []struct {} {
-            _ = self;
-            return &.{};
         }
     };
 }

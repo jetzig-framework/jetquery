@@ -104,7 +104,6 @@ test "migrate" {
 
     const query1 = jetquery.Query(Schema.Migrations)
         .select(&.{.version});
-    defer query1.deinit();
     var result1 = try repo.execute(query1);
     defer result1.deinit();
 
@@ -122,7 +121,6 @@ test "migrate" {
         updated_at: jetquery.DateTime,
     }, .{}))
         .select(&.{ .name, .paws, .created_at, .updated_at });
-    defer query2.deinit();
     var result2 = try repo.execute(query2);
     defer result2.deinit();
 }

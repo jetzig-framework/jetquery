@@ -121,7 +121,6 @@ test "runtime field values" {
     const query = Query(Schema.Cats)
         .update(.{ .name = heracles, .paws = 2 })
         .where(.{ .name = hercules });
-
     const values = query.values();
     try std.testing.expectEqualStrings("Heracles", values.@"0");
     try std.testing.expectEqual(2, values.@"1");
@@ -129,7 +128,6 @@ test "runtime field values" {
 }
 
 test "boolean coercion" {
-    // TODO
     const Schema = struct {
         pub const Cats = Table("cats", struct { name: []const u8, intelligent: bool }, .{});
     };
@@ -141,7 +139,6 @@ test "boolean coercion" {
 }
 
 test "integer coercion" {
-    // TODO
     const Schema = struct {
         pub const Cats = Table("cats", struct { name: []const u8, paws: usize }, .{});
     };
@@ -149,16 +146,10 @@ test "integer coercion" {
         .select(&.{.name})
         .where(.{ .paws = "4" });
 
-    var buf: [1024]u8 = undefined;
-    try std.testing.expectEqualStrings(
-        \\SELECT "name" FROM "cats" WHERE "paws" = $1
-    ,
-        try query.toSql(&buf, adapters.test_adapter),
-    );
+    try std.testing.expectEqual(query.values().@"0", 4);
 }
 
 test "float coercion" {
-    // TODO
     const Schema = struct {
         pub const Cats = Table("cats", struct { name: []const u8, intelligence: f64 }, .{});
     };
@@ -166,51 +157,79 @@ test "float coercion" {
         .select(&.{.name})
         .where(.{ .intelligence = "10.2" });
 
-    var buf: [1024]u8 = undefined;
-    try std.testing.expectEqualStrings(
-        \\SELECT "name" FROM "cats" WHERE "intelligence" = $1
-    ,
-        try query.toSql(&buf, adapters.test_adapter),
-    );
+    try std.testing.expectEqual(query.values().@"0", 10.2);
 }
 
 test "toJetQuery()" {
-    // TODO
-    // const Schema = struct {
-    //     pub const Cats = Table("cats", struct { name: []const u8, paws: usize }, .{});
-    // };
-    //
-    // const Name = struct {
-    //     pub fn toJetQuery(self: @This(), T: type, allocator: std.mem.Allocator) T {
-    //         _ = self;
-    //         _ = allocator;
-    //         return switch (T) {
-    //             []const u8 => "Hercules",
-    //             else => @compileError("Cannot coerce to " ++ @typeName(T)),
-    //         };
-    //     }
-    // };
-    //
-    // const Paws = struct {
-    //     pub fn toJetQuery(self: @This(), T: type, allocator: std.mem.Allocator) T {
-    //         _ = self;
-    //         _ = allocator;
-    //         return switch (T) {
-    //             usize => 4,
-    //             else => @compileError("Cannot coerce to " ++ @typeName(T)),
-    //         };
-    //     }
-    // };
-    //
-    // const name = Name{};
-    // const paws = Paws{};
-    //
-    // const query = Query(Schema.Cats)
-    //     .insert(.{ .name = name, .paws = paws });
-    // var buf: [1024]u8 = undefined;
-    // try std.testing.expectEqualStrings(
-    //     \\insert into "cats" ("name", "paws") values ('Hercules', 4)
-    // , try query.toSql(&buf, adapters.test_adapter));
+    const Schema = struct {
+        pub const Cats = Table("cats", struct { name: []const u8, paws: usize }, .{});
+    };
+
+    const Name = struct {
+        pub fn toJetQuery(self: @This(), T: type) !T {
+            _ = self;
+            return switch (T) {
+                []const u8 => "Hercules",
+                else => @compileError("Cannot coerce to " ++ @typeName(T)),
+            };
+        }
+    };
+
+    const Paws = struct {
+        pub fn toJetQuery(self: @This(), T: type) !T {
+            _ = self;
+            return switch (T) {
+                usize => 4,
+                else => @compileError("Cannot coerce to " ++ @typeName(T)),
+            };
+        }
+    };
+
+    const name = Name{};
+    const paws = Paws{};
+
+    const query = Query(Schema.Cats)
+        .insert(.{ .name = name, .paws = paws });
+    var buf: [1024]u8 = undefined;
+    try std.testing.expectEqualStrings(
+        \\INSERT INTO "cats" ("name", "paws") VALUES ($1, $2)
+    , try query.toSql(&buf, adapters.test_adapter));
+    const values = query.values();
+    try std.testing.expectEqualStrings(values.@"0", "Hercules");
+    try std.testing.expectEqual(values.@"1", 4);
+}
+
+test "failed coercion (bool)" {
+    const Schema = struct {
+        pub const Cats = Table("cats", struct { name: []const u8, intelligent: bool }, .{});
+    };
+    const query = Query(Schema.Cats)
+        .select(&.{.name})
+        .where(.{ .intelligent = "not a bool" });
+
+    try std.testing.expectError(error.JetQueryInvalidBooleanString, query.validateValues());
+}
+
+test "failed coercion (int)" {
+    const Schema = struct {
+        pub const Cats = Table("cats", struct { name: []const u8, paws: usize }, .{});
+    };
+    const query = Query(Schema.Cats)
+        .select(&.{.name})
+        .where(.{ .paws = "not an int" });
+
+    try std.testing.expectError(error.JetQueryInvalidIntegerString, query.validateValues());
+}
+
+test "failed coercion (float)" {
+    const Schema = struct {
+        pub const Cats = Table("cats", struct { name: []const u8, intelligence: f64 }, .{});
+    };
+    const query = Query(Schema.Cats)
+        .select(&.{.name})
+        .where(.{ .intelligence = "not a float" });
+
+    try std.testing.expectError(error.JetQueryInvalidFloatString, query.validateValues());
 }
 
 test "timestamps (create)" {

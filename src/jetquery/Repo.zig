@@ -43,6 +43,7 @@ pub fn deinit(self: *Repo) void {
 /// Execute the given query and return results.
 pub fn execute(self: *Repo, query: anytype) !jetquery.Result {
     var buf: [4096]u8 = undefined;
+    try query.validateValues();
     return try self.adapter.execute(self, try query.toSql(&buf, self.adapter), query.field_values);
 }
 
@@ -57,8 +58,8 @@ pub fn createTable(self: *Repo, name: []const u8, columns: []const jetquery.Colu
     const writer = buf.writer();
 
     try writer.print(
-        \\create table{s} {} (
-    , .{ if (options.if_not_exists) " if not exists" else "", self.adapter.identifier(name) });
+        \\CREATE TABLE{s} {} (
+    , .{ if (options.if_not_exists) " IF NOT EXISTS" else "", self.adapter.identifier(name) });
 
     for (columns, 0..) |column, index| {
         if (column.timestamps) {
@@ -99,8 +100,8 @@ pub fn dropTable(self: *Repo, name: []const u8, options: DropTableOptions) !void
     const writer = buf.writer();
 
     try writer.print(
-        \\drop table{s} "{s}"
-    , .{ if (options.if_exists) " if exists" else "", name });
+        \\DROP TABLE{s} "{s}"
+    , .{ if (options.if_exists) " IF EXISTS" else "", name });
 
     var result = try self.adapter.execute(self, buf.items, &.{});
     try result.drain();
@@ -136,13 +137,16 @@ test "repo" {
     var insert = try repo.adapter.execute(&repo, "insert into cats (name, paws) values ('Hercules', 4)", &.{});
     defer insert.deinit();
 
-    const query = jetquery.Query(Schema.Cats).select(&.{ .name, .paws });
+    const query = jetquery.Query(Schema.Cats)
+        .select(&.{ .name, .paws })
+        .where(.{ .name = "Hercules", .paws = 4 });
 
     var result = try repo.execute(query);
     defer result.deinit();
 
     while (try result.next(query)) |row| {
         try std.testing.expectEqualStrings("Hercules", row.name);
+        try std.testing.expectEqual(4, row.paws);
         break;
     } else {
         try std.testing.expect(false);
