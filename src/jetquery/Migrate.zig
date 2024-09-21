@@ -33,13 +33,11 @@ pub fn run(self: Migrate) !void {
                 .message = "Executing migration: " ++ migration.name,
             });
 
-            const query = jetquery.Query(Schema.Migrations)
-                .insert(.{ .version = migration.version });
+            try jetquery.Query(Schema.Migrations)
+                .insert(.{ .version = migration.version })
+                .execute(self.repo);
 
             try migration.upFn(self.repo);
-
-            var result = try self.repo.execute(query);
-            defer result.deinit();
 
             try self.repo.eventCallback(.{
                 .context = .migration,

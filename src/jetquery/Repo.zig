@@ -41,9 +41,21 @@ pub fn deinit(self: *Repo) void {
 }
 
 /// Execute the given query and return results.
-pub fn execute(self: *Repo, query: anytype) !jetquery.Result {
+pub fn execute(self: *Repo, query: anytype) !switch (@TypeOf(query).ResultType) {
+    .one => ?@TypeOf(query).Definition,
+    .many => jetquery.Result,
+    .none => void,
+} {
     var buf: [4096]u8 = undefined;
-    return try self.adapter.execute(self, try query.toSql(&buf, self.adapter), query.field_values);
+    var result = try self.adapter.execute(self, try query.toSql(&buf, self.adapter), query.field_values);
+    return switch (@TypeOf(query).ResultType) {
+        .one => try result.next(query),
+        .many => result,
+        .none => blk: {
+            result.deinit();
+            break :blk {};
+        },
+    };
 }
 
 pub const CreateTableOptions = struct { if_not_exists: bool = false };
