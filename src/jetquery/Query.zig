@@ -17,14 +17,9 @@ pub fn Query(Table: type) type {
 
         pub fn select(comptime columns: []const std.meta.FieldEnum(Table.Definition)) Statement(Table, std.meta.fields(@TypeOf(.{}))) {
             var statement: Statement(Table, std.meta.fields(@TypeOf(.{}))) = undefined;
-            inline for (std.meta.fields(@TypeOf(.{})), 0..) |field, index| {
-                const value = @field(.{}, field.name);
-                const coerced = coerce(Table, field, value);
-                @field(statement.field_values, std.fmt.comptimePrint("{}", .{index})) = coerced.value;
-                statement.coerce_errors[index] = coerced.err;
-                statement.field_names[index] = field.name;
-            }
             statement.columns = columns;
+            statement.field_names = .{};
+            statement.field_contexts = .{};
             statement.query_type = .select;
             statement.limit_bound = null;
             return statement;
@@ -38,6 +33,7 @@ pub fn Query(Table: type) type {
                 @field(statement.field_values, std.fmt.comptimePrint("{}", .{index})) = coerced.value;
                 statement.coerce_errors[index] = coerced.err;
                 statement.field_names[index] = field.name;
+                statement.field_contexts[index] = .update;
             }
             statement.columns = &.{};
             statement.query_type = .update;
@@ -53,6 +49,7 @@ pub fn Query(Table: type) type {
                 @field(statement.field_values, std.fmt.comptimePrint("{}", .{index})) = coerced.value;
                 statement.coerce_errors[index] = coerced.err;
                 statement.field_names[index] = field.name;
+                statement.field_contexts[index] = .insert;
             }
             statement.columns = &.{};
             statement.query_type = .insert;
@@ -65,6 +62,7 @@ pub fn Query(Table: type) type {
             statement.columns = &.{};
             statement.query_type = .delete;
             statement.limit_bound = null;
+            statement.field_contexts = .{};
             return statement;
         }
     };
@@ -141,12 +139,14 @@ fn initStatement(
     S: type,
     self: S,
     fields: []const std.builtin.Type.StructField,
+    field_context: FieldContext,
     args: anytype,
 ) void {
     inline for (fields, 0..) |field, index| {
         const value = self.field_values[index];
         @field(statement.field_values, std.fmt.comptimePrint("{}", .{index})) = value;
         statement.field_names[index] = field.name;
+        statement.field_contexts[index] = self.field_contexts[index];
     }
     inline for (std.meta.fields(@TypeOf(args)), fields.len..) |field, index| {
         const value = @field(args, field.name);
@@ -154,11 +154,11 @@ fn initStatement(
         @field(statement.field_values, std.fmt.comptimePrint("{}", .{index})) = coerced.value;
         statement.coerce_errors[index] = coerced.err;
         statement.field_names[index] = field.name;
+        statement.field_contexts[index] = field_context;
     }
     statement.columns = self.columns;
     statement.query_type = self.query_type;
     statement.limit_bound = self.limit_bound;
-    statement.where_index = fields.len;
 }
 
 fn CoercedValue(Target: type) type {
@@ -259,14 +259,16 @@ fn coerceBool(T: type, value: []const u8) CoercedValue(T) {
         .{ .err = error.JetQueryInvalidBooleanString };
 }
 
+const FieldContext = enum { where, update, insert };
+
 fn Statement(Table: type, comptime fields: []const std.builtin.Type.StructField) type {
     return struct {
         field_values: Fields(Table, fields),
         field_names: [fields.len][]const u8,
+        field_contexts: [fields.len]FieldContext,
         columns: []const std.meta.FieldEnum(Table.Definition) = &.{},
         limit_bound: ?usize = null,
         query_type: QueryType,
-        where_index: ?usize = null,
         coerce_errors: [fields.len]?anyerror,
 
         pub const Definition = Table.Definition;
@@ -275,7 +277,7 @@ fn Statement(Table: type, comptime fields: []const std.builtin.Type.StructField)
 
         pub fn where(self: Self, args: anytype) Statement(Table, fields ++ std.meta.fields(@TypeOf(args))) {
             var statement: Statement(Table, fields ++ std.meta.fields(@TypeOf(args))) = undefined;
-            initStatement(Table, @TypeOf(statement), &statement, Self, self, fields, args);
+            initStatement(Table, @TypeOf(statement), &statement, Self, self, fields, .where, args);
             return statement;
         }
 
@@ -285,7 +287,7 @@ fn Statement(Table: type, comptime fields: []const std.builtin.Type.StructField)
                 .field_names = self.field_names,
                 .query_type = self.query_type,
                 .columns = self.columns,
-                .where_index = self.where_index,
+                .field_contexts = self.field_contexts,
                 .limit_bound = limit_bound,
                 .coerce_errors = self.coerce_errors,
             };
@@ -314,16 +316,20 @@ fn Statement(Table: type, comptime fields: []const std.builtin.Type.StructField)
             }
         }
 
+        fn fieldContext(self: Self, index: usize, context: FieldContext) bool {
+            if (self.field_contexts.len == 0) return false;
+            return self.field_contexts[index] == context;
+        }
+
         // Render the query's `select` statement as SQL.
         fn renderSelect(self: Self, writer: anytype, adapter: jetquery.adapters.Adapter) !void {
             try writer.print("SELECT ", .{});
-            for (self.columns, 0..) |column, index| {
-                try writer.print("{}{s} ", .{
-                    adapter.identifier(@tagName(column)),
-                    if (index < self.columns.len - 1) "," else "",
-                });
+            var first = true;
+            for (self.columns) |column| {
+                if (!first) try writer.print(", ", .{}) else first = false;
+                try writer.print("{}", .{adapter.identifier(@tagName(column))});
             }
-            try writer.print("FROM {}", .{adapter.identifier(Table.table_name)});
+            try writer.print(" FROM {}", .{adapter.identifier(Table.table_name)});
             try self.renderWhere(writer, adapter);
             if (self.limit_bound) |bound| try writer.print(" LIMIT {}", .{bound});
         }
@@ -331,33 +337,37 @@ fn Statement(Table: type, comptime fields: []const std.builtin.Type.StructField)
         // Render the query's `insert` statement as SQL.
         fn renderInsert(self: Self, writer: anytype, adapter: jetquery.adapters.Adapter) !void {
             try writer.print("INSERT INTO {} (", .{adapter.identifier(Table.table_name)});
+            var first = true;
             for (self.field_names, 0..) |field_name, index| {
-                try writer.print("{}{s}", .{
-                    adapter.identifier(field_name),
-                    if (index < self.field_names.len - 1) ", " else "",
-                });
+                if (self.fieldContext(index, .insert)) {
+                    if (!first) try writer.print(", ", .{}) else first = false;
+                    try writer.print("{}", .{adapter.identifier(field_name)});
+                }
             }
             try writer.print(") VALUES (", .{});
+            first = true;
             inline for (self.field_names, self.field_values, 0..) |field_name, field_value, index| {
                 _ = field_name; // may use later with named bind-params
                 var buf: [8]u8 = undefined;
-                try writer.print("{s}{s}", .{
-                    try adapter.paramSql(&buf, field_value, index),
-                    if (index + 1 < self.field_names.len) ", " else ")",
-                });
+                if (self.fieldContext(index, .insert)) {
+                    if (!first) try writer.print(", ", .{}) else first = false;
+                    try writer.print("{s}", .{try adapter.paramSql(&buf, field_value, index)});
+                }
             }
+            try writer.print(")", .{});
         }
 
         // Render the query's `update` statement as SQL.
         fn renderUpdate(self: Self, writer: anytype, adapter: jetquery.adapters.Adapter) !void {
             try writer.print("UPDATE {} SET ", .{adapter.identifier(Table.table_name)});
+            var first = true;
             inline for (self.field_names, self.field_values, 0..) |field_name, field_value, index| {
-                if (self.where_index == null or index < self.where_index.?) {
+                if (self.fieldContext(index, .update)) {
+                    if (!first) try writer.print(", ", .{}) else first = false;
                     var buf: [8]u8 = undefined;
-                    try writer.print("{} = {s}{s}", .{
+                    try writer.print("{} = {s}", .{
                         adapter.identifier(field_name),
                         try adapter.paramSql(&buf, field_value, index),
-                        if (index < self.field_names[0 .. self.where_index orelse self.field_names.len - 1].len - 1) ", " else "",
                     });
                 }
             }
@@ -372,19 +382,22 @@ fn Statement(Table: type, comptime fields: []const std.builtin.Type.StructField)
 
         // Render the query's `where` clause as SQL.
         fn renderWhere(self: Self, writer: anytype, adapter: jetquery.adapters.Adapter) !void {
-            if (self.field_names.len == 0) return;
-            const where_index = self.where_index orelse return;
-
-            try writer.print(" WHERE ", .{});
+            var first = true;
             inline for (self.field_names, self.field_values, 0..) |field_name, field_value, index| {
-                if (index >= where_index) {
+                if (self.fieldContext(index, .where)) {
+                    if (first) {
+                        try writer.print(" WHERE ", .{});
+                        first = false;
+                    } else {
+                        try writer.print(" AND ", .{});
+                    }
+
                     var buf: [8]u8 = undefined;
                     try writer.print(
-                        \\{} = {s}{s}
+                        \\{} = {s}
                     , .{
                         adapter.identifier(field_name),
                         try adapter.paramSql(&buf, field_value, index),
-                        if (index - where_index + 1 < self.field_names[where_index..].len) " AND " else "",
                     });
                 }
             }

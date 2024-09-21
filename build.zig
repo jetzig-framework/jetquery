@@ -51,6 +51,11 @@ pub fn build(b: *std.Build) !void {
         .optimize = optimize,
     });
     const run_migration_unit_tests = b.addRunArtifact(migration_unit_tests);
+
+    // Prevent migration tests running in parallel with unit tests - potential for clobbering
+    // each other on same database:
+    run_migration_unit_tests.step.dependOn(&run_lib_unit_tests.step);
+
     migration_unit_tests.step.dependOn(&exe_generate_migrations.step);
     test_step.dependOn(&run_migration_unit_tests.step);
 

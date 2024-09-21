@@ -48,6 +48,23 @@ test "where" {
     , sql);
 }
 
+test "where (multiple)" {
+    const Schema = struct {
+        pub const Cats = Table("cats", struct { name: []const u8, paws: usize }, .{});
+    };
+
+    const query = Query(Schema.Cats)
+        .select(&.{ .name, .paws })
+        .where(.{ .name = "bar" })
+        .where(.{ .paws = 4 });
+
+    var buf: [1024]u8 = undefined;
+    const sql = try query.toSql(&buf, adapters.test_adapter);
+    try std.testing.expectEqualStrings(
+        \\SELECT "name", "paws" FROM "cats" WHERE "name" = $1 AND "paws" = $2
+    , sql);
+}
+
 test "limit" {
     const Schema = struct {
         pub const Cats = Table("cats", struct { name: []const u8, paws: usize }, .{});
