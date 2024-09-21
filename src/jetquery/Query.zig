@@ -34,7 +34,7 @@ pub fn Query(Table: type) type {
             .many,
         ) {
             var statement: Statement(Table, std.meta.fields(@TypeOf(.{})), .many) = undefined;
-            statement.columns = columns;
+            statement.columns = if (columns.len == 0) Table.columns() else columns;
             statement.field_names = .{};
             statement.field_contexts = .{};
             statement.field_errors = .{};

@@ -31,6 +31,19 @@ test "select" {
     , sql);
 }
 
+test "select (all)" {
+    const Schema = struct {
+        pub const Cats = Table("cats", struct { name: []const u8, paws: usize }, .{});
+    };
+    const query = Query(Schema.Cats).select(&.{});
+
+    var buf: [1024]u8 = undefined;
+    const sql = try query.toSql(&buf, adapters.test_adapter);
+    try std.testing.expectEqualStrings(
+        \\SELECT "name", "paws" FROM "cats"
+    , sql);
+}
+
 test "where" {
     const Schema = struct {
         pub const Cats = Table("cats", struct { name: []const u8, paws: usize }, .{});
