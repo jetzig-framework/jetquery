@@ -25,7 +25,10 @@ pub fn Query(Table: type) type {
         /// ```zig
         /// Query(MyTable).select(&.{ .foo, .bar }).where(.{ .foo = "qux" });
         /// ```
-        /// Pass an empty `columns` array to select all columns.
+        /// Pass an empty `columns` array to select all columns:
+        /// ```zig
+        /// Query(MyTable).select(&.{}).where(.{ .foo = "qux" });
+        /// ```
         pub fn select(
             comptime columns: []const std.meta.FieldEnum(Table.Definition),
         ) Statement(
