@@ -189,7 +189,7 @@ test "toJetQuery()" {
     const paws = Paws{};
 
     const query = Query(Schema.Cats)
-        .insert(.{ .name = name, .paws = paws });
+        .insert(.{ .name = name, .paws = &paws });
     var buf: [1024]u8 = undefined;
     try std.testing.expectEqualStrings(
         \\INSERT INTO "cats" ("name", "paws") VALUES ($1, $2)

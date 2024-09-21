@@ -108,8 +108,23 @@ fn ValueType(T: type) type {
     };
 }
 
-fn coerceJetQuery(Target: type, Source: type, value: anytype) CoercedValue(Target) {
-    if (@hasDecl(Source, "toJetQuery")) {
+fn canCoerceDelegate(T: type) bool {
+    return switch (@typeInfo(T)) {
+        .@"struct", .@"union" => @hasDecl(T, "toJetQuery") and @typeInfo(@TypeOf(T.toJetQuery)) == .@"fn",
+        .pointer => |info| @hasDecl(info.child, "toJetQuery") and @typeInfo(@TypeOf(T.toJetQuery)) == .@"fn",
+        else => false,
+    };
+}
+
+// Call `toJetQuery` with a given type and an allocator on the given arg field. Although
+// this function expects a return value not specific to JetQuery, the intention is that
+// arbitrary types can implement `toJetQuery` if the author wants them to be used with
+// JetQuery, otherwise a typical Zig compile error will occur. This feature is used by
+// Zmpl for converting Zmpl Values, allowing e.g. request params in Jetzig to be used as
+// JetQuery whereclause/etc. params.
+fn coerceDelegate(Target: type, value: anytype) CoercedValue(Target) {
+    const Source = @TypeOf(value);
+    if (comptime canCoerceDelegate(Source)) {
         const coerced = value.toJetQuery(Target) catch |err| {
             return .{ .err = err };
         };
@@ -162,20 +177,48 @@ fn coerce(
     return switch (@typeInfo(field.type)) {
         .int, .comptime_int => switch (@typeInfo(T)) {
             .int => .{ .value = value },
-            else => coerceJetQuery(T, field.type, value),
+            else => coerceDelegate(T, value),
         },
         .float, .comptime_float => switch (@typeInfo(T)) {
             .float => .{ .value = value },
-            else => coerceJetQuery(T, field.type, value),
+            else => coerceDelegate(T, value),
         },
-        .pointer => switch (@typeInfo(T)) {
-            .int => coerceInt(T, value),
-            .float => coerceFloat(T, value),
-            .bool => coerceBool(T, value),
-            .pointer => .{ .value = value }, // TODO: Ensure string
-            else => coerceJetQuery(T, field.type, value),
+        .pointer => |info| switch (@typeInfo(T)) {
+            .int => switch (@typeInfo(info.child)) {
+                .int => switch (info.size) {
+                    .Slice => coerceInt(T, value),
+                    else => .{ .value = value },
+                },
+                else => if (comptime canCoerceDelegate(info.child))
+                    coerceDelegate(T, value.*)
+                else
+                    coerceInt(T, value),
+            },
+            .float => switch (@typeInfo(info.child)) {
+                .float => .{ .value = value },
+                else => if (comptime canCoerceDelegate(info.child))
+                    coerceDelegate(T, value.*)
+                else
+                    coerceFloat(T, value),
+            },
+            .bool => switch (@typeInfo(info.child)) {
+                .bool => .{ .value = value },
+                else => if (comptime canCoerceDelegate(info.child))
+                    coerceDelegate(T, value.*)
+                else
+                    coerceBool(T, value),
+            },
+            .pointer => if (comptime canCoerceDelegate(info.child))
+                coerceDelegate(T, value.*)
+            else
+                .{ .value = value }, // TODO
+            else => if (comptime canCoerceDelegate(info.child))
+                coerceDelegate(T, value.*)
+            else
+                @compileError("Incompatible types: `" ++
+                    @typeName(T) ++ "` and `" ++ @typeName(info.child) ++ "`"),
         },
-        else => coerceJetQuery(T, field.type, value),
+        else => coerceDelegate(T, value),
     };
 }
 
@@ -202,14 +245,18 @@ fn coerceFloat(T: type, value: []const u8) CoercedValue(T) {
 }
 
 fn coerceBool(T: type, value: []const u8) CoercedValue(T) {
-    const coerced = if (std.mem.eql(u8, value, "1"))
-        true
-    else if (std.mem.eql(u8, value, "0"))
-        false
-    else
-        return .{ .err = error.JetQueryInvalidBooleanString, .value = false };
+    if (value.len != 1) return .{ .err = error.JetQueryInvalidBooleanString };
 
-    return .{ .value = coerced };
+    const maybe_boolean = switch (value[0]) {
+        '1' => true,
+        '0' => false,
+        else => null,
+    };
+
+    return if (maybe_boolean) |boolean|
+        .{ .value = boolean }
+    else
+        .{ .err = error.JetQueryInvalidBooleanString };
 }
 
 fn Statement(Table: type, comptime fields: []const std.builtin.Type.StructField) type {
@@ -341,85 +388,6 @@ fn Statement(Table: type, comptime fields: []const std.builtin.Type.StructField)
                     });
                 }
             }
-        }
-
-        // Get the type for a given field name from the table's definition struct.
-        fn CoerceFieldType(comptime name: []const u8) type {
-            inline for (std.meta.fields(Table.Definition)) |field| {
-                if (std.mem.eql(u8, field.name, name)) return field.type;
-            }
-            @compileError("Type `" ++ @typeName(Table) ++ "` does not define field `" ++ name ++ "`");
-        }
-
-        // Call `toJetQuery` with a given type and an allocator on the given arg field. Although
-        // this function expects a return value not specific to JetQuery, the intention is that
-        // arbitrary types can implement `toJetQuery` if the author wants them to be used with
-        // JetQuery, otherwise a typical Zig compile error will occur. This feature is used by
-        // Zmpl for converting Zmpl Values, allowing e.g. request params in Jetzig to be used as
-        // JetQuery whereclause/etc. params.
-        fn delegateCoerceValue(self: Self, args: anytype, comptime field_name: []const u8) jetquery.Value {
-            return switch (CoerceFieldType(field_name)) {
-                []const u8 => .{
-                    .string = @field(args, field_name).toJetQuery([]const u8, self.allocator),
-                },
-                usize => .{
-                    .integer = @field(args, field_name).toJetQuery(usize, self.allocator),
-                },
-                f64 => .{
-                    .float = @field(args, field_name).toJetQuery(f64, self.allocator),
-                },
-                bool => .{
-                    .boolean = @field(args, field_name).toJetQuery(bool, self.allocator),
-                },
-                else => |C| @compileError("Unsupported schema field type `" ++ @typeName(C) ++ "` for field `" ++ field_name ++ "`"),
-            };
-        }
-
-        // Try to coerce a string to the appropriate value, e.g. parse a string to an int, etc. On
-        // failure, `jetquery.Value.err` is active, which will prevent the query from executing.
-        // We store errors instead of returning them to allow simple method chaining
-        // (`.select().where()`, etc.).
-        fn coerceString(FT: type, comptime field_name: []const u8, value: []const u8) jetquery.Value {
-            return switch (FT) {
-                []const u8 => .{ .string = value },
-                usize => parseIntegerOrError(value),
-                f64 => parseFloatOrError(value),
-                bool => parseBooleanOrError(value),
-                else => |C| @compileError("Unsupported schema field type `" ++ @typeName(C) ++ "` for field `" ++ field_name ++ "`"),
-            };
-        }
-
-        // Parse a string into a `Value.integer`, otherwise a `Value.err`.
-        fn parseIntegerOrError(input: []const u8) jetquery.Value {
-            const integer = std.fmt.parseInt(usize, input, 10) catch |err| {
-                return .{ .err = err };
-            };
-            return .{ .integer = integer };
-        }
-
-        // Parse a string into a `Value.float`, otherwise a `Value.err`.
-        fn parseFloatOrError(input: []const u8) jetquery.Value {
-            const float = std.fmt.parseFloat(f64, input) catch |err| {
-                return .{ .err = err };
-            };
-            return .{ .float = float };
-        }
-
-        // Parse a string into a `Value.boolean`, otherwise a `Value.err`.
-        // "1" and "0" are considered as `true` and `false` respectively.
-        fn parseBooleanOrError(input: []const u8) jetquery.Value {
-            if (input.len != 1) return .{ .err = error.JetQueryUnrecognizedBoolean };
-
-            const maybe_boolean = switch (input[0]) {
-                '1' => true,
-                '0' => false,
-                else => null,
-            };
-
-            return if (maybe_boolean) |boolean|
-                .{ .boolean = boolean }
-            else
-                .{ .err = error.JetQueryUnrecognizedBoolean };
         }
     };
 }
