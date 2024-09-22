@@ -31,13 +31,24 @@ pub const Result = struct {
                 inline for (std.meta.fields(@TypeOf(query).Definition)) |field| {
                     if (std.mem.eql(u8, field.name, column_name)) {
                         @field(result_row, field.name) = switch (field.type) {
-                            // TODO: Other types, strict number types only
-                            []const u8 => row.get([]const u8, index),
-                            ?[]const u8 => row.get(?[]const u8, index),
-                            usize => @intCast(row.get(i32, index)),
-                            ?usize => if (row.get(?i32, index)) |value| @intCast(value) else null,
-                            bool => row.get(bool, index),
-                            ?bool => row.get(?bool, index),
+                            // TODO: pg.Numeric, pg.Cidr
+                            u8,
+                            ?u8,
+                            i16,
+                            ?i16,
+                            i32,
+                            ?i32,
+                            f32,
+                            ?f32,
+                            []u8,
+                            ?[]u8,
+                            i64,
+                            ?i64,
+                            bool,
+                            ?bool,
+                            []const u8,
+                            ?[]const u8,
+                            => |T| row.get(T, index),
                             else => @compileError("Unsupported type: " ++ @typeName(field.type)),
                         };
                     }
@@ -133,13 +144,13 @@ pub fn execute(
 pub fn columnTypeSql(self: PostgresqlAdapter, column_type: jetquery.Column.Type) []const u8 {
     _ = self;
     return switch (column_type) {
-        .string => "VARCHAR(255)",
-        .integer => "INTEGER",
-        .boolean => "BOOLEAN",
-        .float => "REAL",
-        .decimal => "NUMERIC",
-        .datetime => "TIMESTAMP",
-        .text => "TEXT",
+        .string => " VARCHAR(255)",
+        .integer => " INTEGER",
+        .boolean => " BOOLEAN",
+        .float => " REAL",
+        .decimal => " NUMERIC",
+        .datetime => " TIMESTAMP",
+        .text => " TEXT",
     };
 }
 
@@ -152,12 +163,12 @@ pub fn identifier(comptime name: []const u8) []const u8 {
 
 /// SQL fragment used to indicate a primary key.
 pub fn primaryKeySql() []const u8 {
-    return "SERIAL PRIMARY KEY";
+    return " SERIAL PRIMARY KEY";
 }
 
 /// SQL fragment used to indicate a column whose value cannot be `NULL`.
 pub fn notNullSql() []const u8 {
-    return "NOT NULL";
+    return " NOT NULL";
 }
 
 /// SQL representing a bind parameter, e.g. `$1`.

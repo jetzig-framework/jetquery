@@ -7,6 +7,7 @@ pub const adapters = @import("jetquery/adapters.zig");
 pub const sql = @import("jetquery/sql.zig");
 pub const Migration = @import("jetquery/Migration.zig");
 pub const table = @import("jetquery/table.zig");
+pub const column_names = @import("jetquery/column_names.zig");
 pub const Row = @import("jetquery/Row.zig");
 pub const Result = @import("jetquery/Result.zig").Result;
 pub const DateTime = @import("jetquery/DateTime.zig");
@@ -21,6 +22,8 @@ pub const QueryType = @import("jetquery/Query.zig").QueryType;
 pub const OrderClause = @import("jetquery/Query.zig").OrderClause;
 
 pub const adapter = std.enums.nameCast(adapters.Name, config.database.adapter);
+pub const timestamp_updated_column_name = "updated_at";
+pub const timestamp_created_column_name = "created_at";
 
 test {
     std.testing.refAllDecls(@This());
@@ -28,7 +31,7 @@ test {
 
 test "select" {
     const Schema = struct {
-        pub const Cats = Table("cats", struct { name: []const u8, paws: usize }, .{});
+        pub const Cats = Table("cats", struct { name: []const u8, paws: i32 }, .{});
     };
     const query = Query(Schema.Cats).select(&.{ .name, .paws });
 
@@ -39,7 +42,7 @@ test "select" {
 
 test "select (all)" {
     const Schema = struct {
-        pub const Cats = Table("cats", struct { name: []const u8, paws: usize }, .{});
+        pub const Cats = Table("cats", struct { name: []const u8, paws: i32 }, .{});
     };
     const query = Query(Schema.Cats).select(&.{});
 
@@ -50,7 +53,7 @@ test "select (all)" {
 
 test "where" {
     const Schema = struct {
-        pub const Cats = Table("cats", struct { name: []const u8, paws: usize }, .{});
+        pub const Cats = Table("cats", struct { name: []const u8, paws: i32 }, .{});
     };
 
     const paws = 4;
@@ -65,7 +68,7 @@ test "where" {
 
 test "where (multiple)" {
     const Schema = struct {
-        pub const Cats = Table("cats", struct { name: []const u8, paws: usize }, .{});
+        pub const Cats = Table("cats", struct { name: []const u8, paws: i32 }, .{});
     };
 
     const query = Query(Schema.Cats)
@@ -80,7 +83,7 @@ test "where (multiple)" {
 
 test "limit" {
     const Schema = struct {
-        pub const Cats = Table("cats", struct { name: []const u8, paws: usize }, .{});
+        pub const Cats = Table("cats", struct { name: []const u8, paws: i32 }, .{});
     };
     const query = Query(Schema.Cats)
         .select(&.{ .name, .paws })
@@ -93,7 +96,7 @@ test "limit" {
 
 test "order by" {
     const Schema = struct {
-        pub const Cats = Table("cats", struct { name: []const u8, paws: usize }, .{});
+        pub const Cats = Table("cats", struct { name: []const u8, paws: i32 }, .{});
     };
     const query = Query(Schema.Cats)
         .select(&.{ .name, .paws })
@@ -106,7 +109,7 @@ test "order by" {
 
 test "insert" {
     const Schema = struct {
-        pub const Cats = Table("cats", struct { name: []const u8, paws: usize }, .{});
+        pub const Cats = Table("cats", struct { name: []const u8, paws: i32 }, .{});
     };
     const query = Query(Schema.Cats)
         .insert(.{ .name = "Hercules", .paws = 4 });
@@ -118,7 +121,7 @@ test "insert" {
 
 test "update" {
     const Schema = struct {
-        pub const Cats = Table("cats", struct { name: []const u8, paws: usize }, .{});
+        pub const Cats = Table("cats", struct { name: []const u8, paws: i32 }, .{});
     };
     const query = Query(Schema.Cats)
         .update(.{ .name = "Heracles", .paws = 2 })
@@ -133,7 +136,7 @@ test "update" {
 
 test "delete" {
     const Schema = struct {
-        pub const Cats = Table("cats", struct { name: []const u8, paws: usize }, .{});
+        pub const Cats = Table("cats", struct { name: []const u8, paws: i32 }, .{});
     };
     const query = Query(Schema.Cats)
         .delete()
@@ -146,7 +149,7 @@ test "delete" {
 
 test "delete (without where clause)" {
     const Schema = struct {
-        pub const Cats = Table("cats", struct { name: []const u8, paws: usize }, .{});
+        pub const Cats = Table("cats", struct { name: []const u8, paws: i32 }, .{});
     };
     const query = Query(Schema.Cats).delete();
 
@@ -155,7 +158,7 @@ test "delete (without where clause)" {
 
 test "deleteAll" {
     const Schema = struct {
-        pub const Cats = Table("cats", struct { name: []const u8, paws: usize }, .{});
+        pub const Cats = Table("cats", struct { name: []const u8, paws: i32 }, .{});
     };
     const query = Query(Schema.Cats)
         .deleteAll();
@@ -167,7 +170,7 @@ test "deleteAll" {
 
 test "find" {
     const Schema = struct {
-        pub const Cats = Table("cats", struct { id: usize, name: []const u8, paws: usize }, .{});
+        pub const Cats = Table("cats", struct { id: i32, name: []const u8, paws: i32 }, .{});
     };
     const query = Query(Schema.Cats).find(1000);
 
@@ -178,7 +181,7 @@ test "find" {
 
 test "find (with coerced id)" {
     const Schema = struct {
-        pub const Cats = Table("cats", struct { id: usize, name: []const u8, paws: usize }, .{});
+        pub const Cats = Table("cats", struct { id: i32, name: []const u8, paws: i32 }, .{});
     };
     const query = Query(Schema.Cats).find("1000");
 
@@ -189,7 +192,7 @@ test "find (with coerced id)" {
 
 test "find (without id column)" {
     const Schema = struct {
-        pub const Cats = Table("cats", struct { name: []const u8, paws: usize }, .{});
+        pub const Cats = Table("cats", struct { name: []const u8, paws: i32 }, .{});
     };
     const query = Query(Schema.Cats).find(1000);
 
@@ -198,7 +201,7 @@ test "find (without id column)" {
 
 test "findBy" {
     const Schema = struct {
-        pub const Cats = Table("cats", struct { id: usize, name: []const u8, paws: usize }, .{});
+        pub const Cats = Table("cats", struct { id: i32, name: []const u8, paws: i32 }, .{});
     };
     const query = Query(Schema.Cats).findBy(.{ .name = "Hercules", .paws = 4 });
 
@@ -209,7 +212,7 @@ test "findBy" {
 
 test "combined" {
     const Schema = struct {
-        pub const Cats = Table("cats", struct { id: usize, name: []const u8, paws: usize }, .{});
+        pub const Cats = Table("cats", struct { id: i32, name: []const u8, paws: i32 }, .{});
     };
     const query = Query(Schema.Cats)
         .select(&.{ .name, .paws })
@@ -224,7 +227,7 @@ test "combined" {
 
 test "runtime field values" {
     const Schema = struct {
-        pub const Cats = Table("cats", struct { name: []const u8, paws: usize }, .{});
+        pub const Cats = Table("cats", struct { name: []const u8, paws: i32 }, .{});
     };
     var hercules_buf: [8]u8 = undefined;
     const hercules = try std.fmt.bufPrint(&hercules_buf, "{s}", .{"Hercules"});
@@ -252,7 +255,7 @@ test "boolean coercion" {
 
 test "integer coercion" {
     const Schema = struct {
-        pub const Cats = Table("cats", struct { name: []const u8, paws: usize }, .{});
+        pub const Cats = Table("cats", struct { name: []const u8, paws: i32 }, .{});
     };
     const query = Query(Schema.Cats)
         .select(&.{.name})
@@ -274,7 +277,7 @@ test "float coercion" {
 
 test "toJetQuery()" {
     const Schema = struct {
-        pub const Cats = Table("cats", struct { name: []const u8, paws: usize }, .{});
+        pub const Cats = Table("cats", struct { name: []const u8, paws: i32 }, .{});
     };
 
     const Name = struct {
@@ -291,7 +294,7 @@ test "toJetQuery()" {
         pub fn toJetQuery(self: @This(), T: type) !T {
             _ = self;
             return switch (T) {
-                usize => 4,
+                i32 => 4,
                 else => @compileError("Cannot coerce to " ++ @typeName(T)),
             };
         }
@@ -323,7 +326,7 @@ test "failed coercion (bool)" {
 
 test "failed coercion (int)" {
     const Schema = struct {
-        pub const Cats = Table("cats", struct { name: []const u8, paws: usize }, .{});
+        pub const Cats = Table("cats", struct { name: []const u8, paws: i32 }, .{});
     };
     const query = Query(Schema.Cats)
         .select(&.{.name})
@@ -344,9 +347,36 @@ test "failed coercion (float)" {
 }
 
 test "timestamps (create)" {
-    // TODO
+    const Schema = struct {
+        pub const Cats = Table(
+            "cats",
+            struct { name: []const u8, paws: i32, created_at: i64, updated_at: i64 },
+            .{},
+        );
+    };
+    const query = Query(Schema.Cats)
+        .insert(.{ .name = "Hercules", .paws = 4 });
+
+    try std.testing.expectEqualStrings(
+        \\INSERT INTO "cats" ("name", "paws", "created_at", "updated_at") VALUES ($1, $2, $3, $4)
+    , query.sql);
 }
 
 test "timestamps (update)" {
-    // TODO
+    const Schema = struct {
+        pub const Cats = Table(
+            "cats",
+            struct { name: []const u8, paws: i32, created_at: i64, updated_at: i64 },
+            .{},
+        );
+    };
+    const query = Query(Schema.Cats)
+        .update(.{ .name = "Heracles", .paws = 2 })
+        .where(.{ .name = "Hercules" });
+
+    try std.testing.expectEqualStrings(
+        \\UPDATE "cats" SET "name" = $1, "paws" = $2, "updated_at" = $3 WHERE "name" = $4
+    ,
+        query.sql,
+    );
 }

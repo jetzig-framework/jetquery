@@ -7,7 +7,7 @@ pub fn up(repo: *jetquery.Repo) !void {
         "cats",
         &.{
             t.primaryKey("id", .{}),
-            t.column("name", .string, .{}),
+            t.column("name", .string, .{ .not_null = true }),
             t.column("paws", .integer, .{}),
             t.timestamps(.{}),
         },

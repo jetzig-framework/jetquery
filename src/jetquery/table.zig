@@ -1,8 +1,11 @@
 const jetquery = @import("../jetquery.zig");
 
-pub fn column(name: []const u8, column_type: jetquery.Column.Type, options: struct {}) jetquery.Column {
-    _ = options;
-    return .{ .name = name, .type = column_type, .options = .{} };
+pub fn column(
+    name: []const u8,
+    column_type: jetquery.Column.Type,
+    options: jetquery.Column.Options,
+) jetquery.Column {
+    return .{ .name = name, .type = column_type, .options = options };
 }
 
 pub fn primaryKey(name: []const u8, options: struct {}) jetquery.Column {

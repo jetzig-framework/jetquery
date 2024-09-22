@@ -56,7 +56,7 @@ pub fn Query(Table: type) type {
         pub fn update(args: anytype) Statement(
             .update,
             Table,
-            &fieldInfos(@TypeOf(args), .update),
+            &(fieldInfos(@TypeOf(args), .update) ++ timestampsFields(Table, .update)),
             &.{},
             &.{},
             .none,
@@ -64,16 +64,21 @@ pub fn Query(Table: type) type {
             var statement: Statement(
                 .update,
                 Table,
-                &fieldInfos(@TypeOf(args), .update),
+                &(fieldInfos(@TypeOf(args), .update) ++ timestampsFields(Table, .update)),
                 &.{},
                 &.{},
                 .none,
             ) = undefined;
-            inline for (std.meta.fields(@TypeOf(args)), 0..) |field, index| {
+            const fields = std.meta.fields(@TypeOf(args));
+            inline for (fields, 0..) |field, index| {
                 const value = @field(args, field.name);
                 const coerced = coerce(Table, fieldInfo(field, .update), value);
                 @field(statement.field_values, std.fmt.comptimePrint("{}", .{index})) = coerced.value;
                 statement.field_errors[index] = coerced.err;
+            }
+            if (comptime hasTimestamps(Table)) {
+                @field(statement.field_values, std.fmt.comptimePrint("{}", .{fields.len})) = now();
+                statement.field_errors[fields.len] = null;
             }
             return statement;
         }
@@ -85,7 +90,7 @@ pub fn Query(Table: type) type {
         pub fn insert(args: anytype) Statement(
             .insert,
             Table,
-            &fieldInfos(@TypeOf(args), .insert),
+            &(fieldInfos(@TypeOf(args), .insert) ++ timestampsFields(Table, .insert)),
             &.{},
             &.{},
             .none,
@@ -93,16 +98,25 @@ pub fn Query(Table: type) type {
             var statement: Statement(
                 .insert,
                 Table,
-                &fieldInfos(@TypeOf(args), .insert),
+                &(fieldInfos(@TypeOf(args), .insert) ++ timestampsFields(Table, .insert)),
                 &.{},
                 &.{},
                 .none,
             ) = undefined;
-            inline for (std.meta.fields(@TypeOf(args)), 0..) |field, index| {
+
+            const fields = std.meta.fields(@TypeOf(args));
+
+            inline for (fields, 0..) |field, index| {
                 const value = @field(args, field.name);
                 const coerced = coerce(Table, fieldInfo(field, .insert), value);
                 @field(statement.field_values, std.fmt.comptimePrint("{}", .{index})) = coerced.value;
                 statement.field_errors[index] = coerced.err;
+            }
+            if (comptime hasTimestamps(Table)) {
+                @field(statement.field_values, std.fmt.comptimePrint("{}", .{fields.len})) = now();
+                statement.field_errors[fields.len] = null;
+                @field(statement.field_values, std.fmt.comptimePrint("{}", .{fields.len + 1})) = now();
+                statement.field_errors[fields.len + 1] = null;
             }
             return statement;
         }
@@ -598,4 +612,62 @@ fn translateOrderBy(
         }
         return clauses;
     }
+}
+
+fn timestampsFields(
+    Table: type,
+    comptime query_type: FieldContext,
+) [timestampsSize(Table, query_type)]FieldInfo {
+    return if (hasTimestamps(Table)) switch (query_type) {
+        .update => .{
+            fieldInfo(.{
+                .name = "updated_at",
+                .type = usize,
+                .default_value = null,
+                .is_comptime = false,
+                .alignment = @alignOf(usize),
+            }, query_type), // TODO
+        },
+        .insert => .{
+            fieldInfo(.{
+                .name = "created_at",
+                .type = usize,
+                .default_value = null,
+                .is_comptime = false,
+                .alignment = @alignOf(usize),
+            }, query_type), // TODO
+            fieldInfo(.{
+                .name = "updated_at",
+                .type = usize,
+                .default_value = null,
+                .is_comptime = false,
+                .alignment = @alignOf(usize),
+            }, query_type), // TODO
+        },
+        else => @compileError(
+            "Timestamps detection not relevant for `" ++ @tagName(query_type) ++ "` query. (This is a bug).",
+        ),
+    } else .{};
+}
+
+fn hasTimestamps(Table: type) bool {
+    return @hasField(Table.Definition, jetquery.column_names.created_at) and
+        @hasField(Table.Definition, jetquery.column_names.updated_at);
+}
+
+fn timestampsSize(Table: type, comptime query_type: FieldContext) u2 {
+    if (!hasTimestamps(Table)) return 0;
+
+    return switch (query_type) {
+        .update => 1,
+        .insert => 2,
+        else => @compileError(
+            "Timestamps detection not relevant for `" ++ @tagName(query_type) ++ "` query. (This is a bug).",
+        ),
+    };
+}
+
+fn now() i64 {
+    // TODO: Timezones ?
+    return std.time.timestamp();
 }

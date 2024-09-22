@@ -117,22 +117,23 @@ pub fn createTable(
     inline for (columns, 0..) |column, index| {
         if (column.timestamps) {
             try writer.print(
-                \\{s} {s} {s}, {s} {s} {s}{s}
+                \\{s}{s}{s}, {s}{s}{s}{s}
             , .{
-                self.adapter.identifier("created_at"),
+                self.adapter.identifier(jetquery.column_names.created_at),
                 self.adapter.columnTypeSql(.datetime),
                 self.adapter.notNullSql(),
-                self.adapter.identifier("updated_at"),
+                self.adapter.identifier(jetquery.column_names.updated_at),
                 self.adapter.columnTypeSql(.datetime),
                 self.adapter.notNullSql(),
                 if (index < columns.len - 1) ", " else "",
             });
         } else {
             try writer.print(
-                \\{0s} {1s} {2s}{3s}
+                \\{s}{s}{s}{s}{s}
             , .{
                 self.adapter.identifier(column.name),
                 if (column.primary_key) "" else self.adapter.columnTypeSql(column.type),
+                if (!column.primary_key and column.options.not_null) self.adapter.notNullSql() else "",
                 if (column.primary_key) self.adapter.primaryKeySql() else "",
                 if (index < columns.len - 1) ", " else "",
             });
@@ -182,7 +183,7 @@ test "Repo" {
     defer repo.deinit();
 
     const Schema = struct {
-        pub const Cats = jetquery.Table("cats", struct { name: []const u8, paws: usize }, .{});
+        pub const Cats = jetquery.Table("cats", struct { name: []const u8, paws: i32 }, .{});
     };
 
     var drop_table = try repo.adapter.execute(&repo, "drop table if exists cats", &.{});
