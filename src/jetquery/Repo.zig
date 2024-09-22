@@ -45,7 +45,7 @@ const GlobalOptions = struct {
 pub fn loadConfig(allocator: std.mem.Allocator, global_options: GlobalOptions) !Repo {
     const AdapterOptions = switch (jetquery.adapter) {
         .postgresql => jetquery.adapters.PostgresqlAdapter.Options,
-        else => |tag| @compileError("Unsupported adapter type: `" ++ @tagName(tag) ++ "`"),
+        .null => jetquery.adapters.NullAdapter.Options,
     };
     var options: AdapterOptions = undefined;
     inline for (std.meta.fields(AdapterOptions)) |field| {
@@ -60,7 +60,7 @@ pub fn loadConfig(allocator: std.mem.Allocator, global_options: GlobalOptions) !
     }
     var init_options: InitOptions = switch (jetquery.adapter) {
         .postgresql => .{ .adapter = .{ .postgresql = options } },
-        else => |tag| @compileError("Unsupported adapter type: `" ++ @tagName(tag) ++ "`"),
+        .null => .{ .adapter = .null },
     };
 
     inline for (std.meta.fields(GlobalOptions)) |field| {
@@ -117,11 +117,14 @@ pub fn createTable(
     inline for (columns, 0..) |column, index| {
         if (column.timestamps) {
             try writer.print(
-                \\{0s} {2s}, {1s} {2s}{3s}
+                \\{s} {s} {s}, {s} {s} {s}{s}
             , .{
                 self.adapter.identifier("created_at"),
+                self.adapter.columnTypeSql(.datetime),
+                self.adapter.notNullSql(),
                 self.adapter.identifier("updated_at"),
                 self.adapter.columnTypeSql(.datetime),
+                self.adapter.notNullSql(),
                 if (index < columns.len - 1) ", " else "",
             });
         } else {

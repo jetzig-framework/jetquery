@@ -97,7 +97,7 @@ test "order by" {
     };
     const query = Query(Schema.Cats)
         .select(&.{ .name, .paws })
-        .order_by(.{ .name = .ascending });
+        .orderBy(.{ .name = .ascending });
 
     try std.testing.expectEqualStrings(
         \\SELECT "name", "paws" FROM "cats" ORDER BY "name" ASC
@@ -215,7 +215,7 @@ test "combined" {
         .select(&.{ .name, .paws })
         .where(.{ .name = "Hercules" })
         .limit(10)
-        .order_by(.{ .name = .ascending });
+        .orderBy(.{ .name = .ascending });
 
     try std.testing.expectEqualStrings(
         \\SELECT "name", "paws" FROM "cats" WHERE "name" = $1 ORDER BY "name" ASC LIMIT $2

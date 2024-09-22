@@ -20,7 +20,10 @@ pub fn build(b: *std.Build) !void {
     lib.root_module.addImport("zul", zul_module.module("zul"));
 
     const config_path = b.option([]const u8, "jetquery_config_path", "JetQuery configuration file path") orelse "jetquery.config.zig";
-    const config_module = b.createModule(.{ .root_source_file = .{ .cwd_relative = config_path } });
+    const config_module = if (try fileExist(config_path))
+        b.createModule(.{ .root_source_file = .{ .cwd_relative = config_path } })
+    else
+        b.createModule(.{ .root_source_file = b.path("src/default_config.zig") });
 
     const jetquery_module = b.addModule("jetquery", .{ .root_source_file = b.path("src/jetquery.zig") });
     jetquery_module.addImport("pg", pg_module.module("pg"));
@@ -114,4 +117,17 @@ fn findMigrations(allocator: std.mem.Allocator, path: []const u8) ![][]const u8 
     }
 
     return try migrations.toOwnedSlice();
+}
+
+fn fileExist(path: []const u8) !bool {
+    const file = std.fs.cwd().openFile(path, .{}) catch |err| {
+        switch (err) {
+            error.FileNotFound => return false,
+            else => return err,
+        }
+    };
+
+    file.close();
+
+    return true;
 }

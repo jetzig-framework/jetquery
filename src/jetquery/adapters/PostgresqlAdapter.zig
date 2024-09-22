@@ -33,8 +33,11 @@ pub const Result = struct {
                         @field(result_row, field.name) = switch (field.type) {
                             // TODO: Other types, strict number types only
                             []const u8 => row.get([]const u8, index),
+                            ?[]const u8 => row.get(?[]const u8, index),
                             usize => @intCast(row.get(i32, index)),
+                            ?usize => if (row.get(?i32, index)) |value| @intCast(value) else null,
                             bool => row.get(bool, index),
+                            ?bool => row.get(?bool, index),
                             else => @compileError("Unsupported type: " ++ @typeName(field.type)),
                         };
                     }
@@ -150,6 +153,11 @@ pub fn identifier(comptime name: []const u8) []const u8 {
 /// SQL fragment used to indicate a primary key.
 pub fn primaryKeySql() []const u8 {
     return "SERIAL PRIMARY KEY";
+}
+
+/// SQL fragment used to indicate a column whose value cannot be `NULL`.
+pub fn notNullSql() []const u8 {
+    return "NOT NULL";
 }
 
 /// SQL representing a bind parameter, e.g. `$1`.

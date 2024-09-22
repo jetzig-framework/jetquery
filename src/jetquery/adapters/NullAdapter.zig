@@ -2,6 +2,8 @@ const jetquery = @import("../../jetquery.zig");
 
 const NullAdapter = @This();
 
+pub const Options = struct {};
+
 pub fn execute(self: *const NullAdapter, repo: *const jetquery.Repo, sql: []const u8, values: anytype) !jetquery.Result {
     _ = self;
     _ = repo;
@@ -26,6 +28,10 @@ pub fn identifier(name: []const u8) []const u8 {
 }
 
 pub fn primaryKeySql() []const u8 {
+    return "";
+}
+
+pub fn notNullSql() []const u8 {
     return "";
 }
 

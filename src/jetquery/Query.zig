@@ -531,7 +531,7 @@ fn Statement(
         }
 
         /// Apply an `ORDER BY` clause to the current statement.
-        pub fn order_by(self: Self, comptime args: anytype) Statement(
+        pub fn orderBy(self: Self, comptime args: anytype) Statement(
             query_type,
             Table,
             field_infos,

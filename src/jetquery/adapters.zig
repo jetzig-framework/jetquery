@@ -49,6 +49,13 @@ pub const Adapter = union(enum) {
         };
     }
 
+    /// SQL fragment used to indicate a column whose value cannot be `NULL`.
+    pub fn notNullSql(self: Adapter) []const u8 {
+        return switch (self) {
+            inline else => |adapter| @TypeOf(adapter).notNullSql(),
+        };
+    }
+
     /// SQL representing a bind parameter, e.g. `$1`.
     pub fn paramSql(self: Adapter, comptime index: usize) []const u8 {
         return switch (self) {
