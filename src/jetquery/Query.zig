@@ -34,9 +34,10 @@ pub fn Query(Table: type) type {
         ) Statement(
             Table,
             std.meta.fields(@TypeOf(.{})),
+            columns,
             .many,
         ) {
-            var statement: Statement(Table, std.meta.fields(@TypeOf(.{})), .many) = undefined;
+            var statement: Statement(Table, std.meta.fields(@TypeOf(.{})), columns, .many) = undefined;
             statement.columns = if (columns.len == 0) Table.columns() else columns;
             statement.field_names = .{};
             statement.field_contexts = .{};
@@ -50,8 +51,8 @@ pub fn Query(Table: type) type {
         /// ```zig
         /// Query(MyTable).update(.{ .foo = "bar", .baz = "qux" }).where(.{ .quux = "corge" });
         /// ```
-        pub fn update(args: anytype) Statement(Table, std.meta.fields(@TypeOf(args)), .none) {
-            var statement: Statement(Table, std.meta.fields(@TypeOf(args)), .none) = undefined;
+        pub fn update(args: anytype) Statement(Table, std.meta.fields(@TypeOf(args)), &.{}, .none) {
+            var statement: Statement(Table, std.meta.fields(@TypeOf(args)), &.{}, .none) = undefined;
             inline for (std.meta.fields(@TypeOf(args)), 0..) |field, index| {
                 const value = @field(args, field.name);
                 const coerced = coerce(Table, field, value);
@@ -70,8 +71,8 @@ pub fn Query(Table: type) type {
         /// ```zig
         /// Query(MyTable).insert(.{ .foo = "bar", .baz = "qux" });
         /// ```
-        pub fn insert(args: anytype) Statement(Table, std.meta.fields(@TypeOf(args)), .none) {
-            var statement: Statement(Table, std.meta.fields(@TypeOf(args)), .none) = undefined;
+        pub fn insert(args: anytype) Statement(Table, std.meta.fields(@TypeOf(args)), &.{}, .none) {
+            var statement: Statement(Table, std.meta.fields(@TypeOf(args)), &.{}, .none) = undefined;
             inline for (std.meta.fields(@TypeOf(args)), 0..) |field, index| {
                 const value = @field(args, field.name);
                 const coerced = coerce(Table, field, value);
@@ -92,8 +93,8 @@ pub fn Query(Table: type) type {
         /// ```zig
         /// Query(MyTable).delete().where(.{ .foo = "bar" });
         /// ```
-        pub fn delete() Statement(Table, &.{}, .none) {
-            var statement: Statement(Table, &.{}, .none) = undefined;
+        pub fn delete() Statement(Table, &.{}, &.{}, .none) {
+            var statement: Statement(Table, &.{}, &.{}, .none) = undefined;
             statement.columns = &.{};
             statement.query_type = .delete;
             statement.limit_bound = null;
@@ -107,8 +108,8 @@ pub fn Query(Table: type) type {
         /// ```zig
         /// Query(MyTable).deleteAll();
         /// ```
-        pub fn deleteAll() Statement(Table, &.{}, .none) {
-            var statement: Statement(Table, &.{}, .none) = undefined;
+        pub fn deleteAll() Statement(Table, &.{}, &.{}, .none) {
+            var statement: Statement(Table, &.{}, &.{}, .none) = undefined;
             statement.columns = &.{};
             statement.query_type = .delete_all;
             statement.limit_bound = null;
@@ -125,8 +126,13 @@ pub fn Query(Table: type) type {
         /// ```zig
         /// Query(MyTable).select(&.{}).where(.{ .id = id }).limit(1);
         /// ```
-        pub fn find(id: anytype) Statement(Table, std.meta.fields(@TypeOf(.{ .id = id })), .one) {
-            var statement: Statement(Table, std.meta.fields(@TypeOf(.{ .id = id })), .one) = undefined;
+        pub fn find(id: anytype) Statement(
+            Table,
+            std.meta.fields(@TypeOf(.{ .id = id })),
+            Table.columns(),
+            .one,
+        ) {
+            var statement: Statement(Table, std.meta.fields(@TypeOf(.{ .id = id })), Table.columns(), .one) = undefined;
             statement.columns = Table.columns();
             statement.field_names = .{"id"};
             statement.field_contexts = .{.where};
@@ -154,8 +160,13 @@ pub fn Query(Table: type) type {
         /// ```zig
         /// Query(MyTable).select(&.{}).where(args).limit(1);
         /// ```
-        pub fn findBy(args: anytype) Statement(Table, std.meta.fields(@TypeOf(args)), .one) {
-            var statement: Statement(Table, std.meta.fields(@TypeOf(args)), .one) = undefined;
+        pub fn findBy(args: anytype) Statement(
+            Table,
+            std.meta.fields(@TypeOf(args)),
+            Table.columns(),
+            .one,
+        ) {
+            var statement: Statement(Table, std.meta.fields(@TypeOf(args)), Table.columns(), .one) = undefined;
             statement.columns = Table.columns();
             statement.query_type = .select;
             statement.limit_bound = 1;
@@ -376,6 +387,7 @@ fn coerceBool(T: type, value: []const u8) CoercedValue(T) {
 fn Statement(
     Table: type,
     comptime fields: []const std.builtin.Type.StructField,
+    columns: []const std.meta.FieldEnum(Table.Definition),
     result_type: ResultType,
 ) type {
     return struct {
@@ -387,6 +399,8 @@ fn Statement(
         query_type: QueryType,
         field_errors: [fields.len]?anyerror,
 
+        comptime sql: []const u8 = @import("comptime_sql.zig").renderSelect(Table, jetquery.adapters.Adapter{ .postgresql = undefined }, columns, 100),
+
         pub const Definition = Table.Definition;
         pub const ResultType = result_type;
 
@@ -395,9 +409,10 @@ fn Statement(
         pub fn where(self: Self, args: anytype) Statement(
             Table,
             fields ++ std.meta.fields(@TypeOf(args)),
+            columns,
             result_type,
         ) {
-            var statement: Statement(Table, fields ++ std.meta.fields(@TypeOf(args)), result_type) = undefined;
+            var statement: Statement(Table, fields ++ std.meta.fields(@TypeOf(args)), columns, result_type) = undefined;
             initStatement(Table, @TypeOf(statement), &statement, Self, self, fields, .where, args);
             return statement;
         }
@@ -415,6 +430,7 @@ fn Statement(
         }
 
         pub fn toSql(self: Self, buf: []u8, adapter: jetquery.adapters.Adapter) ![]const u8 {
+            std.debug.print("****** sql: {s}\n", .{self.sql});
             try self.validateValues();
             var stream = std.io.fixedBufferStream(buf);
             const writer = stream.writer();
