@@ -8,16 +8,17 @@ eventCallback: *const fn (event: jetquery.events.Event) anyerror!void = jetquery
 
 const Repo = @This();
 
-const Options = struct {
+const InitOptions = struct {
     adapter: union(enum) {
         postgresql: jetquery.adapters.PostgresqlAdapter.Options,
         null,
     },
     eventCallback: *const fn (event: jetquery.events.Event) anyerror!void = jetquery.events.defaultCallback,
+    lazy_connect: bool = false,
 };
 
 /// Initialize a new Repo for executing queries.
-pub fn init(allocator: std.mem.Allocator, options: Options) !Repo {
+pub fn init(allocator: std.mem.Allocator, options: InitOptions) !Repo {
     return .{
         .allocator = allocator,
         .adapter = switch (options.adapter) {
@@ -25,12 +26,47 @@ pub fn init(allocator: std.mem.Allocator, options: Options) !Repo {
                 .postgresql = try jetquery.adapters.PostgresqlAdapter.init(
                     allocator,
                     adapter_options,
+                    options.lazy_connect,
                 ),
             },
             .null => .{ .null = jetquery.adapters.NullAdapter{} },
         },
         .eventCallback = options.eventCallback,
     };
+}
+
+const GlobalOptions = struct {
+    eventCallback: *const fn (event: jetquery.events.Event) anyerror!void = jetquery.events.defaultCallback,
+    lazy_connect: bool = false,
+};
+
+/// Initialize a new repo using a config file. Config file build path is configured by build
+/// option `jetquery_config_path`.
+pub fn loadConfig(allocator: std.mem.Allocator, global_options: GlobalOptions) !Repo {
+    const AdapterOptions = switch (jetquery.adapter) {
+        .postgresql => jetquery.adapters.PostgresqlAdapter.Options,
+        else => |tag| @compileError("Unsupported adapter type: `" ++ @tagName(tag) ++ "`"),
+    };
+    var options: AdapterOptions = undefined;
+    inline for (std.meta.fields(AdapterOptions)) |field| {
+        if (@hasField(@TypeOf(jetquery.config.database), field.name)) {
+            @field(options, field.name) = @field(jetquery.config.database, field.name);
+        } else if (field.default_value) |default| {
+            const option: *field.type = @ptrCast(@alignCast(@constCast(default)));
+            @field(options, field.name) = option.*;
+        } else {
+            @compileError("Missing database configuration value for: `" ++ field.name ++ "`");
+        }
+    }
+    var init_options: InitOptions = switch (jetquery.adapter) {
+        .postgresql => .{ .adapter = .{ .postgresql = options } },
+        else => |tag| @compileError("Unsupported adapter type: `" ++ @tagName(tag) ++ "`"),
+    };
+
+    inline for (std.meta.fields(GlobalOptions)) |field| {
+        @field(init_options, field.name) = @field(global_options, field.name);
+    }
+    return Repo.init(allocator, init_options);
 }
 
 /// Close connections and free resources.
@@ -125,7 +161,7 @@ pub fn dropTable(self: *Repo, comptime name: []const u8, options: DropTableOptio
     defer result.deinit();
 }
 
-test "repo" {
+test "Repo" {
     var repo = try Repo.init(
         std.testing.allocator,
         .{
@@ -168,4 +204,11 @@ test "repo" {
     } else {
         try std.testing.expect(false);
     }
+}
+
+test "Repo.loadConfig" {
+    // Loads default config file: `jetquery.config.zig`
+    var repo = try Repo.loadConfig(std.testing.allocator, .{});
+    defer repo.deinit();
+    try std.testing.expect(repo.adapter == .postgresql);
 }

@@ -3,6 +3,15 @@ const jetquery = @import("../jetquery.zig");
 pub const PostgresqlAdapter = @import("adapters/PostgresqlAdapter.zig");
 pub const NullAdapter = @import("adapters/NullAdapter.zig");
 
+pub const Name = enum { postgresql, null };
+
+pub fn Type(adapter: Name) type {
+    return switch (adapter) {
+        .postgresql => PostgresqlAdapter,
+        .null => NullAdapter,
+    };
+}
+
 pub const Adapter = union(enum) {
     postgresql: PostgresqlAdapter,
     null: NullAdapter,

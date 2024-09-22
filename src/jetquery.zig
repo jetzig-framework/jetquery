@@ -1,7 +1,10 @@
 const std = @import("std");
 
+pub const config = @import("jetquery.config");
+
 pub const Repo = @import("jetquery/Repo.zig");
 pub const adapters = @import("jetquery/adapters.zig");
+pub const sql = @import("jetquery/sql.zig");
 pub const Migration = @import("jetquery/Migration.zig");
 pub const table = @import("jetquery/table.zig");
 pub const Row = @import("jetquery/Row.zig");
@@ -10,14 +13,14 @@ pub const DateTime = @import("jetquery/DateTime.zig");
 pub const events = @import("jetquery/events.zig");
 pub const Query = @import("jetquery/Query.zig").Query;
 pub const Table = @import("jetquery/Table.zig").Table;
-pub const Identifier = @import("jetquery/Identifier.zig");
 pub const Column = @import("jetquery/Column.zig");
 pub const Value = @import("jetquery/Value.zig").Value;
-
 pub const FieldInfo = @import("jetquery/Query.zig").FieldInfo;
 pub const FieldContext = @import("jetquery/Query.zig").FieldContext;
 pub const QueryType = @import("jetquery/Query.zig").QueryType;
 pub const OrderClause = @import("jetquery/Query.zig").OrderClause;
+
+pub const adapter = std.enums.nameCast(adapters.Name, config.database.adapter);
 
 test {
     std.testing.refAllDecls(@This());

@@ -5,22 +5,22 @@ const jetquery = @import("../jetquery.zig");
 pub fn render(
     query_type: jetquery.QueryType,
     Table: type,
-    comptime adapter: jetquery.adapters.Adapter,
+    comptime Adapter: type,
     comptime field_infos: []const jetquery.FieldInfo,
     comptime columns: []const std.meta.FieldEnum(Table.Definition),
     comptime order_clauses: []const jetquery.OrderClause(Table),
 ) []const u8 {
     return switch (query_type) {
-        .select => renderSelect(Table, adapter, columns, field_infos, order_clauses),
-        .update => renderUpdate(Table, adapter, field_infos),
-        .insert => renderInsert(Table, adapter, field_infos),
-        .delete, .delete_all => renderDelete(Table, adapter, field_infos, query_type),
+        .select => renderSelect(Table, Adapter, columns, field_infos, order_clauses),
+        .update => renderUpdate(Table, Adapter, field_infos),
+        .insert => renderInsert(Table, Adapter, field_infos),
+        .delete, .delete_all => renderDelete(Table, Adapter, field_infos, query_type),
     };
 }
 
 fn renderSelect(
     Table: type,
-    comptime adapter: jetquery.adapters.Adapter,
+    comptime Adapter: type,
     comptime columns: []const std.meta.FieldEnum(Table.Definition),
     comptime field_infos: []const jetquery.FieldInfo,
     comptime order_clauses: []const jetquery.OrderClause(Table),
@@ -30,7 +30,7 @@ fn renderSelect(
         for (columns, 0..) |column, index| {
             columns_buf_len += std.fmt.comptimePrint(
                 " {s}{s}",
-                .{ adapter.identifier(@tagName(column)), if (index + 1 < columns.len) "," else "" },
+                .{ Adapter.identifier(@tagName(column)), if (index + 1 < columns.len) "," else "" },
             ).len;
         }
         var columns_buf: [columns_buf_len]u8 = undefined;
@@ -38,20 +38,20 @@ fn renderSelect(
         for (columns, 0..) |column, index| {
             const column_identifier = std.fmt.comptimePrint(
                 " {s}{s}",
-                .{ adapter.identifier(@tagName(column)), if (index + 1 < columns.len) "," else "" },
+                .{ Adapter.identifier(@tagName(column)), if (index + 1 < columns.len) "," else "" },
             );
             @memcpy(columns_buf[cursor .. cursor + column_identifier.len], column_identifier);
             cursor += column_identifier.len;
         }
-        const from = std.fmt.comptimePrint(" FROM {s}", .{adapter.identifier(Table.table_name)});
+        const from = std.fmt.comptimePrint(" FROM {s}", .{Adapter.identifier(Table.table_name)});
         return std.fmt.comptimePrint(
             "SELECT{s}{s}{s}{s}{s}",
             .{
                 columns_buf,
                 from,
-                renderWhere(adapter, field_infos),
-                renderOrder(Table, adapter, order_clauses),
-                renderLimit(adapter, field_infos),
+                renderWhere(Adapter, field_infos),
+                renderOrder(Table, Adapter, order_clauses),
+                renderLimit(Adapter, field_infos),
             },
         );
     }
@@ -59,50 +59,50 @@ fn renderSelect(
 
 fn renderUpdate(
     Table: type,
-    comptime adapter: jetquery.adapters.Adapter,
+    comptime Adapter: type,
     comptime field_infos: []const jetquery.FieldInfo,
 ) []const u8 {
-    var buf: [paramsBufSize(adapter, field_infos, .update, .assign)]u8 = undefined;
+    var buf: [paramsBufSize(Adapter, field_infos, .update, .assign)]u8 = undefined;
     return std.fmt.comptimePrint(
         "UPDATE {s} SET {s}{s}",
         .{
-            adapter.identifier(Table.table_name),
-            renderParams(&buf, adapter, field_infos, .update, .assign),
-            renderWhere(adapter, field_infos),
+            Adapter.identifier(Table.table_name),
+            renderParams(&buf, Adapter, field_infos, .update, .assign),
+            renderWhere(Adapter, field_infos),
         },
     );
 }
 
 fn renderInsert(
     Table: type,
-    comptime adapter: jetquery.adapters.Adapter,
+    comptime Adapter: type,
     comptime field_infos: []const jetquery.FieldInfo,
 ) []const u8 {
-    var params_buf: [paramsBufSize(adapter, field_infos, .insert, .column)]u8 = undefined;
-    var values_buf: [paramsBufSize(adapter, field_infos, .insert, .value)]u8 = undefined;
+    var params_buf: [paramsBufSize(Adapter, field_infos, .insert, .column)]u8 = undefined;
+    var values_buf: [paramsBufSize(Adapter, field_infos, .insert, .value)]u8 = undefined;
     return std.fmt.comptimePrint(
         "INSERT INTO {s} ({s}) VALUES ({s})",
         .{
-            adapter.identifier(Table.table_name),
-            renderParams(&params_buf, adapter, field_infos, .insert, .column),
-            renderParams(&values_buf, adapter, field_infos, .insert, .value),
+            Adapter.identifier(Table.table_name),
+            renderParams(&params_buf, Adapter, field_infos, .insert, .column),
+            renderParams(&values_buf, Adapter, field_infos, .insert, .value),
         },
     );
 }
 
 fn renderDelete(
     Table: type,
-    comptime adapter: jetquery.adapters.Adapter,
+    comptime Adapter: type,
     comptime field_infos: []const jetquery.FieldInfo,
     query_type: jetquery.QueryType,
 ) []const u8 {
-    const statement = std.fmt.comptimePrint("DELETE FROM {s}", .{adapter.identifier(Table.table_name)});
+    const statement = std.fmt.comptimePrint("DELETE FROM {s}", .{Adapter.identifier(Table.table_name)});
     return switch (query_type) {
         .delete_all => statement,
         .delete => std.fmt.comptimePrint("{s}{s}{s}", .{
             statement,
-            renderWhere(adapter, field_infos),
-            renderLimit(adapter, field_infos),
+            renderWhere(Adapter, field_infos),
+            renderLimit(Adapter, field_infos),
         }),
         else => |tag| @compileError(
             "Inconsistent query for DELETE: `" ++ @tagName(tag) ++ "` (this is a bug)",
@@ -111,20 +111,20 @@ fn renderDelete(
 }
 
 fn renderLimit(
-    comptime adapter: jetquery.adapters.Adapter,
+    comptime Adapter: type,
     comptime field_infos: []const jetquery.FieldInfo,
 ) []const u8 {
     if (!hasParam(field_infos, .limit)) return "";
 
     return std.fmt.comptimePrint(
         " LIMIT {s}",
-        .{adapter.paramSql(lastParamIndex(field_infos, .limit))},
+        .{Adapter.paramSql(lastParamIndex(field_infos, .limit))},
     );
 }
 
 fn renderOrder(
     Table: type,
-    comptime adapter: jetquery.adapters.Adapter,
+    comptime Adapter: type,
     comptime order_clauses: []const jetquery.OrderClause(Table),
 ) []const u8 {
     if (order_clauses.len == 0) return "";
@@ -132,14 +132,14 @@ fn renderOrder(
     var size: usize = 0;
     for (order_clauses, 0..) |order_clause, index| {
         const separator = if (index + 1 < order_clauses.len) ", " else "";
-        size += (adapter.orderSql(Table, order_clause) ++ separator).len;
+        size += (Adapter.orderSql(Table, order_clause) ++ separator).len;
         if (index + 1 < order_clauses.len) size += ", ".len;
     }
     var order_buf: [size]u8 = undefined;
     var cursor: usize = 0;
     for (order_clauses, 0..) |order_clause, index| {
         const separator = if (index + 1 < order_clauses.len) ", " else "";
-        const order_sql = adapter.orderSql(Table, order_clause) ++ separator;
+        const order_sql = Adapter.orderSql(Table, order_clause) ++ separator;
         @memcpy(order_buf[cursor .. cursor + order_sql.len], order_sql);
         cursor += order_sql.len;
     }
@@ -150,19 +150,19 @@ fn renderOrder(
 }
 
 fn renderWhere(
-    comptime adapter: jetquery.adapters.Adapter,
+    comptime Adapter: type,
     comptime field_infos: []const jetquery.FieldInfo,
 ) []const u8 {
     if (!hasParam(field_infos, .where)) return "";
 
-    var buf: [paramsBufSize(adapter, field_infos, .where, .assign)]u8 = undefined;
-    const params = renderParams(&buf, adapter, field_infos, .where, .assign);
+    var buf: [paramsBufSize(Adapter, field_infos, .where, .assign)]u8 = undefined;
+    const params = renderParams(&buf, Adapter, field_infos, .where, .assign);
 
     return std.fmt.comptimePrint(" WHERE {s}", .{params});
 }
 
 fn paramsBufSize(
-    comptime adapter: jetquery.adapters.Adapter,
+    comptime Adapter: type,
     comptime field_infos: []const jetquery.FieldInfo,
     comptime context: jetquery.FieldContext,
     comptime format: enum { column, value, assign },
@@ -187,16 +187,16 @@ fn paramsBufSize(
 
         const args = switch (format) {
             .column => .{
-                adapter.identifier(field.name),
+                Adapter.identifier(field.name),
                 if (index < last_param_index) separator else "",
             },
             .value => .{
-                adapter.paramSql(index),
+                Adapter.paramSql(index),
                 if (index < last_param_index) separator else "",
             },
             .assign => .{
-                adapter.identifier(field.name),
-                adapter.paramSql(index),
+                Adapter.identifier(field.name),
+                Adapter.paramSql(index),
                 if (index < last_param_index) separator else "",
             },
         };
@@ -211,7 +211,7 @@ fn paramsBufSize(
 
 fn renderParams(
     buf: []u8,
-    comptime adapter: jetquery.adapters.Adapter,
+    comptime Adapter: type,
     comptime field_infos: []const jetquery.FieldInfo,
     comptime context: jetquery.FieldContext,
     comptime format: enum { column, value, assign },
@@ -237,16 +237,16 @@ fn renderParams(
 
         const args = switch (format) {
             .column => .{
-                adapter.identifier(field.name),
+                Adapter.identifier(field.name),
                 if (index < last_param_index) separator else "",
             },
             .value => .{
-                adapter.paramSql(index),
+                Adapter.paramSql(index),
                 if (index < last_param_index) separator else "",
             },
             .assign => .{
-                adapter.identifier(field.name),
-                adapter.paramSql(index),
+                Adapter.identifier(field.name),
+                Adapter.paramSql(index),
                 if (index < last_param_index) separator else "",
             },
         };

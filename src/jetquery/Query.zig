@@ -274,16 +274,6 @@ fn FieldValues(Table: type, comptime fields: []const FieldInfo) type {
     });
 }
 
-fn ValueType(T: type) type {
-    return switch (@typeInfo(T)) {
-        .comptime_int, .int => usize,
-        .float, .comptime_float => f64,
-        .bool => bool,
-        .pointer => []const u8, // TODO
-        else => @compileError("Unsupported type: " ++ @typeName(T)),
-    };
-}
-
 fn canCoerceDelegate(T: type) bool {
     return switch (@typeInfo(T)) {
         .@"struct", .@"union" => @hasDecl(T, "toJetQuery") and @typeInfo(@TypeOf(T.toJetQuery)) == .@"fn",
@@ -484,11 +474,10 @@ fn Statement(
         comptime columns: []const std.meta.FieldEnum(Table.Definition) = columns,
         comptime order_clauses: []const OrderClause(Table) = order_clauses,
 
-        // TODO
-        comptime sql: []const u8 = @import("comptime_sql.zig").render(
+        comptime sql: []const u8 = jetquery.sql.render(
             query_type,
             Table,
-            jetquery.adapters.Adapter{ .postgresql = undefined },
+            jetquery.adapters.Type(jetquery.config.database.adapter),
             field_infos,
             columns,
             order_clauses,

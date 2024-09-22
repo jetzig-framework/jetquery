@@ -19,9 +19,13 @@ pub fn build(b: *std.Build) !void {
     lib.root_module.addImport("pg", pg_module.module("pg"));
     lib.root_module.addImport("zul", zul_module.module("zul"));
 
+    const config_path = b.option([]const u8, "jetquery_config_path", "JetQuery configuration file path") orelse "jetquery.config.zig";
+    const config_module = b.createModule(.{ .root_source_file = .{ .cwd_relative = config_path } });
+
     const jetquery_module = b.addModule("jetquery", .{ .root_source_file = b.path("src/jetquery.zig") });
     jetquery_module.addImport("pg", pg_module.module("pg"));
     jetquery_module.addImport("zul", zul_module.module("zul"));
+    jetquery_module.addImport("jetquery.config", config_module);
 
     const migrations_path = b.option([]const u8, "jetquery_migrations_path", "Migrations path") orelse
         "migrations";
@@ -32,6 +36,7 @@ pub fn build(b: *std.Build) !void {
     });
     lib_unit_tests.root_module.addImport("pg", pg_module.module("pg"));
     lib_unit_tests.root_module.addImport("zul", zul_module.module("zul"));
+    lib_unit_tests.root_module.addImport("jetquery.config", config_module);
 
     const run_lib_unit_tests = b.addRunArtifact(lib_unit_tests);
 
@@ -68,6 +73,7 @@ pub fn build(b: *std.Build) !void {
 
     const migrations_module = b.createModule(.{ .root_source_file = generated_migrations_path });
     migrations_module.addImport("jetquery", jetquery_module);
+    migrations_module.addImport("jetquery.config", config_module);
     migration_unit_tests.root_module.addImport("migrations", migrations_module);
     migration_unit_tests.root_module.addImport("jetquery", jetquery_module);
 
@@ -77,6 +83,7 @@ pub fn build(b: *std.Build) !void {
     );
     jetquery_migrate_module.addImport("jetquery", jetquery_module);
     jetquery_migrate_module.addImport("migrations", migrations_module);
+    jetquery_migrate_module.addImport("jetquery.config", config_module);
 }
 
 fn findMigrations(allocator: std.mem.Allocator, path: []const u8) ![][]const u8 {

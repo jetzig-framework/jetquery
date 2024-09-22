@@ -34,6 +34,7 @@ pub const Result = struct {
                             // TODO: Other types, strict number types only
                             []const u8 => row.get([]const u8, index),
                             usize => @intCast(row.get(i32, index)),
+                            bool => row.get(bool, index),
                             else => @compileError("Unsupported type: " ++ @typeName(field.type)),
                         };
                     }
@@ -64,12 +65,11 @@ pub const Options = struct {
     port: u16 = 5432,
     pool_size: u16 = 8,
     timeout: u32 = 10_000,
-    lazy_connect: bool = false,
 };
 
 /// Initialize a new PostgreSQL adapter and connection pool.
-pub fn init(allocator: std.mem.Allocator, options: Options) !PostgresqlAdapter {
-    if (options.lazy_connect) return .{
+pub fn init(allocator: std.mem.Allocator, options: Options, lazy_connect: bool) !PostgresqlAdapter {
+    if (lazy_connect) return .{
         .allocator = allocator,
         .options = options,
         .pool = undefined,
