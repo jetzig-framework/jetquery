@@ -141,28 +141,29 @@ pub fn columnTypeSql(self: PostgresqlAdapter, column_type: jetquery.Column.Type)
 }
 
 /// Output quoted identifier.
-pub fn identifier(self: PostgresqlAdapter, name: []const u8) jetquery.Identifier {
-    _ = self;
-    return .{ .name = name, .quote_char = '"' };
+pub fn identifier(comptime name: []const u8) []const u8 {
+    return std.fmt.comptimePrint(
+        \\"{s}"
+    , .{name});
 }
 
 /// SQL fragment used to indicate a primary key.
-pub fn primaryKeySql(self: PostgresqlAdapter) []const u8 {
-    _ = self;
+pub fn primaryKeySql() []const u8 {
     return "SERIAL PRIMARY KEY";
 }
 
 /// SQL representing a bind parameter, e.g. `$1`.
-pub fn paramSql(self: PostgresqlAdapter, buf: []u8, value: anytype, index: usize) ![]const u8 {
-    _ = value;
-    _ = self;
-    var stream = std.io.fixedBufferStream(buf);
-    const writer = stream.writer();
-    try writer.print("${}", .{index + 1});
-    return stream.getWritten();
-}
-pub fn paramSqlC(comptime index: usize) []const u8 {
+pub fn paramSql(comptime index: usize) []const u8 {
     return std.fmt.comptimePrint("${}", .{index + 1});
+}
+
+pub fn orderSql(Table: type, comptime order_clause: jetquery.OrderClause(Table)) []const u8 {
+    const direction = switch (order_clause.direction) {
+        .ascending => "ASC",
+        .descending => "DESC",
+    };
+
+    return std.fmt.comptimePrint("{s} {s}", .{ identifier(@tagName(order_clause.column)), direction });
 }
 
 fn initPool(allocator: std.mem.Allocator, options: Options) !*pg.Pool {

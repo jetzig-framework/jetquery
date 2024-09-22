@@ -6,7 +6,7 @@ const jetquery = @import("../jetquery.zig");
 pub const QueryType = enum { select, update, insert, delete, delete_all };
 
 // Determines how a field in the generated fields tuple should be used.
-pub const FieldContext = enum { where, update, insert, limit, none };
+pub const FieldContext = enum { where, update, insert, limit, order, none };
 
 // Number of rows expected to be returned by a query.
 const ResultType = enum { one, many, none };
@@ -36,6 +36,7 @@ pub fn Query(Table: type) type {
             Table,
             &fieldInfos(@TypeOf(.{}), .none),
             if (columns.len == 0) Table.columns() else columns,
+            &.{},
             .many,
         ) {
             return Statement(
@@ -43,6 +44,7 @@ pub fn Query(Table: type) type {
                 Table,
                 &fieldInfos(@TypeOf(.{}), .none),
                 if (columns.len == 0) Table.columns() else columns,
+                &.{},
                 .many,
             ){ .field_values = .{}, .field_errors = .{} };
         }
@@ -56,12 +58,14 @@ pub fn Query(Table: type) type {
             Table,
             &fieldInfos(@TypeOf(args), .update),
             &.{},
+            &.{},
             .none,
         ) {
             var statement: Statement(
                 .update,
                 Table,
                 &fieldInfos(@TypeOf(args), .update),
+                &.{},
                 &.{},
                 .none,
             ) = undefined;
@@ -83,12 +87,14 @@ pub fn Query(Table: type) type {
             Table,
             &fieldInfos(@TypeOf(args), .insert),
             &.{},
+            &.{},
             .none,
         ) {
             var statement: Statement(
                 .insert,
                 Table,
                 &fieldInfos(@TypeOf(args), .insert),
+                &.{},
                 &.{},
                 .none,
             ) = undefined;
@@ -107,11 +113,19 @@ pub fn Query(Table: type) type {
         /// ```zig
         /// Query(MyTable).delete().where(.{ .foo = "bar" });
         /// ```
-        pub fn delete() Statement(.delete, Table, &fieldInfos(@TypeOf(.{}), .none), &.{}, .none) {
+        pub fn delete() Statement(
+            .delete,
+            Table,
+            &fieldInfos(@TypeOf(.{}), .none),
+            &.{},
+            &.{},
+            .none,
+        ) {
             return Statement(
                 .delete,
                 Table,
                 &fieldInfos(@TypeOf(.{}), .none),
+                &.{},
                 &.{},
                 .none,
             ){ .field_values = .{}, .field_errors = .{} };
@@ -122,11 +136,19 @@ pub fn Query(Table: type) type {
         /// ```zig
         /// Query(MyTable).deleteAll();
         /// ```
-        pub fn deleteAll() Statement(.delete_all, Table, &fieldInfos(@TypeOf(.{}), .none), &.{}, .none) {
+        pub fn deleteAll() Statement(
+            .delete_all,
+            Table,
+            &fieldInfos(@TypeOf(.{}), .none),
+            &.{},
+            &.{},
+            .none,
+        ) {
             return Statement(
                 .delete_all,
                 Table,
                 &fieldInfos(@TypeOf(.{}), .none),
+                &.{},
                 &.{},
                 .none,
             ){ .field_values = .{}, .field_errors = .{} };
@@ -145,6 +167,7 @@ pub fn Query(Table: type) type {
             Table,
             &(fieldInfos(@TypeOf(.{ .id = id }), .where) ++ fieldInfos(@TypeOf(.{1}), .limit)),
             Table.columns(),
+            &.{},
             .one,
         ) {
             var statement: Statement(
@@ -152,6 +175,7 @@ pub fn Query(Table: type) type {
                 Table,
                 &(fieldInfos(@TypeOf(.{ .id = id }), .where) ++ fieldInfos(@TypeOf(.{1}), .limit)),
                 Table.columns(),
+                &.{},
                 .one,
             ) = undefined;
             if (comptime @hasField(Table.Definition, "id")) {
@@ -185,6 +209,7 @@ pub fn Query(Table: type) type {
             Table,
             &(fieldInfos(@TypeOf(args), .where) ++ fieldInfos(@TypeOf(.{1}), .limit)),
             Table.columns(),
+            &.{},
             .one,
         ) {
             var statement: Statement(
@@ -192,6 +217,7 @@ pub fn Query(Table: type) type {
                 Table,
                 &(fieldInfos(@TypeOf(args), .where) ++ fieldInfos(@TypeOf(.{1}), .limit)),
                 Table.columns(),
+                &.{},
                 .one,
             ) = undefined;
             const fields = std.meta.fields(@TypeOf(args));
@@ -305,7 +331,6 @@ fn initStatement(
         @field(statement.field_values, std.fmt.comptimePrint("{}", .{index})) = coerced.value;
         statement.field_errors[index] = coerced.err;
     }
-    statement.limit_bound = self.limit_bound;
 }
 
 fn CoercedValue(Target: type) type {
@@ -420,6 +445,15 @@ pub const FieldInfo = struct {
     context: FieldContext,
 };
 
+pub fn OrderClause(Table: type) type {
+    return struct {
+        column: std.meta.FieldEnum(Table.Definition),
+        direction: OrderDirection,
+    };
+}
+
+const OrderDirection = enum { ascending, descending };
+
 fn fieldInfos(T: type, comptime context: FieldContext) [std.meta.fields(T).len]FieldInfo {
     var value_fields: [std.meta.fields(T).len]FieldInfo = undefined;
     for (std.meta.fields(T), 0..) |field, index| {
@@ -436,7 +470,8 @@ fn Statement(
     query_type: QueryType,
     Table: type,
     comptime field_infos: []const FieldInfo,
-    columns: []const std.meta.FieldEnum(Table.Definition),
+    comptime columns: []const std.meta.FieldEnum(Table.Definition),
+    comptime order_clauses: []const OrderClause(Table),
     result_type: ResultType,
 ) type {
     return struct {
@@ -447,18 +482,30 @@ fn Statement(
         comptime query_type: QueryType = query_type,
         comptime field_infos: []const FieldInfo = field_infos,
         comptime columns: []const std.meta.FieldEnum(Table.Definition) = columns,
-        comptime sql: []const u8 = @import("comptime_sql.zig").render(query_type, Table, jetquery.adapters.Adapter{ .postgresql = undefined }, columns, field_infos),
+        comptime order_clauses: []const OrderClause(Table) = order_clauses,
+
+        // TODO
+        comptime sql: []const u8 = @import("comptime_sql.zig").render(
+            query_type,
+            Table,
+            jetquery.adapters.Adapter{ .postgresql = undefined },
+            field_infos,
+            columns,
+            order_clauses,
+        ),
 
         pub const Definition = Table.Definition;
         pub const ResultType = result_type;
 
         const Self = @This();
 
+        /// Apply a `WHERE` clause to the current statement.
         pub fn where(self: Self, args: anytype) Statement(
             query_type,
             Table,
             field_infos ++ fieldInfos(@TypeOf(args), .where),
             columns,
+            order_clauses,
             result_type,
         ) {
             var statement: Statement(
@@ -466,17 +513,20 @@ fn Statement(
                 Table,
                 field_infos ++ fieldInfos(@TypeOf(args), .where),
                 columns,
+                order_clauses,
                 result_type,
             ) = undefined;
             initStatement(Table, @TypeOf(statement), &statement, Self, self, field_infos, args, .where);
             return statement;
         }
 
+        /// Apply a `LIMIT` clause to the current statement.
         pub fn limit(self: Self, bound: usize) Statement(
             query_type,
             Table,
             field_infos ++ fieldInfos(@TypeOf(.{bound}), .limit),
             columns,
+            order_clauses,
             result_type,
         ) {
             var statement: Statement(
@@ -484,9 +534,31 @@ fn Statement(
                 Table,
                 field_infos ++ fieldInfos(@TypeOf(.{bound}), .limit),
                 columns,
+                order_clauses,
                 result_type,
             ) = undefined;
             initStatement(Table, @TypeOf(statement), &statement, Self, self, field_infos, .{bound}, .limit);
+            return statement;
+        }
+
+        /// Apply an `ORDER BY` clause to the current statement.
+        pub fn order_by(self: Self, comptime args: anytype) Statement(
+            query_type,
+            Table,
+            field_infos,
+            columns,
+            &translateOrderBy(Table, args),
+            result_type,
+        ) {
+            var statement: Statement(
+                query_type,
+                Table,
+                field_infos,
+                columns,
+                &translateOrderBy(Table, args),
+                result_type,
+            ) = undefined;
+            initStatement(Table, @TypeOf(statement), &statement, Self, self, field_infos, .{}, .order);
             return statement;
         }
 
@@ -509,97 +581,7 @@ fn Statement(
         }
 
         pub fn validateDelete(self: Self) !void {
-            if (self.query_type == .delete and !self.hasWhereClause()) return error.JetQueryUnsafeDelete;
-        }
-
-        fn fieldContext(self: Self, comptime index: usize, context: FieldContext) bool {
-            return if (self.field_infos.len > index)
-                self.field_infos[index].context == context
-            else
-                false;
-        }
-
-        // Render the query's `select` statement as SQL.
-        fn renderSelect(self: Self, writer: anytype, adapter: jetquery.adapters.Adapter) !void {
-            try writer.print("SELECT ", .{});
-            var first = true;
-            for (self.columns) |column| {
-                if (!first) try writer.print(", ", .{}) else first = false;
-                try writer.print("{}", .{adapter.identifier(@tagName(column))});
-            }
-            try writer.print(" FROM {}", .{adapter.identifier(Table.table_name)});
-            try self.renderWhere(writer, adapter);
-            if (self.limit_bound) |bound| try writer.print(" LIMIT {}", .{bound});
-        }
-
-        // Render the query's `insert` statement as SQL.
-        fn renderInsert(self: Self, writer: anytype, adapter: jetquery.adapters.Adapter) !void {
-            try writer.print("INSERT INTO {} (", .{adapter.identifier(Table.table_name)});
-            var first = true;
-            inline for (self.field_infos, 0..) |field, index| {
-                if (self.fieldContext(index, .insert)) {
-                    if (!first) try writer.print(", ", .{}) else first = false;
-                    try writer.print("{}", .{adapter.identifier(field.name)});
-                }
-            }
-            try writer.print(") VALUES (", .{});
-            first = true;
-            inline for (self.field_infos, self.field_values, 0..) |field, field_value, index| {
-                _ = field; // may use later with named bind-params
-                var buf: [8]u8 = undefined;
-                if (self.fieldContext(index, .insert)) {
-                    if (!first) try writer.print(", ", .{}) else first = false;
-                    try writer.print("{s}", .{try adapter.paramSql(&buf, field_value, index)});
-                }
-            }
-            try writer.print(")", .{});
-        }
-
-        // Render the query's `update` statement as SQL.
-        fn renderUpdate(self: Self, writer: anytype, adapter: jetquery.adapters.Adapter) !void {
-            try writer.print("UPDATE {} SET ", .{adapter.identifier(Table.table_name)});
-            var first = true;
-            inline for (self.field_infos, self.field_values, 0..) |field, field_value, index| {
-                if (self.fieldContext(index, .update)) {
-                    if (!first) try writer.print(", ", .{}) else first = false;
-                    var buf: [8]u8 = undefined;
-                    try writer.print("{} = {s}", .{
-                        adapter.identifier(field.name),
-                        try adapter.paramSql(&buf, field_value, index),
-                    });
-                }
-            }
-            try self.renderWhere(writer, adapter);
-        }
-
-        // Render the query's `delete` statement as SQL.
-        fn renderDelete(self: Self, writer: anytype, adapter: jetquery.adapters.Adapter) !void {
-            if (self.query_type != .delete_all and !self.hasWhereClause()) return error.JetQueryUnsafeDelete;
-            try writer.print("DELETE FROM {}", .{adapter.identifier(Table.table_name)});
-            try self.renderWhere(writer, adapter);
-        }
-
-        // Render the query's `where` clause as SQL.
-        fn renderWhere(self: Self, writer: anytype, adapter: jetquery.adapters.Adapter) !void {
-            var first = true;
-            inline for (self.field_infos, self.field_values, 0..) |field, field_value, index| {
-                if (self.fieldContext(index, .where)) {
-                    if (first) {
-                        try writer.print(" WHERE ", .{});
-                        first = false;
-                    } else {
-                        try writer.print(" AND ", .{});
-                    }
-
-                    var buf: [8]u8 = undefined;
-                    try writer.print(
-                        \\{} = {s}
-                    , .{
-                        adapter.identifier(field.name),
-                        try adapter.paramSql(&buf, field_value, index),
-                    });
-                }
-            }
+            if (query_type == .delete and !self.hasWhereClause()) return error.JetQueryUnsafeDelete;
         }
 
         fn hasWhereClause(self: Self) bool {
@@ -609,4 +591,22 @@ fn Statement(
             return false;
         }
     };
+}
+
+fn translateOrderBy(
+    Table: type,
+    comptime args: anytype,
+) [std.meta.fields(@TypeOf(args)).len]OrderClause(Table) {
+    comptime {
+        var clauses: [std.meta.fields(@TypeOf(args)).len]OrderClause(Table) = undefined;
+        const Columns = std.meta.FieldEnum(Table.Definition);
+
+        for (std.meta.fields(@TypeOf(args)), 0..) |field, index| {
+            clauses[index] = .{
+                .column = std.enums.nameCast(Columns, field.name),
+                .direction = std.enums.nameCast(OrderDirection, @tagName(@field(args, field.name))),
+            };
+        }
+        return clauses;
+    }
 }

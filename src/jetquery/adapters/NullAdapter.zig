@@ -20,26 +20,16 @@ pub fn columnTypeSql(self: NullAdapter, column_type: jetquery.Column.Type) []con
     return "";
 }
 
-pub fn identifier(self: NullAdapter, name: []const u8) jetquery.Identifier {
-    _ = self;
+pub fn identifier(name: []const u8) []const u8 {
     _ = name;
-    return .{ .name = "", .quote_char = 0 };
-}
-
-pub fn primaryKeySql(self: NullAdapter) []const u8 {
-    _ = self;
     return "";
 }
 
-pub fn paramSql(self: NullAdapter, buf: []u8, value: anytype, index: usize) ![]const u8 {
-    _ = buf;
-    _ = value;
-    _ = self;
-    _ = index;
+pub fn primaryKeySql() []const u8 {
     return "";
 }
 
-pub fn paramSqlC(comptime index: usize) []const u8 {
+pub fn paramSql(comptime index: usize) []const u8 {
     _ = index;
     return "";
 }

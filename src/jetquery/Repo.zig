@@ -63,20 +63,25 @@ pub const CreateTableOptions = struct { if_not_exists: bool = false };
 
 /// Create a database table named `nme`. Pass `.{ .if_not_exists = true }` to use
 /// `CREATE TABLE IF NOT EXISTS` syntax.
-pub fn createTable(self: *Repo, name: []const u8, columns: []const jetquery.Column, options: CreateTableOptions) !void {
+pub fn createTable(
+    self: *Repo,
+    comptime name: []const u8,
+    comptime columns: []const jetquery.Column,
+    options: CreateTableOptions,
+) !void {
     var buf = std.ArrayList(u8).init(self.allocator);
     defer buf.deinit();
 
     const writer = buf.writer();
 
     try writer.print(
-        \\CREATE TABLE{s} {} (
+        \\CREATE TABLE{s} {s} (
     , .{ if (options.if_not_exists) " IF NOT EXISTS" else "", self.adapter.identifier(name) });
 
-    for (columns, 0..) |column, index| {
+    inline for (columns, 0..) |column, index| {
         if (column.timestamps) {
             try writer.print(
-                \\{0} {2s}, {1} {2s}{3s}
+                \\{0s} {2s}, {1s} {2s}{3s}
             , .{
                 self.adapter.identifier("created_at"),
                 self.adapter.identifier("updated_at"),
@@ -85,7 +90,7 @@ pub fn createTable(self: *Repo, name: []const u8, columns: []const jetquery.Colu
             });
         } else {
             try writer.print(
-                \\{0} {1s} {2s}{3s}
+                \\{0s} {1s} {2s}{3s}
             , .{
                 self.adapter.identifier(column.name),
                 if (column.primary_key) "" else self.adapter.columnTypeSql(column.type),
@@ -105,7 +110,7 @@ pub const DropTableOptions = struct { if_exists: bool = false };
 
 /// Drop a database table named `name`. Pass `.{ .if_exists = true }` to use
 /// `DROP TABLE IF EXISTS` syntax.
-pub fn dropTable(self: *Repo, name: []const u8, options: DropTableOptions) !void {
+pub fn dropTable(self: *Repo, comptime name: []const u8, options: DropTableOptions) !void {
     var buf = std.ArrayList(u8).init(self.allocator);
     defer buf.deinit();
 

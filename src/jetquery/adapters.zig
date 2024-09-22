@@ -27,28 +27,29 @@ pub const Adapter = union(enum) {
     }
 
     /// Quote an identifier (e.g. a column name) suitable for the active adapter.
-    pub fn identifier(self: Adapter, name: []const u8) jetquery.Identifier {
+    pub fn identifier(self: Adapter, comptime name: []const u8) []const u8 {
         return switch (self) {
-            inline else => |*adapter| adapter.identifier(name),
+            inline else => |adapter| @TypeOf(adapter).identifier(name),
         };
     }
 
     /// SQL fragment used to indicate a primary key.
     pub fn primaryKeySql(self: Adapter) []const u8 {
         return switch (self) {
-            inline else => |*adapter| adapter.primaryKeySql(),
+            inline else => |adapter| @TypeOf(adapter).primaryKeySql(),
         };
     }
 
     /// SQL representing a bind parameter, e.g. `$1`.
-    pub fn paramSql(self: Adapter, buf: []u8, value: anytype, index: usize) ![]const u8 {
+    pub fn paramSql(self: Adapter, comptime index: usize) []const u8 {
         return switch (self) {
-            inline else => |*adapter| try adapter.paramSql(buf, value, index),
+            inline else => |adapter| @TypeOf(adapter).paramSql(index),
         };
     }
-    pub fn paramSqlC(self: Adapter, comptime index: usize) []const u8 {
+
+    pub fn orderSql(self: Adapter, Table: type, comptime order_clause: jetquery.OrderClause(Table)) []const u8 {
         return switch (self) {
-            inline else => |adapter| @TypeOf(adapter).paramSqlC(index),
+            inline else => |adapter| @TypeOf(adapter).orderSql(Table, order_clause),
         };
     }
 };

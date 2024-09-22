@@ -14,6 +14,11 @@ pub const Identifier = @import("jetquery/Identifier.zig");
 pub const Column = @import("jetquery/Column.zig");
 pub const Value = @import("jetquery/Value.zig").Value;
 
+pub const FieldInfo = @import("jetquery/Query.zig").FieldInfo;
+pub const FieldContext = @import("jetquery/Query.zig").FieldContext;
+pub const QueryType = @import("jetquery/Query.zig").QueryType;
+pub const OrderClause = @import("jetquery/Query.zig").OrderClause;
+
 test {
     std.testing.refAllDecls(@This());
 }
@@ -80,6 +85,19 @@ test "limit" {
 
     try std.testing.expectEqualStrings(
         \\SELECT "name", "paws" FROM "cats" LIMIT $1
+    , query.sql);
+}
+
+test "order by" {
+    const Schema = struct {
+        pub const Cats = Table("cats", struct { name: []const u8, paws: usize }, .{});
+    };
+    const query = Query(Schema.Cats)
+        .select(&.{ .name, .paws })
+        .order_by(.{ .name = .ascending });
+
+    try std.testing.expectEqualStrings(
+        \\SELECT "name", "paws" FROM "cats" ORDER BY "name" ASC
     , query.sql);
 }
 
@@ -183,6 +201,21 @@ test "findBy" {
 
     try std.testing.expectEqualStrings(
         \\SELECT "id", "name", "paws" FROM "cats" WHERE "name" = $1 AND "paws" = $2 LIMIT $3
+    , query.sql);
+}
+
+test "combined" {
+    const Schema = struct {
+        pub const Cats = Table("cats", struct { id: usize, name: []const u8, paws: usize }, .{});
+    };
+    const query = Query(Schema.Cats)
+        .select(&.{ .name, .paws })
+        .where(.{ .name = "Hercules" })
+        .limit(10)
+        .order_by(.{ .name = .ascending });
+
+    try std.testing.expectEqualStrings(
+        \\SELECT "name", "paws" FROM "cats" WHERE "name" = $1 ORDER BY "name" ASC LIMIT $2
     , query.sql);
 }
 
