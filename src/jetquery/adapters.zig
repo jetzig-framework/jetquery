@@ -46,6 +46,11 @@ pub const Adapter = union(enum) {
             inline else => |*adapter| try adapter.paramSql(buf, value, index),
         };
     }
+    pub fn paramSqlC(self: Adapter, comptime index: usize) []const u8 {
+        return switch (self) {
+            inline else => |adapter| @TypeOf(adapter).paramSqlC(index),
+        };
+    }
 };
 
 pub const test_adapter = Adapter{ .postgresql = .{

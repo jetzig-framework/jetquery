@@ -46,8 +46,9 @@ pub fn execute(self: *Repo, query: anytype) !switch (@TypeOf(query).ResultType) 
     .many => jetquery.Result,
     .none => void,
 } {
-    var buf: [4096]u8 = undefined;
-    var result = try self.adapter.execute(self, try query.toSql(&buf, self.adapter), query.field_values);
+    try query.validateValues();
+    try query.validateDelete();
+    var result = try self.adapter.execute(self, query.sql, query.field_values);
     return switch (@TypeOf(query).ResultType) {
         .one => try result.next(query),
         .many => result,

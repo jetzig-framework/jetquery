@@ -38,3 +38,8 @@ pub fn paramSql(self: NullAdapter, buf: []u8, value: anytype, index: usize) ![]c
     _ = index;
     return "";
 }
+
+pub fn paramSqlC(comptime index: usize) []const u8 {
+    _ = index;
+    return "";
+}

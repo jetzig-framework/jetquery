@@ -161,6 +161,9 @@ pub fn paramSql(self: PostgresqlAdapter, buf: []u8, value: anytype, index: usize
     try writer.print("${}", .{index + 1});
     return stream.getWritten();
 }
+pub fn paramSqlC(comptime index: usize) []const u8 {
+    return std.fmt.comptimePrint("${}", .{index + 1});
+}
 
 fn initPool(allocator: std.mem.Allocator, options: Options) !*pg.Pool {
     return try pg.Pool.init(allocator, .{

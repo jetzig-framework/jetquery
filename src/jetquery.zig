@@ -24,11 +24,9 @@ test "select" {
     };
     const query = Query(Schema.Cats).select(&.{ .name, .paws });
 
-    var buf: [1024]u8 = undefined;
-    const sql = try query.toSql(&buf, adapters.test_adapter);
     try std.testing.expectEqualStrings(
         \\SELECT "name", "paws" FROM "cats"
-    , sql);
+    , query.sql);
 }
 
 test "select (all)" {
@@ -37,11 +35,9 @@ test "select (all)" {
     };
     const query = Query(Schema.Cats).select(&.{});
 
-    var buf: [1024]u8 = undefined;
-    const sql = try query.toSql(&buf, adapters.test_adapter);
     try std.testing.expectEqualStrings(
         \\SELECT "name", "paws" FROM "cats"
-    , sql);
+    , query.sql);
 }
 
 test "where" {
@@ -54,11 +50,9 @@ test "where" {
         .select(&.{ .name, .paws })
         .where(.{ .name = "bar", .paws = paws });
 
-    var buf: [1024]u8 = undefined;
-    const sql = try query.toSql(&buf, adapters.test_adapter);
     try std.testing.expectEqualStrings(
         \\SELECT "name", "paws" FROM "cats" WHERE "name" = $1 AND "paws" = $2
-    , sql);
+    , query.sql);
 }
 
 test "where (multiple)" {
@@ -71,11 +65,9 @@ test "where (multiple)" {
         .where(.{ .name = "bar" })
         .where(.{ .paws = 4 });
 
-    var buf: [1024]u8 = undefined;
-    const sql = try query.toSql(&buf, adapters.test_adapter);
     try std.testing.expectEqualStrings(
         \\SELECT "name", "paws" FROM "cats" WHERE "name" = $1 AND "paws" = $2
-    , sql);
+    , query.sql);
 }
 
 test "limit" {
@@ -86,11 +78,9 @@ test "limit" {
         .select(&.{ .name, .paws })
         .limit(100);
 
-    var buf: [1024]u8 = undefined;
-    const sql = try query.toSql(&buf, adapters.test_adapter);
     try std.testing.expectEqualStrings(
-        \\SELECT "name", "paws" FROM "cats" LIMIT 100
-    , sql);
+        \\SELECT "name", "paws" FROM "cats" LIMIT $1
+    , query.sql);
 }
 
 test "insert" {
@@ -100,12 +90,9 @@ test "insert" {
     const query = Query(Schema.Cats)
         .insert(.{ .name = "Hercules", .paws = 4 });
 
-    var buf: [1024]u8 = undefined;
     try std.testing.expectEqualStrings(
         \\INSERT INTO "cats" ("name", "paws") VALUES ($1, $2)
-    ,
-        try query.toSql(&buf, adapters.test_adapter),
-    );
+    , query.sql);
 }
 
 test "update" {
@@ -116,11 +103,10 @@ test "update" {
         .update(.{ .name = "Heracles", .paws = 2 })
         .where(.{ .name = "Hercules" });
 
-    var buf: [1024]u8 = undefined;
     try std.testing.expectEqualStrings(
         \\UPDATE "cats" SET "name" = $1, "paws" = $2 WHERE "name" = $3
     ,
-        try query.toSql(&buf, adapters.test_adapter),
+        query.sql,
     );
 }
 
@@ -132,12 +118,9 @@ test "delete" {
         .delete()
         .where(.{ .name = "Hercules" });
 
-    var buf: [1024]u8 = undefined;
     try std.testing.expectEqualStrings(
         \\DELETE FROM "cats" WHERE "name" = $1
-    ,
-        try query.toSql(&buf, adapters.test_adapter),
-    );
+    , query.sql);
 }
 
 test "delete (without where clause)" {
@@ -146,11 +129,7 @@ test "delete (without where clause)" {
     };
     const query = Query(Schema.Cats).delete();
 
-    var buf: [1024]u8 = undefined;
-    try std.testing.expectError(
-        error.JetQueryUnsafeDelete,
-        query.toSql(&buf, adapters.test_adapter),
-    );
+    try std.testing.expectError(error.JetQueryUnsafeDelete, query.validateDelete());
 }
 
 test "deleteAll" {
@@ -160,12 +139,9 @@ test "deleteAll" {
     const query = Query(Schema.Cats)
         .deleteAll();
 
-    var buf: [1024]u8 = undefined;
     try std.testing.expectEqualStrings(
         \\DELETE FROM "cats"
-    ,
-        try query.toSql(&buf, adapters.test_adapter),
-    );
+    , query.sql);
 }
 
 test "find" {
@@ -174,12 +150,9 @@ test "find" {
     };
     const query = Query(Schema.Cats).find(1000);
 
-    var buf: [1024]u8 = undefined;
     try std.testing.expectEqualStrings(
-        \\SELECT "id", "name", "paws" FROM "cats" WHERE "id" = $1 LIMIT 1
-    ,
-        try query.toSql(&buf, adapters.test_adapter),
-    );
+        \\SELECT "id", "name", "paws" FROM "cats" WHERE "id" = $1 LIMIT $2
+    , query.sql);
 }
 
 test "find (with coerced id)" {
@@ -188,12 +161,9 @@ test "find (with coerced id)" {
     };
     const query = Query(Schema.Cats).find("1000");
 
-    var buf: [1024]u8 = undefined;
     try std.testing.expectEqualStrings(
-        \\SELECT "id", "name", "paws" FROM "cats" WHERE "id" = $1 LIMIT 1
-    ,
-        try query.toSql(&buf, adapters.test_adapter),
-    );
+        \\SELECT "id", "name", "paws" FROM "cats" WHERE "id" = $1 LIMIT $2
+    , query.sql);
 }
 
 test "find (without id column)" {
@@ -202,11 +172,7 @@ test "find (without id column)" {
     };
     const query = Query(Schema.Cats).find(1000);
 
-    var buf: [1024]u8 = undefined;
-    try std.testing.expectError(
-        error.JetQueryMissingIdField,
-        query.toSql(&buf, adapters.test_adapter),
-    );
+    try std.testing.expectError(error.JetQueryMissingIdField, query.validateValues());
 }
 
 test "findBy" {
@@ -215,12 +181,9 @@ test "findBy" {
     };
     const query = Query(Schema.Cats).findBy(.{ .name = "Hercules", .paws = 4 });
 
-    var buf: [1024]u8 = undefined;
     try std.testing.expectEqualStrings(
-        \\SELECT "id", "name", "paws" FROM "cats" WHERE "name" = $1 AND "paws" = $2 LIMIT 1
-    ,
-        try query.toSql(&buf, adapters.test_adapter),
-    );
+        \\SELECT "id", "name", "paws" FROM "cats" WHERE "name" = $1 AND "paws" = $2 LIMIT $3
+    , query.sql);
 }
 
 test "runtime field values" {
@@ -303,10 +266,9 @@ test "toJetQuery()" {
 
     const query = Query(Schema.Cats)
         .insert(.{ .name = name, .paws = &paws });
-    var buf: [1024]u8 = undefined;
     try std.testing.expectEqualStrings(
         \\INSERT INTO "cats" ("name", "paws") VALUES ($1, $2)
-    , try query.toSql(&buf, adapters.test_adapter));
+    , query.sql);
     const values = query.values();
     try std.testing.expectEqualStrings(values.@"0", "Hercules");
     try std.testing.expectEqual(values.@"1", 4);
