@@ -1,5 +1,7 @@
 const std = @import("std");
 
+const jetcommon = @import("jetcommon");
+
 const migrations = @import("migrations").migrations;
 const Migration = @import("migrations").Migration;
 const jetquery = @import("jetquery");
@@ -115,8 +117,8 @@ test "migrate" {
     const query2 = jetquery.Query(jetquery.Table("cats", struct {
         name: []const u8,
         paws: usize,
-        created_at: jetquery.DateTime,
-        updated_at: jetquery.DateTime,
+        created_at: jetcommon.types.DateTime,
+        updated_at: jetcommon.types.DateTime,
     }, .{}))
         .select(&.{ .name, .paws, .created_at, .updated_at });
     var result2 = try repo.execute(query2);

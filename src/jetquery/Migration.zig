@@ -1,6 +1,6 @@
 const std = @import("std");
 
-const zul = @import("zul");
+const jetcommon = @import("jetcommon");
 
 allocator: std.mem.Allocator,
 name: []const u8,
@@ -55,7 +55,7 @@ pub fn save(self: Migration) !void {
 }
 
 fn timestamp(buf: []u8) ![]const u8 {
-    const datetime = zul.DateTime.now();
+    const datetime = jetcommon.types.DateTime.now();
     const date = datetime.date();
     const time = datetime.time();
     var stream = std.io.fixedBufferStream(buf);

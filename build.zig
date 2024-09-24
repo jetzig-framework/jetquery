@@ -13,11 +13,12 @@ pub fn build(b: *std.Build) !void {
 
     b.installArtifact(lib);
 
-    const pg_module = b.dependency("pg", .{ .target = target, .optimize = optimize });
-    const zul_module = b.dependency("zul", .{ .target = target, .optimize = optimize });
+    const pg_dep = b.dependency("pg", .{ .target = target, .optimize = optimize });
+    const jetcommon_dep = b.dependency("jetcommon", .{ .target = target, .optimize = optimize });
+    const jetcommon_module = jetcommon_dep.module("jetcommon");
 
-    lib.root_module.addImport("pg", pg_module.module("pg"));
-    lib.root_module.addImport("zul", zul_module.module("zul"));
+    lib.root_module.addImport("pg", pg_dep.module("pg"));
+    lib.root_module.addImport("jetcommon", jetcommon_module);
 
     const config_path = b.option([]const u8, "jetquery_config_path", "JetQuery configuration file path") orelse "jetquery.config.zig";
     const config_module = if (try fileExist(config_path))
@@ -26,8 +27,8 @@ pub fn build(b: *std.Build) !void {
         b.createModule(.{ .root_source_file = b.path("src/default_config.zig") });
 
     const jetquery_module = b.addModule("jetquery", .{ .root_source_file = b.path("src/jetquery.zig") });
-    jetquery_module.addImport("pg", pg_module.module("pg"));
-    jetquery_module.addImport("zul", zul_module.module("zul"));
+    jetquery_module.addImport("pg", pg_dep.module("pg"));
+    jetquery_module.addImport("jetcommon", jetcommon_module);
     jetquery_module.addImport("jetquery.config", config_module);
 
     const migrations_path = b.option([]const u8, "jetquery_migrations_path", "Migrations path") orelse
@@ -37,8 +38,8 @@ pub fn build(b: *std.Build) !void {
         .target = target,
         .optimize = optimize,
     });
-    lib_unit_tests.root_module.addImport("pg", pg_module.module("pg"));
-    lib_unit_tests.root_module.addImport("zul", zul_module.module("zul"));
+    lib_unit_tests.root_module.addImport("pg", pg_dep.module("pg"));
+    lib_unit_tests.root_module.addImport("jetcommon", jetcommon_module);
     lib_unit_tests.root_module.addImport("jetquery.config", config_module);
 
     const run_lib_unit_tests = b.addRunArtifact(lib_unit_tests);
@@ -79,6 +80,7 @@ pub fn build(b: *std.Build) !void {
     migrations_module.addImport("jetquery.config", config_module);
     migration_unit_tests.root_module.addImport("migrations", migrations_module);
     migration_unit_tests.root_module.addImport("jetquery", jetquery_module);
+    migration_unit_tests.root_module.addImport("jetcommon", jetcommon_module);
 
     const jetquery_migrate_module = b.addModule(
         "jetquery_migrate",
@@ -87,6 +89,7 @@ pub fn build(b: *std.Build) !void {
     jetquery_migrate_module.addImport("jetquery", jetquery_module);
     jetquery_migrate_module.addImport("migrations", migrations_module);
     jetquery_migrate_module.addImport("jetquery.config", config_module);
+    jetquery_migrate_module.addImport("jetcommon", jetcommon_module);
 }
 
 fn findMigrations(allocator: std.mem.Allocator, path: []const u8) ![][]const u8 {
