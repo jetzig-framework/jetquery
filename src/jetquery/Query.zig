@@ -1,5 +1,7 @@
 const std = @import("std");
 
+const jetcommon = @import("jetcommon");
+
 const jetquery = @import("../jetquery.zig");
 
 // Available SQL statement types.
@@ -113,9 +115,10 @@ pub fn Query(Table: type) type {
                 statement.field_errors[index] = coerced.err;
             }
             if (comptime hasTimestamps(Table)) {
-                @field(statement.field_values, std.fmt.comptimePrint("{}", .{fields.len})) = now();
+                const timestamp = now();
+                @field(statement.field_values, std.fmt.comptimePrint("{}", .{fields.len})) = timestamp;
                 statement.field_errors[fields.len] = null;
-                @field(statement.field_values, std.fmt.comptimePrint("{}", .{fields.len + 1})) = now();
+                @field(statement.field_values, std.fmt.comptimePrint("{}", .{fields.len + 1})) = timestamp;
                 statement.field_errors[fields.len + 1] = null;
             }
             return statement;
@@ -258,13 +261,13 @@ fn ColumnType(Table: type, comptime field_info: FieldInfo) type {
         else => {},
     }
 
-    return comptime if (@hasField(Table.Definition, field_info.name))
-        std.meta.FieldType(
+    comptime if (@hasField(Table.Definition, field_info.name)) {
+        const FT = std.meta.FieldType(
             Table.Definition,
             std.enums.nameCast(std.meta.FieldEnum(Table.Definition), field_info.name),
-        )
-    else
-        MissingField;
+        );
+        if (FT == jetcommon.types.DateTime) return i64 else return FT;
+    } else return MissingField;
 }
 
 fn FieldValues(Table: type, comptime fields: []const FieldInfo) type {
@@ -358,6 +361,9 @@ fn coerce(
     }
 
     const T = ColumnType(Table, field_info);
+
+    if (T == jetcommon.types.DateTime) return value.microseconds;
+
     return switch (@typeInfo(@TypeOf(value))) {
         .int, .comptime_int => switch (@typeInfo(T)) {
             .int => .{ .value = value },
@@ -668,6 +674,5 @@ fn timestampsSize(Table: type, comptime query_type: FieldContext) u2 {
 }
 
 fn now() i64 {
-    // TODO: Timezones ?
-    return std.time.timestamp();
+    return std.time.microTimestamp();
 }

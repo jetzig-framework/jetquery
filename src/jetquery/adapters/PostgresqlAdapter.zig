@@ -49,7 +49,7 @@ pub const Result = struct {
                             []const u8,
                             ?[]const u8,
                             => |T| row.get(T, index),
-                            jetquery.jetcommon.types.DateTime => |T| try T.fromUnix(row.get(i64, index)),
+                            jetquery.jetcommon.types.DateTime => |T| try T.fromUnix(row.get(i64, index), .microseconds),
                             else => @compileError("Unsupported type: " ++ @typeName(field.type)),
                         };
                     }

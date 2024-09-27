@@ -8,8 +8,7 @@
             .hash = "1220829e07672808e21d2b07544ed3567299b03d4fb694cd6dd0ece6c433b3a1309f",
         },
         .jetcommon = .{
-            .url = "https://github.com/jetzig-framework/jetcommon/archive/e6b4259508ef8629c81fa9e26ebae29acf16c5a1.tar.gz",
-            .hash = "122033cd59cbc89e61c029d48c92c1dabd41974ebdc751bdf2e7121f093ff171dfda",
+            .path = "../jetcommon",
         },
     },
     .paths = .{
