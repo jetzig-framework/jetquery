@@ -2,7 +2,9 @@ const std = @import("std");
 
 const jetquery = @import("../jetquery.zig");
 
+arena: *std.heap.ArenaAllocator,
 allocator: std.mem.Allocator,
+parent_allocator: std.mem.Allocator,
 adapter: jetquery.adapters.Adapter,
 eventCallback: *const fn (event: jetquery.events.Event) anyerror!void = jetquery.events.defaultCallback,
 
@@ -19,12 +21,16 @@ const InitOptions = struct {
 
 /// Initialize a new Repo for executing queries.
 pub fn init(allocator: std.mem.Allocator, options: InitOptions) !Repo {
+    const arena = try allocator.create(std.heap.ArenaAllocator);
+    arena.* = std.heap.ArenaAllocator.init(allocator);
     return .{
-        .allocator = allocator,
+        .arena = arena,
+        .allocator = arena.allocator(),
+        .parent_allocator = allocator,
         .adapter = switch (options.adapter) {
             .postgresql => |adapter_options| .{
                 .postgresql = try jetquery.adapters.PostgresqlAdapter.init(
-                    allocator,
+                    arena.allocator(),
                     adapter_options,
                     options.lazy_connect,
                 ),
@@ -74,18 +80,20 @@ pub fn deinit(self: *Repo) void {
     switch (self.adapter) {
         inline else => |*adapter| adapter.deinit(),
     }
+    self.arena.deinit();
+    self.parent_allocator.destroy(self.arena);
 }
 
 /// Execute the given query and return results.
-pub fn execute(self: *Repo, query: anytype) !switch (@TypeOf(query).ResultType) {
-    .one => ?@TypeOf(query).Definition,
+pub fn execute(self: *Repo, query: anytype) !switch (@TypeOf(query).ResultContext) {
+    .one => ?@TypeOf(query).ResultType,
     .many => jetquery.Result,
     .none => void,
 } {
     try query.validateValues();
     try query.validateDelete();
     var result = try self.adapter.execute(self, query.sql, query.field_values);
-    return switch (@TypeOf(query).ResultType) {
+    return switch (@TypeOf(query).ResultContext) {
         .one => try result.next(query),
         .many => result,
         .none => blk: {
@@ -183,7 +191,7 @@ test "Repo" {
     defer repo.deinit();
 
     const Schema = struct {
-        pub const Cats = jetquery.Table("cats", struct { name: []const u8, paws: i32 }, .{});
+        pub const Cat = jetquery.Table("cats", struct { name: []const u8, paws: i32 }, .{});
     };
 
     var drop_table = try repo.adapter.execute(&repo, "drop table if exists cats", &.{});
@@ -194,7 +202,7 @@ test "Repo" {
     var insert = try repo.adapter.execute(&repo, "insert into cats (name, paws) values ('Hercules', 4)", &.{});
     defer insert.deinit();
 
-    const query = jetquery.Query(Schema.Cats)
+    const query = jetquery.Query(Schema, .Cat)
         .select(&.{ .name, .paws })
         .where(.{ .name = "Hercules", .paws = 4 });
 
@@ -215,4 +223,79 @@ test "Repo.loadConfig" {
     var repo = try Repo.loadConfig(std.testing.allocator, .{});
     defer repo.deinit();
     try std.testing.expect(repo.adapter == .postgresql);
+}
+
+test "relations" {
+    var repo = try Repo.init(
+        std.testing.allocator,
+        .{
+            .adapter = .{
+                .postgresql = .{
+                    .database = "postgres",
+                    .username = "postgres",
+                    .hostname = "127.0.0.1",
+                    .password = "password",
+                    .port = 5432,
+                },
+            },
+        },
+    );
+    defer repo.deinit();
+
+    const Schema = struct {
+        pub const Cat = jetquery.Table(
+            "cats",
+            struct { id: i32, owner_id: i32, name: []const u8, paws: i32 },
+            .{ .relations = .{ .owner = jetquery.relation.belongsTo(.Owner, .{}) } },
+        );
+
+        pub const Owner = jetquery.Table(
+            "owners",
+            struct { id: i32, name: []const u8 },
+            .{ .relations = .{ .cats = jetquery.relation.hasMany(.Cat, .{}) } },
+        );
+    };
+
+    try repo.dropTable("cats", .{ .if_exists = true });
+    try repo.dropTable("owners", .{ .if_exists = true });
+
+    try repo.createTable(
+        "cats",
+        &.{
+            jetquery.table.column("id", .integer, .{}),
+            jetquery.table.column("owner_id", .integer, .{}),
+            jetquery.table.column("name", .string, .{}),
+            jetquery.table.column("paws", .integer, .{}),
+        },
+        .{},
+    );
+
+    try repo.createTable(
+        "owners",
+        &.{
+            jetquery.table.column("id", .integer, .{}),
+            jetquery.table.column("name", .string, .{}),
+        },
+        .{},
+    );
+
+    try jetquery.Query(Schema, .Cat)
+        .insert(.{ .id = 1, .name = "Hercules", .paws = 4, .owner_id = 1 })
+        .execute(&repo);
+    try jetquery.Query(Schema, .Owner)
+        .insert(.{ .id = 1, .name = "Bob" })
+        .execute(&repo);
+
+    const maybe_cat = try jetquery.Query(Schema, .Cat)
+        .findBy(.{ .name = "Hercules" })
+        .relation(.owner, &.{})
+        .execute(&repo);
+
+    if (maybe_cat) |cat| {
+        try std.testing.expectEqualStrings("Hercules", cat.name);
+        try std.testing.expectEqual(4, cat.paws);
+        try std.testing.expectEqualStrings("Bob", cat.owner.name);
+    } else {
+        try std.testing.expect(false);
+    }
 }

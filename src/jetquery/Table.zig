@@ -2,7 +2,7 @@ const std = @import("std");
 
 const jetquery = @import("../jetquery.zig");
 
-const TableOptions = struct {};
+const TableOptions = []const type;
 
 /// Abstraction of a database table. Define a schema with:
 /// ```zig
@@ -10,11 +10,11 @@ const TableOptions = struct {};
 ///     pub const Cats = Table("cats", struct { name: []const u8, paws: usize }, .{});
 /// };
 /// ```
-pub fn Table(name: []const u8, T: type, options: TableOptions) type {
-    _ = options;
+pub fn Table(name: []const u8, T: type, options: anytype) type {
     return struct {
         pub const Definition = T;
         pub const table_name = name;
+        pub const relations = if (@hasField(@TypeOf(options), "relations")) options.relations else .{};
 
         pub fn insert(repo: jetquery.Repo, args: anytype) !void {
             try repo.insert(T, args);

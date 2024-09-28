@@ -18,13 +18,13 @@ pub const Result = union(enum) {
         }
     }
 
-    pub fn next(self: *Result, query: anytype) !?@TypeOf(query).Definition {
+    pub fn next(self: *Result, query: anytype) !?@TypeOf(query).ResultType {
         return switch (self.*) {
             inline else => |*adapted_result| try adapted_result.next(query),
         };
     }
 
-    pub fn all(self: *Result, query: anytype) ![]const @TypeOf(query).Definition {
+    pub fn all(self: *Result, query: anytype) ![]const @TypeOf(query).ResultType {
         return switch (self.*) {
             inline else => |*adapted_result| try adapted_result.all(query),
         };

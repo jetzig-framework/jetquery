@@ -22,7 +22,13 @@ pub fn columnTypeSql(self: NullAdapter, column_type: jetquery.Column.Type) []con
     return "";
 }
 
-pub fn identifier(name: []const u8) []const u8 {
+pub fn identifier(comptime name: []const u8) []const u8 {
+    _ = name;
+    return "";
+}
+
+pub fn columnSql(Table: type, comptime name: []const u8) []const u8 {
+    _ = Table;
     _ = name;
     return "";
 }
@@ -37,5 +43,19 @@ pub fn notNullSql() []const u8 {
 
 pub fn paramSql(comptime index: usize) []const u8 {
     _ = index;
+    return "";
+}
+
+pub fn innerJoinSql(
+    Table: type,
+    JoinTable: type,
+    comptime name: []const u8,
+    comptime options: jetquery.sql.JoinOptions,
+) []const u8 {
+    _ = Table;
+    _ = JoinTable;
+    _ = name;
+    _ = options;
+
     return "";
 }

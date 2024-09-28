@@ -35,7 +35,7 @@ pub fn run(self: Migrate) !void {
                 .message = "Executing migration: " ++ migration.name,
             });
 
-            try jetquery.Query(Schema.Migrations)
+            try jetquery.Query(Schema, .Migrations)
                 .insert(.{ .version = migration.version })
                 .execute(self.repo);
 
@@ -55,7 +55,7 @@ pub fn run(self: Migrate) !void {
 }
 
 fn isMigrated(self: Migrate, migration: Migration) !bool {
-    const query = jetquery.Query(Schema.Migrations)
+    const query = jetquery.Query(Schema, .Migrations)
         .select(&.{.version})
         .where(.{ .version = migration.version });
 
@@ -102,7 +102,7 @@ test "migrate" {
     const migrate = Migrate.init(&repo);
     try migrate.run();
 
-    const query1 = jetquery.Query(Schema.Migrations)
+    const query1 = jetquery.Query(Schema, .Migrations)
         .select(&.{.version});
     var result1 = try repo.execute(query1);
     defer result1.deinit();
@@ -114,12 +114,15 @@ test "migrate" {
         try std.testing.expect(false);
     }
 
-    const query2 = jetquery.Query(jetquery.Table("cats", struct {
-        name: []const u8,
-        paws: usize,
-        created_at: jetcommon.types.DateTime,
-        updated_at: jetcommon.types.DateTime,
-    }, .{}))
+    const TestSchema = struct {
+        pub const Cat = jetquery.Table("cats", struct {
+            name: []const u8,
+            paws: usize,
+            created_at: jetcommon.types.DateTime,
+            updated_at: jetcommon.types.DateTime,
+        }, .{});
+    };
+    const query2 = jetquery.Query(TestSchema, .Cat)
         .select(&.{ .name, .paws, .created_at, .updated_at });
     var result2 = try repo.execute(query2);
     defer result2.deinit();

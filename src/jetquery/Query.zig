@@ -11,13 +11,26 @@ pub const QueryType = enum { select, update, insert, delete, delete_all };
 pub const FieldContext = enum { where, update, insert, limit, order, none };
 
 // Number of rows expected to be returned by a query.
-const ResultType = enum { one, many, none };
+const ResultContext = enum { one, many, none };
+
+// Information about a column's position in a `SELECT` query, used to determine how to assign
+// result values to the `ResultType`. We cannot rely on the column name returned by PostgreSQL as
+// we only get the name of the column and not the table it came from, so we would otherwise not
+// be able to match columns to tables in joins. This also means we can skip a few allocs in
+// pg.zig by not requesting column names.
+pub const ColumnInfo = struct {
+    index: usize,
+    name: []const u8,
+    type: type,
+    relation: ?type,
+};
 
 /// Create a new query by passing a table definition.
 /// ```zig
 /// const query = Query(Schema.Cats).init(allocator);
 /// ```
-pub fn Query(Table: type) type {
+pub fn Query(Schema: type, comptime table_name: jetquery.DeclEnum(Schema)) type {
+    const Table = @field(Schema, @tagName(table_name));
     return struct {
         table: Table,
 
@@ -35,7 +48,9 @@ pub fn Query(Table: type) type {
             comptime columns: []const std.meta.FieldEnum(Table.Definition),
         ) Statement(
             .select,
+            Schema,
             Table,
+            &.{},
             &fieldInfos(@TypeOf(.{}), .none),
             if (columns.len == 0) Table.columns() else columns,
             &.{},
@@ -43,7 +58,9 @@ pub fn Query(Table: type) type {
         ) {
             return Statement(
                 .select,
+                Schema,
                 Table,
+                &.{},
                 &fieldInfos(@TypeOf(.{}), .none),
                 if (columns.len == 0) Table.columns() else columns,
                 &.{},
@@ -57,7 +74,9 @@ pub fn Query(Table: type) type {
         /// ```
         pub fn update(args: anytype) Statement(
             .update,
+            Schema,
             Table,
+            &.{},
             &(fieldInfos(@TypeOf(args), .update) ++ timestampsFields(Table, .update)),
             &.{},
             &.{},
@@ -65,7 +84,9 @@ pub fn Query(Table: type) type {
         ) {
             var statement: Statement(
                 .update,
+                Schema,
                 Table,
+                &.{},
                 &(fieldInfos(@TypeOf(args), .update) ++ timestampsFields(Table, .update)),
                 &.{},
                 &.{},
@@ -74,7 +95,7 @@ pub fn Query(Table: type) type {
             const fields = std.meta.fields(@TypeOf(args));
             inline for (fields, 0..) |field, index| {
                 const value = @field(args, field.name);
-                const coerced = coerce(Table, fieldInfo(field, .update), value);
+                const coerced = coerce(Table, &.{}, fieldInfo(field, .update), value);
                 @field(statement.field_values, std.fmt.comptimePrint("{}", .{index})) = coerced.value;
                 statement.field_errors[index] = coerced.err;
             }
@@ -91,7 +112,9 @@ pub fn Query(Table: type) type {
         /// ```
         pub fn insert(args: anytype) Statement(
             .insert,
+            Schema,
             Table,
+            &.{},
             &(fieldInfos(@TypeOf(args), .insert) ++ timestampsFields(Table, .insert)),
             &.{},
             &.{},
@@ -99,7 +122,9 @@ pub fn Query(Table: type) type {
         ) {
             var statement: Statement(
                 .insert,
+                Schema,
                 Table,
+                &.{},
                 &(fieldInfos(@TypeOf(args), .insert) ++ timestampsFields(Table, .insert)),
                 &.{},
                 &.{},
@@ -110,7 +135,7 @@ pub fn Query(Table: type) type {
 
             inline for (fields, 0..) |field, index| {
                 const value = @field(args, field.name);
-                const coerced = coerce(Table, fieldInfo(field, .insert), value);
+                const coerced = coerce(Table, &.{}, fieldInfo(field, .insert), value);
                 @field(statement.field_values, std.fmt.comptimePrint("{}", .{index})) = coerced.value;
                 statement.field_errors[index] = coerced.err;
             }
@@ -132,7 +157,9 @@ pub fn Query(Table: type) type {
         /// ```
         pub fn delete() Statement(
             .delete,
+            Schema,
             Table,
+            &.{},
             &fieldInfos(@TypeOf(.{}), .none),
             &.{},
             &.{},
@@ -140,7 +167,9 @@ pub fn Query(Table: type) type {
         ) {
             return Statement(
                 .delete,
+                Schema,
                 Table,
+                &.{},
                 &fieldInfos(@TypeOf(.{}), .none),
                 &.{},
                 &.{},
@@ -155,7 +184,9 @@ pub fn Query(Table: type) type {
         /// ```
         pub fn deleteAll() Statement(
             .delete_all,
+            Schema,
             Table,
+            &.{},
             &fieldInfos(@TypeOf(.{}), .none),
             &.{},
             &.{},
@@ -163,7 +194,9 @@ pub fn Query(Table: type) type {
         ) {
             return Statement(
                 .delete_all,
+                Schema,
                 Table,
+                &.{},
                 &fieldInfos(@TypeOf(.{}), .none),
                 &.{},
                 &.{},
@@ -181,7 +214,9 @@ pub fn Query(Table: type) type {
         /// ```
         pub fn find(id: anytype) Statement(
             .select,
+            Schema,
             Table,
+            &.{},
             &(fieldInfos(@TypeOf(.{ .id = id }), .where) ++ fieldInfos(@TypeOf(.{1}), .limit)),
             Table.columns(),
             &.{},
@@ -189,7 +224,9 @@ pub fn Query(Table: type) type {
         ) {
             var statement: Statement(
                 .select,
+                Schema,
                 Table,
+                &.{},
                 &(fieldInfos(@TypeOf(.{ .id = id }), .where) ++ fieldInfos(@TypeOf(.{1}), .limit)),
                 Table.columns(),
                 &.{},
@@ -198,6 +235,7 @@ pub fn Query(Table: type) type {
             if (comptime @hasField(Table.Definition, "id")) {
                 const coerced = coerce(
                     Table,
+                    &.{},
                     fieldInfo(std.meta.fieldInfo(Table.Definition, .id), .where),
                     id,
                 );
@@ -223,7 +261,9 @@ pub fn Query(Table: type) type {
         /// ```
         pub fn findBy(args: anytype) Statement(
             .select,
+            Schema,
             Table,
+            &.{},
             &(fieldInfos(@TypeOf(args), .where) ++ fieldInfos(@TypeOf(.{1}), .limit)),
             Table.columns(),
             &.{},
@@ -231,7 +271,9 @@ pub fn Query(Table: type) type {
         ) {
             var statement: Statement(
                 .select,
+                Schema,
                 Table,
+                &.{},
                 &(fieldInfos(@TypeOf(args), .where) ++ fieldInfos(@TypeOf(.{1}), .limit)),
                 Table.columns(),
                 &.{},
@@ -240,7 +282,7 @@ pub fn Query(Table: type) type {
             const fields = std.meta.fields(@TypeOf(args));
             inline for (fields, 0..) |field, index| {
                 const value = @field(args, field.name);
-                const coerced = coerce(Table, fieldInfo(field, .where), value);
+                const coerced = coerce(Table, &.{}, fieldInfo(field, .where), value);
                 @field(statement.field_values, std.fmt.comptimePrint("{}", .{index})) = coerced.value;
                 statement.field_errors[index] = coerced.err;
             }
@@ -255,30 +297,45 @@ const MissingField = struct {
     missing: void,
 };
 
-fn ColumnType(Table: type, comptime field_info: FieldInfo) type {
+fn ColumnType(Table: type, relations: []const type, comptime field_info: FieldInfo) type {
     switch (field_info.context) {
         .limit => return usize,
         else => {},
     }
 
-    comptime if (@hasField(Table.Definition, field_info.name)) {
+    if (comptime @hasField(Table.Definition, field_info.name)) {
         const FT = std.meta.FieldType(
             Table.Definition,
             std.enums.nameCast(std.meta.FieldEnum(Table.Definition), field_info.name),
         );
         if (FT == jetcommon.types.DateTime) return i64 else return FT;
-    } else return MissingField;
+    } else {
+        for (relations) |Relation| {
+            if (comptime @hasField(Relation.Source.Definition, field_info.name)) {
+                const FT = std.meta.FieldType(
+                    Relation.Source.Definition,
+                    std.enums.nameCast(std.meta.FieldEnum(Relation.Source.Definition), field_info.name),
+                );
+                if (FT == jetcommon.types.DateTime) return i64 else return FT;
+            }
+        }
+
+        @compileError(std.fmt.comptimePrint(
+            "No column `{s}` defined in Schema for `{s}`.",
+            .{ field_info.name, Table.table_name },
+        ));
+    }
 }
 
-fn FieldValues(Table: type, comptime fields: []const FieldInfo) type {
+fn FieldValues(Table: type, relations: []const type, comptime fields: []const FieldInfo) type {
     var new_fields: [fields.len]std.builtin.Type.StructField = undefined;
     for (fields, 0..) |field, index| {
         new_fields[index] = .{
             .name = std.fmt.comptimePrint("{}", .{index}),
-            .type = ColumnType(Table, field),
+            .type = ColumnType(Table, relations, field),
             .default_value = null,
             .is_comptime = false,
-            .alignment = @alignOf(ColumnType(Table, field)),
+            .alignment = @alignOf(ColumnType(Table, relations, field)),
         };
     }
     return @Type(.{
@@ -319,6 +376,7 @@ fn coerceDelegate(Target: type, value: anytype) CoercedValue(Target) {
 
 fn initStatement(
     Table: type,
+    relations: []const type,
     C: type,
     statement: *C,
     S: type,
@@ -334,7 +392,7 @@ fn initStatement(
     }
     inline for (std.meta.fields(@TypeOf(args)), field_infos.len..) |field, index| {
         const value = @field(args, field.name);
-        const coerced = coerce(Table, fieldInfo(field, context), value);
+        const coerced = coerce(Table, relations, fieldInfo(field, context), value);
         @field(statement.field_values, std.fmt.comptimePrint("{}", .{index})) = coerced.value;
         statement.field_errors[index] = coerced.err;
     }
@@ -349,9 +407,10 @@ fn CoercedValue(Target: type) type {
 
 fn coerce(
     Table: type,
+    relations: []const type,
     field_info: FieldInfo,
     value: anytype,
-) CoercedValue(ColumnType(Table, field_info)) {
+) CoercedValue(ColumnType(Table, relations, field_info)) {
     switch (field_info.context) {
         .limit => return switch (@typeInfo(@TypeOf(value))) {
             .int, .comptime_int => .{ .value = value },
@@ -360,7 +419,7 @@ fn coerce(
         else => {},
     }
 
-    const T = ColumnType(Table, field_info);
+    const T = ColumnType(Table, relations, field_info);
 
     if (T == jetcommon.types.DateTime) return value.microseconds;
 
@@ -476,16 +535,22 @@ fn fieldInfo(comptime field: std.builtin.Type.StructField, comptime context: Fie
     return .{ .info = field, .context = context, .name = field.name };
 }
 
+fn SchemaTable(Schema: type, comptime name: jetquery.DeclEnum(Schema)) type {
+    return @field(Schema, @tagName(name));
+}
+
 fn Statement(
-    query_type: QueryType,
+    comptime query_type: QueryType,
+    Schema: type,
     Table: type,
+    comptime relations: []const type,
     comptime field_infos: []const FieldInfo,
     comptime columns: []const std.meta.FieldEnum(Table.Definition),
     comptime order_clauses: []const OrderClause(Table),
-    result_type: ResultType,
+    result_context: ResultContext,
 ) type {
     return struct {
-        field_values: FieldValues(Table, field_infos),
+        field_values: FieldValues(Table, relations, field_infos),
         limit_bound: ?usize = null,
         field_errors: [field_infos.len]?anyerror,
 
@@ -495,91 +560,171 @@ fn Statement(
         comptime order_clauses: []const OrderClause(Table) = order_clauses,
 
         comptime sql: []const u8 = jetquery.sql.render(
+            jetquery.adapters.Type(jetquery.config.database.adapter),
             query_type,
             Table,
-            jetquery.adapters.Type(jetquery.config.database.adapter),
+            relations,
             field_infos,
             columns,
             order_clauses,
         ),
 
         pub const Definition = Table.Definition;
-        pub const ResultType = result_type;
+        pub const ResultContext = result_context;
+        pub const ResultType = QueryResultType();
+        pub const ColumnInfos = QueryColumnInfos();
 
         const Self = @This();
 
         /// Apply a `WHERE` clause to the current statement.
         pub fn where(self: Self, args: anytype) Statement(
             query_type,
+            Schema,
             Table,
+            relations,
             field_infos ++ fieldInfos(@TypeOf(args), .where),
             columns,
             order_clauses,
-            result_type,
+            result_context,
         ) {
             var statement: Statement(
                 query_type,
+                Schema,
                 Table,
+                relations,
                 field_infos ++ fieldInfos(@TypeOf(args), .where),
                 columns,
                 order_clauses,
-                result_type,
+                result_context,
             ) = undefined;
-            initStatement(Table, @TypeOf(statement), &statement, Self, self, field_infos, args, .where);
+            initStatement(Table, relations, @TypeOf(statement), &statement, Self, self, field_infos, args, .where);
             return statement;
         }
 
         /// Apply a `LIMIT` clause to the current statement.
         pub fn limit(self: Self, bound: usize) Statement(
             query_type,
+            Schema,
             Table,
+            relations,
             field_infos ++ fieldInfos(@TypeOf(.{bound}), .limit),
             columns,
             order_clauses,
-            result_type,
+            result_context,
         ) {
             var statement: Statement(
                 query_type,
+                Schema,
                 Table,
+                relations,
                 field_infos ++ fieldInfos(@TypeOf(.{bound}), .limit),
                 columns,
                 order_clauses,
-                result_type,
+                result_context,
             ) = undefined;
-            initStatement(Table, @TypeOf(statement), &statement, Self, self, field_infos, .{bound}, .limit);
+            initStatement(Table, relations, @TypeOf(statement), &statement, Self, self, field_infos, .{bound}, .limit);
             return statement;
         }
 
         /// Apply an `ORDER BY` clause to the current statement.
         pub fn orderBy(self: Self, comptime args: anytype) Statement(
             query_type,
+            Schema,
             Table,
+            relations,
             field_infos,
             columns,
             &translateOrderBy(Table, args),
-            result_type,
+            result_context,
         ) {
             var statement: Statement(
                 query_type,
+                Schema,
                 Table,
+                relations,
                 field_infos,
                 columns,
                 &translateOrderBy(Table, args),
-                result_type,
+                result_context,
             ) = undefined;
-            initStatement(Table, @TypeOf(statement), &statement, Self, self, field_infos, .{}, .order);
+            initStatement(
+                Table,
+                relations,
+                @TypeOf(statement),
+                &statement,
+                Self,
+                self,
+                field_infos,
+                .{},
+                .order,
+            );
             return statement;
         }
 
-        pub fn execute(self: Self, repo: *jetquery.Repo) !switch (result_type) {
-            .one => ?Table.Definition,
+        pub fn relation(
+            self: Self,
+            comptime name: jetquery.relation.RelationsEnum(Table),
+            comptime select_columns: []const jetquery.relation.ColumnsEnum(Schema, Table, name),
+        ) Statement(
+            query_type,
+            Schema,
+            Table,
+            &.{jetquery.relation.Relation(
+                Schema,
+                Table,
+                name,
+                if (select_columns.len == 0)
+                    std.enums.values(jetquery.relation.ColumnsEnum(Schema, Table, name))
+                else
+                    select_columns,
+            )},
+            field_infos,
+            columns,
+            order_clauses,
+            result_context,
+        ) {
+            var statement: Statement(
+                query_type,
+                Schema,
+                Table,
+                &.{jetquery.relation.Relation(
+                    Schema,
+                    Table,
+                    name,
+                    if (select_columns.len == 0)
+                        std.enums.values(jetquery.relation.ColumnsEnum(Schema, Table, name))
+                    else
+                        select_columns,
+                )},
+                field_infos,
+                columns,
+                order_clauses,
+                result_context,
+            ) = undefined;
+            initStatement(
+                Table,
+                relations,
+                @TypeOf(statement),
+                &statement,
+                Self,
+                self,
+                field_infos,
+                .{},
+                .none,
+            );
+            return statement;
+        }
+
+        /// Execute the query's SQL with bind params using the provided repo.
+        pub fn execute(self: Self, repo: *jetquery.Repo) !switch (result_context) {
+            .one => ?ResultType,
             .many => jetquery.Result,
             .none => void,
         } {
             return try repo.execute(self);
         }
 
-        pub fn values(self: Self) FieldValues(Table, field_infos) {
+        pub fn values(self: Self) FieldValues(Table, relations, field_infos) {
             return self.field_values;
         }
 
@@ -598,6 +743,99 @@ fn Statement(
                 if (field.context == .where) return true;
             }
             return false;
+        }
+
+        pub fn QueryColumnInfos() [totalColumnLen()]ColumnInfo {
+            comptime {
+                var column_infos: [totalColumnLen()]ColumnInfo = undefined;
+                for (columns, 0..) |column, index| {
+                    column_infos[index] = .{
+                        .name = @tagName(column),
+                        .type = std.meta.FieldType(Table.Definition, column),
+                        .index = index,
+                        .relation = null,
+                    };
+                }
+                var start: usize = columns.len;
+                for (relations) |Relation| {
+                    for (Relation.select_columns, start..) |column, index| {
+                        column_infos[index] = .{
+                            .name = @tagName(column),
+                            .type = std.meta.FieldType(Relation.Source.Definition, column),
+                            .index = index,
+                            .relation = Relation,
+                        };
+                    }
+                    start += Relation.select_columns.len;
+                }
+
+                return column_infos;
+            }
+        }
+
+        pub fn QueryResultType() type {
+            comptime {
+                var base_fields: [columns.len]std.builtin.Type.StructField = undefined;
+
+                for (columns, 0..) |column, index| {
+                    const T = std.meta.fieldInfo(Table.Definition, column).type;
+                    base_fields[index] = .{
+                        .name = @tagName(column),
+                        .type = T,
+                        .default_value = null,
+                        .is_comptime = false,
+                        .alignment = @alignOf(T),
+                    };
+                }
+
+                var relations_fields: [relations.len]std.builtin.Type.StructField = undefined;
+                for (relations, 0..) |Relation, relation_index| {
+                    var fields: [Relation.select_columns.len]std.builtin.Type.StructField = undefined;
+                    for (Relation.select_columns, 0..) |column, index| {
+                        const T = std.meta.FieldType(Relation.Source.Definition, column);
+                        fields[index] = .{
+                            .name = @tagName(column),
+                            .type = T,
+                            .default_value = null,
+                            .is_comptime = false,
+                            .alignment = @alignOf(T),
+                        };
+                    }
+                    const RT = @Type(.{ .@"struct" = .{
+                        .layout = .auto,
+                        .fields = &fields,
+                        .decls = &.{},
+                        .is_tuple = false,
+                    } });
+                    relations_fields[relation_index] = .{
+                        .name = Relation.relation_name,
+                        .type = RT,
+                        .default_value = null,
+                        .is_comptime = false,
+                        .alignment = @alignOf(RT),
+                    };
+                }
+
+                const all_fields = base_fields ++ relations_fields;
+                return @Type(.{
+                    .@"struct" = .{
+                        .layout = .auto,
+                        .fields = &all_fields,
+                        .decls = &.{},
+                        .is_tuple = false,
+                    },
+                });
+            }
+        }
+
+        fn totalColumnLen() usize {
+            comptime {
+                var len: usize = columns.len;
+                for (relations) |Relation| {
+                    len += Relation.select_columns.len;
+                }
+                return len;
+            }
         }
     };
 }

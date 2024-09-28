@@ -3,6 +3,7 @@ const std = @import("std");
 const pg = @import("pg");
 
 const jetquery = @import("../../jetquery.zig");
+const ColumnInfo = @import("../Query.zig").ColumnInfo;
 
 const PostgresqlAdapter = @This();
 
@@ -24,35 +25,17 @@ pub const Result = struct {
         try self.result.drain();
     }
 
-    pub fn next(self: *Result, query: anytype) !?@TypeOf(query).Definition {
+    pub fn next(self: *Result, query: anytype) !?@TypeOf(query).ResultType {
         if (try self.result.next()) |row| {
-            var result_row: @TypeOf(query).Definition = undefined;
-            for (self.result.column_names, 0..) |column_name, index| {
-                inline for (std.meta.fields(@TypeOf(query).Definition)) |field| {
-                    if (std.mem.eql(u8, field.name, column_name)) {
-                        @field(result_row, field.name) = switch (field.type) {
-                            // TODO: pg.Numeric, pg.Cidr
-                            u8,
-                            ?u8,
-                            i16,
-                            ?i16,
-                            i32,
-                            ?i32,
-                            f32,
-                            ?f32,
-                            []u8,
-                            ?[]u8,
-                            i64,
-                            ?i64,
-                            bool,
-                            ?bool,
-                            []const u8,
-                            ?[]const u8,
-                            => |T| row.get(T, index),
-                            jetquery.jetcommon.types.DateTime => |T| try T.fromUnix(row.get(i64, index), .microseconds),
-                            else => @compileError("Unsupported type: " ++ @typeName(field.type)),
-                        };
-                    }
+            var result_row: @TypeOf(query).ResultType = undefined;
+            inline for (@TypeOf(query).ColumnInfos) |column_info| {
+                if (column_info.relation) |relation| {
+                    @field(
+                        @field(result_row, relation.relation_name),
+                        column_info.name,
+                    ) = resolvedValue(column_info, &row);
+                } else {
+                    @field(result_row, column_info.name) = resolvedValue(column_info, &row);
                 }
             }
             return result_row;
@@ -72,6 +55,30 @@ pub const Result = struct {
     }
 };
 
+fn resolvedValue(column_info: ColumnInfo, row: *const pg.Row) column_info.type {
+    return switch (column_info.type) {
+        // TODO: pg.Numeric, pg.Cidr
+        u8,
+        ?u8,
+        i16,
+        ?i16,
+        i32,
+        ?i32,
+        f32,
+        ?f32,
+        []u8,
+        ?[]u8,
+        i64,
+        ?i64,
+        bool,
+        ?bool,
+        []const u8,
+        ?[]const u8,
+        => |T| row.get(T, column_info.index),
+        jetquery.jetcommon.types.DateTime => |T| try T.fromUnix(row.get(i64, column_info.index), .microseconds),
+        else => |T| @compileError("Unsupported type: " ++ @typeName(T)),
+    };
+}
 pub const Options = struct {
     database: []const u8,
     username: []const u8,
@@ -114,7 +121,7 @@ pub fn execute(
 ) !jetquery.Result {
     if (!self.connected and self.lazy_connect) self.pool = try initPool(self.allocator, self.options);
 
-    const options: pg.Conn.QueryOpts = .{ .column_names = true };
+    const options: pg.Conn.QueryOpts = .{ .column_names = true }; // TODO: No longer needed ?
     var connection = try self.pool.acquire();
     errdefer self.pool.release(connection);
 
@@ -162,6 +169,13 @@ pub fn identifier(comptime name: []const u8) []const u8 {
     , .{name});
 }
 
+/// SQL fragment used to represent a column bound to a table, e.g. `"foo"."bar"`
+pub fn columnSql(Table: type, comptime name: []const u8) []const u8 {
+    return std.fmt.comptimePrint(
+        \\"{s}"."{s}"
+    , .{ Table.table_name, name });
+}
+
 /// SQL fragment used to indicate a primary key.
 pub fn primaryKeySql() []const u8 {
     return " SERIAL PRIMARY KEY";
@@ -183,7 +197,26 @@ pub fn orderSql(Table: type, comptime order_clause: jetquery.OrderClause(Table))
         .descending => "DESC",
     };
 
-    return std.fmt.comptimePrint("{s} {s}", .{ identifier(@tagName(order_clause.column)), direction });
+    return std.fmt.comptimePrint(
+        "{s} {s}",
+        .{ columnSql(Table, @tagName(order_clause.column)), direction },
+    );
+}
+
+pub fn innerJoinSql(
+    Table: type,
+    JoinTable: type,
+    comptime name: []const u8,
+    comptime options: jetquery.sql.JoinOptions,
+) []const u8 {
+    _ = options;
+    // TODO: relation type switch
+
+    return std.fmt.comptimePrint(
+        \\ INNER JOIN "{s}" ON "{s}"."{s}" = "{s}"."{s}"
+    ,
+        .{ JoinTable.table_name, Table.table_name, name ++ "_id", JoinTable.table_name, "id" },
+    );
 }
 
 fn initPool(allocator: std.mem.Allocator, options: Options) !*pg.Pool {

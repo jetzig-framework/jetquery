@@ -35,10 +35,17 @@ pub const Adapter = union(enum) {
         };
     }
 
-    /// Quote an identifier (e.g. a column name) suitable for the active adapter.
+    /// Quote an identifier (e.g. a table name) suitable for the active adapter.
     pub fn identifier(self: Adapter, comptime name: []const u8) []const u8 {
         return switch (self) {
             inline else => |adapter| @TypeOf(adapter).identifier(name),
+        };
+    }
+
+    /// Quote a column bound to a table suitable for the active adapter.
+    pub fn columnSql(self: Adapter, Table: type, comptime name: []const u8) []const u8 {
+        return switch (self) {
+            inline else => |adapter| @TypeOf(adapter).columnSql(Table, name),
         };
     }
 
@@ -63,9 +70,23 @@ pub const Adapter = union(enum) {
         };
     }
 
+    /// SQL representing an `ORDER BY` directive, e.g. `"foo" DESC`
     pub fn orderSql(self: Adapter, Table: type, comptime order_clause: jetquery.OrderClause(Table)) []const u8 {
         return switch (self) {
             inline else => |adapter| @TypeOf(adapter).orderSql(Table, order_clause),
+        };
+    }
+
+    /// SQL representing an inner join, e.g. `INNER JOIN "foo" ON "bar"."baz" = "foo"."baz"`
+    pub fn innerJoinSql(
+        self: Adapter,
+        Table: type,
+        JoinTable: type,
+        comptime name: []const u8,
+        comptime options: jetquery.sql.JoinOptions,
+    ) []const u8 {
+        return switch (self) {
+            inline else => |adapter| @TypeOf(adapter).innerJoinSql(Table, JoinTable, name, options),
         };
     }
 };

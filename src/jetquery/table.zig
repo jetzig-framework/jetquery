@@ -1,3 +1,5 @@
+const std = @import("std");
+
 const jetquery = @import("../jetquery.zig");
 
 pub fn column(

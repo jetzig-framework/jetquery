@@ -7,6 +7,7 @@ pub const config = @import("jetquery.config");
 pub const Repo = @import("jetquery/Repo.zig");
 pub const adapters = @import("jetquery/adapters.zig");
 pub const sql = @import("jetquery/sql.zig");
+pub const relation = @import("jetquery/relation.zig");
 pub const Migration = @import("jetquery/Migration.zig");
 pub const table = @import("jetquery/table.zig");
 pub const column_names = @import("jetquery/column_names.zig");
@@ -26,93 +27,119 @@ pub const adapter = std.enums.nameCast(adapters.Name, config.database.adapter);
 pub const timestamp_updated_column_name = "updated_at";
 pub const timestamp_created_column_name = "created_at";
 
+// Can be switched to `std.meta.DeclEnum` if https://github.com/ziglang/zig/pull/21331 is merged
+// (or fixed otherwise) to prevent overflow on empty struct.
+pub fn DeclEnum(T: type) type {
+    comptime {
+        const decls = std.meta.declarations(T);
+        var fields: [decls.len]std.builtin.Type.EnumField = undefined;
+        const TagType = std.math.IntFittingRange(
+            0,
+            if (decls.len == 0) 0 else decls.len - 1,
+        );
+
+        for (decls, 0..) |decl, index| {
+            fields[index] = .{ .name = decl.name, .value = index };
+        }
+
+        return @Type(.{
+            .@"enum" = .{
+                .tag_type = TagType,
+                .fields = &fields,
+                .decls = &.{},
+                .is_exhaustive = true,
+            },
+        });
+    }
+}
+
 test {
     std.testing.refAllDecls(@This());
 }
 
 test "select" {
     const Schema = struct {
-        pub const Cats = Table("cats", struct { name: []const u8, paws: i32 }, .{});
+        pub const Cat = Table("cats", struct { name: []const u8, paws: i32 }, .{});
     };
-    const query = Query(Schema.Cats).select(&.{ .name, .paws });
+    const query = Query(Schema, .Cat).select(&.{ .name, .paws });
 
     try std.testing.expectEqualStrings(
-        \\SELECT "name", "paws" FROM "cats"
+        \\SELECT "cats"."name", "cats"."paws" FROM "cats"
     , query.sql);
 }
 
 test "select (all)" {
     const Schema = struct {
-        pub const Cats = Table("cats", struct { name: []const u8, paws: i32 }, .{});
+        pub const Cat = Table("cats", struct { name: []const u8, paws: i32 }, .{});
     };
-    const query = Query(Schema.Cats).select(&.{});
+    const query = Query(Schema, .Cat).select(&.{});
 
     try std.testing.expectEqualStrings(
-        \\SELECT "name", "paws" FROM "cats"
+        \\SELECT "cats"."name", "cats"."paws" FROM "cats"
     , query.sql);
 }
 
 test "where" {
     const Schema = struct {
-        pub const Cats = Table("cats", struct { name: []const u8, paws: i32 }, .{});
+        pub const Cat = Table("cats", struct { name: []const u8, paws: i32 }, .{});
     };
 
     const paws = 4;
-    const query = Query(Schema.Cats)
+    const query = Query(Schema, .Cat)
         .select(&.{ .name, .paws })
         .where(.{ .name = "bar", .paws = paws });
 
     try std.testing.expectEqualStrings(
-        \\SELECT "name", "paws" FROM "cats" WHERE "name" = $1 AND "paws" = $2
+        \\SELECT "cats"."name", "cats"."paws" FROM "cats" WHERE "cats"."name" = $1 AND "cats"."paws" = $2
     , query.sql);
 }
 
 test "where (multiple)" {
     const Schema = struct {
-        pub const Cats = Table("cats", struct { name: []const u8, paws: i32 }, .{});
+        pub const Cat = Table("cats", struct { name: []const u8, paws: i32 }, .{});
     };
 
-    const query = Query(Schema.Cats)
+    const query = Query(Schema, .Cat)
         .select(&.{ .name, .paws })
         .where(.{ .name = "bar" })
         .where(.{ .paws = 4 });
 
     try std.testing.expectEqualStrings(
-        \\SELECT "name", "paws" FROM "cats" WHERE "name" = $1 AND "paws" = $2
+        \\SELECT "cats"."name", "cats"."paws" FROM "cats" WHERE "cats"."name" = $1 AND "cats"."paws" = $2
     , query.sql);
 }
 
 test "limit" {
     const Schema = struct {
-        pub const Cats = Table("cats", struct { name: []const u8, paws: i32 }, .{});
+        pub const Cat = Table("cats", struct { name: []const u8, paws: i32 }, .{});
     };
-    const query = Query(Schema.Cats)
+    const query = Query(Schema, .Cat)
         .select(&.{ .name, .paws })
         .limit(100);
 
     try std.testing.expectEqualStrings(
-        \\SELECT "name", "paws" FROM "cats" LIMIT $1
+        \\SELECT "cats"."name", "cats"."paws" FROM "cats" LIMIT $1
     , query.sql);
 }
 
 test "order by" {
     const Schema = struct {
-        pub const Cats = Table("cats", struct { name: []const u8, paws: i32 }, .{});
+        pub const Cat = Table("cats", struct { name: []const u8, paws: i32 }, .{});
     };
-    const query = Query(Schema.Cats)
+    const query = Query(Schema, .Cat)
         .select(&.{ .name, .paws })
         .orderBy(.{ .name = .ascending });
 
     try std.testing.expectEqualStrings(
-        \\SELECT "name", "paws" FROM "cats" ORDER BY "name" ASC
+        \\SELECT "cats"."name", "cats"."paws" FROM "cats" ORDER BY "cats"."name" ASC
     , query.sql);
 }
 
 test "insert" {
     const Schema = struct {
-        pub const Cats = Table("cats", struct { name: []const u8, paws: i32 }, .{});
+        pub const Cat = Table("cats", struct { name: []const u8, paws: i32 }, .{});
     };
-    const query = Query(Schema.Cats)
+    const query = Query(Schema, .Cat)
         .insert(.{ .name = "Hercules", .paws = 4 });
 
     try std.testing.expectEqualStrings(
@@ -122,14 +149,14 @@ test "insert" {
 
 test "update" {
     const Schema = struct {
-        pub const Cats = Table("cats", struct { name: []const u8, paws: i32 }, .{});
+        pub const Cat = Table("cats", struct { name: []const u8, paws: i32 }, .{});
     };
-    const query = Query(Schema.Cats)
+    const query = Query(Schema, .Cat)
         .update(.{ .name = "Heracles", .paws = 2 })
         .where(.{ .name = "Hercules" });
 
     try std.testing.expectEqualStrings(
-        \\UPDATE "cats" SET "name" = $1, "paws" = $2 WHERE "name" = $3
+        \\UPDATE "cats" SET "cats"."name" = $1, "cats"."paws" = $2 WHERE "cats"."name" = $3
     ,
         query.sql,
     );
@@ -137,31 +164,31 @@ test "update" {
 
 test "delete" {
     const Schema = struct {
-        pub const Cats = Table("cats", struct { name: []const u8, paws: i32 }, .{});
+        pub const Cat = Table("cats", struct { name: []const u8, paws: i32 }, .{});
     };
-    const query = Query(Schema.Cats)
+    const query = Query(Schema, .Cat)
         .delete()
         .where(.{ .name = "Hercules" });
 
     try std.testing.expectEqualStrings(
-        \\DELETE FROM "cats" WHERE "name" = $1
+        \\DELETE FROM "cats" WHERE "cats"."name" = $1
     , query.sql);
 }
 
 test "delete (without where clause)" {
     const Schema = struct {
-        pub const Cats = Table("cats", struct { name: []const u8, paws: i32 }, .{});
+        pub const Cat = Table("cats", struct { name: []const u8, paws: i32 }, .{});
     };
-    const query = Query(Schema.Cats).delete();
+    const query = Query(Schema, .Cat).delete();
 
     try std.testing.expectError(error.JetQueryUnsafeDelete, query.validateDelete());
 }
 
 test "deleteAll" {
     const Schema = struct {
-        pub const Cats = Table("cats", struct { name: []const u8, paws: i32 }, .{});
+        pub const Cat = Table("cats", struct { name: []const u8, paws: i32 }, .{});
     };
-    const query = Query(Schema.Cats)
+    const query = Query(Schema, .Cat)
         .deleteAll();
 
     try std.testing.expectEqualStrings(
@@ -171,70 +198,61 @@ test "deleteAll" {
 
 test "find" {
     const Schema = struct {
-        pub const Cats = Table("cats", struct { id: i32, name: []const u8, paws: i32 }, .{});
+        pub const Cat = Table("cats", struct { id: i32, name: []const u8, paws: i32 }, .{});
     };
-    const query = Query(Schema.Cats).find(1000);
+    const query = Query(Schema, .Cat).find(1000);
 
     try std.testing.expectEqualStrings(
-        \\SELECT "id", "name", "paws" FROM "cats" WHERE "id" = $1 LIMIT $2
+        \\SELECT "cats"."id", "cats"."name", "cats"."paws" FROM "cats" WHERE "cats"."id" = $1 LIMIT $2
     , query.sql);
 }
 
 test "find (with coerced id)" {
     const Schema = struct {
-        pub const Cats = Table("cats", struct { id: i32, name: []const u8, paws: i32 }, .{});
+        pub const Cat = Table("cats", struct { id: i32, name: []const u8, paws: i32 }, .{});
     };
-    const query = Query(Schema.Cats).find("1000");
+    const query = Query(Schema, .Cat).find("1000");
 
     try std.testing.expectEqualStrings(
-        \\SELECT "id", "name", "paws" FROM "cats" WHERE "id" = $1 LIMIT $2
+        \\SELECT "cats"."id", "cats"."name", "cats"."paws" FROM "cats" WHERE "cats"."id" = $1 LIMIT $2
     , query.sql);
-}
-
-test "find (without id column)" {
-    const Schema = struct {
-        pub const Cats = Table("cats", struct { name: []const u8, paws: i32 }, .{});
-    };
-    const query = Query(Schema.Cats).find(1000);
-
-    try std.testing.expectError(error.JetQueryMissingIdField, query.validateValues());
 }
 
 test "findBy" {
     const Schema = struct {
-        pub const Cats = Table("cats", struct { id: i32, name: []const u8, paws: i32 }, .{});
+        pub const Cat = Table("cats", struct { id: i32, name: []const u8, paws: i32 }, .{});
     };
-    const query = Query(Schema.Cats).findBy(.{ .name = "Hercules", .paws = 4 });
+    const query = Query(Schema, .Cat).findBy(.{ .name = "Hercules", .paws = 4 });
 
     try std.testing.expectEqualStrings(
-        \\SELECT "id", "name", "paws" FROM "cats" WHERE "name" = $1 AND "paws" = $2 LIMIT $3
+        \\SELECT "cats"."id", "cats"."name", "cats"."paws" FROM "cats" WHERE "cats"."name" = $1 AND "cats"."paws" = $2 LIMIT $3
     , query.sql);
 }
 
 test "combined" {
     const Schema = struct {
-        pub const Cats = Table("cats", struct { id: i32, name: []const u8, paws: i32 }, .{});
+        pub const Cat = Table("cats", struct { id: i32, name: []const u8, paws: i32 }, .{});
     };
-    const query = Query(Schema.Cats)
+    const query = Query(Schema, .Cat)
         .select(&.{ .name, .paws })
         .where(.{ .name = "Hercules" })
         .limit(10)
         .orderBy(.{ .name = .ascending });
 
     try std.testing.expectEqualStrings(
-        \\SELECT "name", "paws" FROM "cats" WHERE "name" = $1 ORDER BY "name" ASC LIMIT $2
+        \\SELECT "cats"."name", "cats"."paws" FROM "cats" WHERE "cats"."name" = $1 ORDER BY "cats"."name" ASC LIMIT $2
     , query.sql);
 }
 
 test "runtime field values" {
     const Schema = struct {
-        pub const Cats = Table("cats", struct { name: []const u8, paws: i32 }, .{});
+        pub const Cat = Table("cats", struct { name: []const u8, paws: i32 }, .{});
     };
     var hercules_buf: [8]u8 = undefined;
     const hercules = try std.fmt.bufPrint(&hercules_buf, "{s}", .{"Hercules"});
     var heracles_buf: [8]u8 = undefined;
     const heracles = try std.fmt.bufPrint(&heracles_buf, "{s}", .{"Heracles"});
-    const query = Query(Schema.Cats)
+    const query = Query(Schema, .Cat)
         .update(.{ .name = heracles, .paws = 2 })
         .where(.{ .name = hercules });
     const values = query.values();
@@ -245,9 +263,9 @@ test "runtime field values" {
 
 test "boolean coercion" {
     const Schema = struct {
-        pub const Cats = Table("cats", struct { name: []const u8, intelligent: bool }, .{});
+        pub const Cat = Table("cats", struct { name: []const u8, intelligent: bool }, .{});
     };
-    const query = Query(Schema.Cats)
+    const query = Query(Schema, .Cat)
         .select(&.{.name})
         .where(.{ .intelligent = "1" });
 
@@ -256,9 +274,9 @@ test "boolean coercion" {
 
 test "integer coercion" {
     const Schema = struct {
-        pub const Cats = Table("cats", struct { name: []const u8, paws: i32 }, .{});
+        pub const Cat = Table("cats", struct { name: []const u8, paws: i32 }, .{});
     };
-    const query = Query(Schema.Cats)
+    const query = Query(Schema, .Cat)
         .select(&.{.name})
         .where(.{ .paws = "4" });
 
@@ -267,9 +285,9 @@ test "integer coercion" {
 
 test "float coercion" {
     const Schema = struct {
-        pub const Cats = Table("cats", struct { name: []const u8, intelligence: f64 }, .{});
+        pub const Cat = Table("cats", struct { name: []const u8, intelligence: f64 }, .{});
     };
-    const query = Query(Schema.Cats)
+    const query = Query(Schema, .Cat)
         .select(&.{.name})
         .where(.{ .intelligence = "10.2" });
 
@@ -278,7 +296,7 @@ test "float coercion" {
 
 test "toJetQuery()" {
     const Schema = struct {
-        pub const Cats = Table("cats", struct { name: []const u8, paws: i32 }, .{});
+        pub const Cat = Table("cats", struct { name: []const u8, paws: i32 }, .{});
     };
 
     const Name = struct {
@@ -304,7 +322,7 @@ test "toJetQuery()" {
     const name = Name{};
     const paws = Paws{};
 
-    const query = Query(Schema.Cats)
+    const query = Query(Schema, .Cat)
         .insert(.{ .name = name, .paws = &paws });
     try std.testing.expectEqualStrings(
         \\INSERT INTO "cats" ("name", "paws") VALUES ($1, $2)
@@ -316,9 +334,9 @@ test "toJetQuery()" {
 
 test "failed coercion (bool)" {
     const Schema = struct {
-        pub const Cats = Table("cats", struct { name: []const u8, intelligent: bool }, .{});
+        pub const Cat = Table("cats", struct { name: []const u8, intelligent: bool }, .{});
     };
-    const query = Query(Schema.Cats)
+    const query = Query(Schema, .Cat)
         .select(&.{.name})
         .where(.{ .intelligent = "not a bool" });
 
@@ -327,9 +345,9 @@ test "failed coercion (bool)" {
 
 test "failed coercion (int)" {
     const Schema = struct {
-        pub const Cats = Table("cats", struct { name: []const u8, paws: i32 }, .{});
+        pub const Cat = Table("cats", struct { name: []const u8, paws: i32 }, .{});
     };
-    const query = Query(Schema.Cats)
+    const query = Query(Schema, .Cat)
         .select(&.{.name})
         .where(.{ .paws = "not an int" });
 
@@ -338,9 +356,9 @@ test "failed coercion (int)" {
 
 test "failed coercion (float)" {
     const Schema = struct {
-        pub const Cats = Table("cats", struct { name: []const u8, intelligence: f64 }, .{});
+        pub const Cat = Table("cats", struct { name: []const u8, intelligence: f64 }, .{});
     };
-    const query = Query(Schema.Cats)
+    const query = Query(Schema, .Cat)
         .select(&.{.name})
         .where(.{ .intelligence = "not a float" });
 
@@ -349,13 +367,13 @@ test "failed coercion (float)" {
 
 test "timestamps (create)" {
     const Schema = struct {
-        pub const Cats = Table(
+        pub const Cat = Table(
             "cats",
             struct { name: []const u8, paws: i32, created_at: i64, updated_at: i64 },
             .{},
         );
     };
-    const query = Query(Schema.Cats)
+    const query = Query(Schema, .Cat)
         .insert(.{ .name = "Hercules", .paws = 4 });
 
     try std.testing.expectEqualStrings(
@@ -365,18 +383,41 @@ test "timestamps (create)" {
 
 test "timestamps (update)" {
     const Schema = struct {
-        pub const Cats = Table(
+        pub const Cat = Table(
             "cats",
             struct { name: []const u8, paws: i32, created_at: i64, updated_at: i64 },
             .{},
         );
     };
-    const query = Query(Schema.Cats)
+    const query = Query(Schema, .Cat)
         .update(.{ .name = "Heracles", .paws = 2 })
         .where(.{ .name = "Hercules" });
 
     try std.testing.expectEqualStrings(
-        \\UPDATE "cats" SET "name" = $1, "paws" = $2, "updated_at" = $3 WHERE "name" = $4
+        \\UPDATE "cats" SET "cats"."name" = $1, "cats"."paws" = $2, "cats"."updated_at" = $3 WHERE "cats"."name" = $4
+    ,
+        query.sql,
+    );
+}
+
+test "belongsTo" {
+    const Schema = struct {
+        pub const Cat = Table(
+            "cats",
+            struct { id: i32, owner_id: i32, name: []const u8, paws: i32, created_at: i64, updated_at: i64 },
+            .{ .relations = .{ .owner = relation.belongsTo(.Owner, .{}) } },
+        );
+
+        pub const Owner = Table(
+            "owners",
+            struct { id: i32, name: []const u8 },
+            .{ .relations = .{ .cats = relation.hasMany(.Cat, .{}) } },
+        );
+    };
+    const query = Query(Schema, .Cat).findBy(.{ .name = "Hercules" }).relation(.owner, &.{});
+
+    try std.testing.expectEqualStrings(
+        \\SELECT "cats"."id", "cats"."owner_id", "cats"."name", "cats"."paws", "cats"."created_at", "cats"."updated_at", "owners"."id", "owners"."name" FROM "cats" INNER JOIN "owners" ON "cats"."owner_id" = "owners"."id" WHERE "cats"."name" = $1 LIMIT $2
     ,
         query.sql,
     );

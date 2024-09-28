@@ -3,15 +3,16 @@ const std = @import("std");
 const jetquery = @import("../jetquery.zig");
 
 pub fn render(
+    Adapter: type,
     query_type: jetquery.QueryType,
     Table: type,
-    comptime Adapter: type,
+    relations: []const type,
     comptime field_infos: []const jetquery.FieldInfo,
     comptime columns: []const std.meta.FieldEnum(Table.Definition),
     comptime order_clauses: []const jetquery.OrderClause(Table),
 ) []const u8 {
     return switch (query_type) {
-        .select => renderSelect(Table, Adapter, columns, field_infos, order_clauses),
+        .select => renderSelect(Table, Adapter, relations, columns, field_infos, order_clauses),
         .update => renderUpdate(Table, Adapter, field_infos),
         .insert => renderInsert(Table, Adapter, field_infos),
         .delete, .delete_all => renderDelete(Table, Adapter, field_infos, query_type),
@@ -20,36 +21,24 @@ pub fn render(
 
 fn renderSelect(
     Table: type,
-    comptime Adapter: type,
+    Adapter: type,
+    relations: []const type,
     comptime columns: []const std.meta.FieldEnum(Table.Definition),
     comptime field_infos: []const jetquery.FieldInfo,
     comptime order_clauses: []const jetquery.OrderClause(Table),
 ) []const u8 {
     comptime {
-        var columns_buf_len: usize = 0;
-        for (columns, 0..) |column, index| {
-            columns_buf_len += std.fmt.comptimePrint(
-                " {s}{s}",
-                .{ Adapter.identifier(@tagName(column)), if (index + 1 < columns.len) "," else "" },
-            ).len;
-        }
-        var columns_buf: [columns_buf_len]u8 = undefined;
-        var cursor: usize = 0;
-        for (columns, 0..) |column, index| {
-            const column_identifier = std.fmt.comptimePrint(
-                " {s}{s}",
-                .{ Adapter.identifier(@tagName(column)), if (index + 1 < columns.len) "," else "" },
-            );
-            @memcpy(columns_buf[cursor .. cursor + column_identifier.len], column_identifier);
-            cursor += column_identifier.len;
-        }
+        const select_columns = renderSelectColumns(Adapter, Table, relations, columns);
         const from = std.fmt.comptimePrint(" FROM {s}", .{Adapter.identifier(Table.table_name)});
+        const joins = renderJoins(Adapter, Table, relations);
+
         return std.fmt.comptimePrint(
-            "SELECT{s}{s}{s}{s}{s}",
+            "SELECT{s}{s}{s}{s}{s}{s}",
             .{
-                columns_buf,
+                select_columns,
                 from,
-                renderWhere(Adapter, field_infos),
+                joins,
+                renderWhere(Adapter, Table, field_infos),
                 renderOrder(Table, Adapter, order_clauses),
                 renderLimit(Adapter, field_infos),
             },
@@ -59,40 +48,40 @@ fn renderSelect(
 
 fn renderUpdate(
     Table: type,
-    comptime Adapter: type,
+    Adapter: type,
     comptime field_infos: []const jetquery.FieldInfo,
 ) []const u8 {
-    var buf: [paramsBufSize(Adapter, field_infos, .update, .assign)]u8 = undefined;
+    var buf: [paramsBufSize(Adapter, Table, field_infos, .update, .assign)]u8 = undefined;
     return std.fmt.comptimePrint(
         "UPDATE {s} SET {s}{s}",
         .{
             Adapter.identifier(Table.table_name),
-            renderParams(&buf, Adapter, field_infos, .update, .assign),
-            renderWhere(Adapter, field_infos),
+            renderParams(&buf, Adapter, Table, field_infos, .update, .assign),
+            renderWhere(Adapter, Table, field_infos),
         },
     );
 }
 
 fn renderInsert(
     Table: type,
-    comptime Adapter: type,
+    Adapter: type,
     comptime field_infos: []const jetquery.FieldInfo,
 ) []const u8 {
-    var params_buf: [paramsBufSize(Adapter, field_infos, .insert, .column)]u8 = undefined;
-    var values_buf: [paramsBufSize(Adapter, field_infos, .insert, .value)]u8 = undefined;
+    var params_buf: [paramsBufSize(Adapter, Table, field_infos, .insert, .column)]u8 = undefined;
+    var values_buf: [paramsBufSize(Adapter, Table, field_infos, .insert, .value)]u8 = undefined;
     return std.fmt.comptimePrint(
         "INSERT INTO {s} ({s}) VALUES ({s})",
         .{
             Adapter.identifier(Table.table_name),
-            renderParams(&params_buf, Adapter, field_infos, .insert, .column),
-            renderParams(&values_buf, Adapter, field_infos, .insert, .value),
+            renderParams(&params_buf, Adapter, Table, field_infos, .insert, .column),
+            renderParams(&values_buf, Adapter, Table, field_infos, .insert, .value),
         },
     );
 }
 
 fn renderDelete(
     Table: type,
-    comptime Adapter: type,
+    Adapter: type,
     comptime field_infos: []const jetquery.FieldInfo,
     query_type: jetquery.QueryType,
 ) []const u8 {
@@ -101,7 +90,7 @@ fn renderDelete(
         .delete_all => statement,
         .delete => std.fmt.comptimePrint("{s}{s}{s}", .{
             statement,
-            renderWhere(Adapter, field_infos),
+            renderWhere(Adapter, Table, field_infos),
             renderLimit(Adapter, field_infos),
         }),
         else => |tag| @compileError(
@@ -111,7 +100,7 @@ fn renderDelete(
 }
 
 fn renderLimit(
-    comptime Adapter: type,
+    Adapter: type,
     comptime field_infos: []const jetquery.FieldInfo,
 ) []const u8 {
     if (!hasParam(field_infos, .limit)) return "";
@@ -124,7 +113,7 @@ fn renderLimit(
 
 fn renderOrder(
     Table: type,
-    comptime Adapter: type,
+    Adapter: type,
     comptime order_clauses: []const jetquery.OrderClause(Table),
 ) []const u8 {
     if (order_clauses.len == 0) return "";
@@ -150,19 +139,136 @@ fn renderOrder(
 }
 
 fn renderWhere(
-    comptime Adapter: type,
+    Adapter: type,
+    Table: type,
     comptime field_infos: []const jetquery.FieldInfo,
 ) []const u8 {
     if (!hasParam(field_infos, .where)) return "";
 
-    var buf: [paramsBufSize(Adapter, field_infos, .where, .assign)]u8 = undefined;
-    const params = renderParams(&buf, Adapter, field_infos, .where, .assign);
+    var buf: [paramsBufSize(Adapter, Table, field_infos, .where, .assign)]u8 = undefined;
+    const params = renderParams(&buf, Adapter, Table, field_infos, .where, .assign);
 
     return std.fmt.comptimePrint(" WHERE {s}", .{params});
 }
 
+pub const JoinOptions = struct {
+    // TODO: Use field enums
+    left: ?[]const u8 = null,
+    right: ?[]const u8 = null,
+};
+
+fn renderJoins(Adapter: type, Table: type, relations: []const type) []const u8 {
+    comptime {
+        if (relations.len == 0) return "";
+
+        var buf_len: usize = 0;
+        for (relations) |relation| {
+            buf_len += Adapter.innerJoinSql(
+                Table,
+                relation.Source,
+                relation.relation_name,
+                .{ .left = null, .right = null }, // TODO: `ON` condition from options
+            ).len;
+        }
+        var buf: [buf_len]u8 = undefined;
+        var cursor: usize = 0;
+        for (relations) |relation| {
+            const sql = Adapter.innerJoinSql(
+                Table,
+                relation.Source,
+                relation.relation_name,
+                .{ .left = null, .right = null }, // TODO: `ON` condition from options
+            );
+            @memcpy(buf[cursor .. cursor + sql.len], sql);
+            cursor += sql.len;
+        }
+
+        return &buf;
+    }
+}
+
+fn renderSelectColumns(
+    Adapter: type,
+    Table: type,
+    relations: []const type,
+    comptime columns: []const std.meta.FieldEnum(Table.Definition),
+) []const u8 {
+    comptime {
+        var total_columns: usize = columns.len;
+        for (relations) |Relation| {
+            total_columns += Relation.select_columns.len;
+        }
+
+        var columns_buf_len: usize = 0;
+        for (columns, 0..) |column, index| {
+            columns_buf_len += renderSelectColumn(Adapter, Table, @tagName(column), index, total_columns).len;
+        }
+
+        var start = columns.len;
+        for (relations) |Relation| {
+            for (Relation.select_columns, start..) |column, index| {
+                columns_buf_len += renderSelectColumn(
+                    Adapter,
+                    Relation.Source,
+                    @tagName(column),
+                    index,
+                    total_columns,
+                ).len;
+                start += Relation.select_columns.len;
+            }
+        }
+
+        var columns_buf: [columns_buf_len]u8 = undefined;
+        var cursor: usize = 0;
+        for (columns, 0..) |column, index| {
+            const column_identifier = renderSelectColumn(
+                Adapter,
+                Table,
+                @tagName(column),
+                index,
+                total_columns,
+            );
+            @memcpy(columns_buf[cursor .. cursor + column_identifier.len], column_identifier);
+            cursor += column_identifier.len;
+        }
+
+        start = columns.len;
+        for (relations) |Relation| {
+            for (Relation.select_columns, start..) |column, index| {
+                const column_identifier = renderSelectColumn(
+                    Adapter,
+                    Relation.Source,
+                    @tagName(column),
+                    index,
+                    total_columns,
+                );
+                @memcpy(columns_buf[cursor .. cursor + column_identifier.len], column_identifier);
+                cursor += column_identifier.len;
+                start += Relation.select_columns.len;
+            }
+        }
+        return &columns_buf;
+    }
+}
+
+fn renderSelectColumn(
+    Adapter: type,
+    Table: type,
+    comptime name: []const u8,
+    comptime index: usize,
+    comptime total: usize,
+) []const u8 {
+    comptime {
+        return std.fmt.comptimePrint(
+            " {s}{s}",
+            .{ Adapter.columnSql(Table, name), if (index + 1 < total) "," else "" },
+        );
+    }
+}
+
 fn paramsBufSize(
-    comptime Adapter: type,
+    Adapter: type,
+    Table: type,
     comptime field_infos: []const jetquery.FieldInfo,
     comptime context: jetquery.FieldContext,
     comptime format: enum { column, value, assign },
@@ -187,7 +293,10 @@ fn paramsBufSize(
 
         const args = switch (format) {
             .column => .{
-                Adapter.identifier(field.name),
+                switch (context) {
+                    .insert => Adapter.identifier(field.name),
+                    else => Adapter.columnSql(Table, field.name),
+                },
                 if (index < last_param_index) separator else "",
             },
             .value => .{
@@ -195,23 +304,21 @@ fn paramsBufSize(
                 if (index < last_param_index) separator else "",
             },
             .assign => .{
-                Adapter.identifier(field.name),
+                Adapter.columnSql(Table, field.name),
                 Adapter.paramSql(index),
                 if (index < last_param_index) separator else "",
             },
         };
 
-        buf_len += std.fmt.comptimePrint(
-            template,
-            args,
-        ).len;
+        buf_len += std.fmt.count(template, args);
     }
     return buf_len;
 }
 
 fn renderParams(
     buf: []u8,
-    comptime Adapter: type,
+    Adapter: type,
+    Table: type,
     comptime field_infos: []const jetquery.FieldInfo,
     comptime context: jetquery.FieldContext,
     comptime format: enum { column, value, assign },
@@ -237,7 +344,10 @@ fn renderParams(
 
         const args = switch (format) {
             .column => .{
-                Adapter.identifier(field.name),
+                switch (context) {
+                    .insert => Adapter.identifier(field.name),
+                    else => Adapter.columnSql(Table, field.name),
+                },
                 if (index < last_param_index) separator else "",
             },
             .value => .{
@@ -245,7 +355,7 @@ fn renderParams(
                 if (index < last_param_index) separator else "",
             },
             .assign => .{
-                Adapter.identifier(field.name),
+                Adapter.columnSql(Table, field.name),
                 Adapter.paramSql(index),
                 if (index < last_param_index) separator else "",
             },
