@@ -2,10 +2,10 @@ const std = @import("std");
 
 const jetquery = @import("../jetquery.zig");
 
-arena: *std.heap.ArenaAllocator,
 allocator: std.mem.Allocator,
-parent_allocator: std.mem.Allocator,
 adapter: jetquery.adapters.Adapter,
+result_map: std.AutoHashMap(i128, jetquery.Result),
+result_id: std.atomic.Value(i128) = std.atomic.Value(i128).init(0),
 eventCallback: *const fn (event: jetquery.events.Event) anyerror!void = jetquery.events.defaultCallback,
 
 const Repo = @This();
@@ -21,16 +21,13 @@ const InitOptions = struct {
 
 /// Initialize a new Repo for executing queries.
 pub fn init(allocator: std.mem.Allocator, options: InitOptions) !Repo {
-    const arena = try allocator.create(std.heap.ArenaAllocator);
-    arena.* = std.heap.ArenaAllocator.init(allocator);
     return .{
-        .arena = arena,
-        .allocator = arena.allocator(),
-        .parent_allocator = allocator,
+        .allocator = allocator,
+        .result_map = std.AutoHashMap(i128, jetquery.Result).init(allocator),
         .adapter = switch (options.adapter) {
             .postgresql => |adapter_options| .{
                 .postgresql = try jetquery.adapters.PostgresqlAdapter.init(
-                    arena.allocator(),
+                    allocator,
                     adapter_options,
                     options.lazy_connect,
                 ),
@@ -80,8 +77,7 @@ pub fn deinit(self: *Repo) void {
     switch (self.adapter) {
         inline else => |*adapter| adapter.deinit(),
     }
-    self.arena.deinit();
-    self.parent_allocator.destroy(self.arena);
+    self.result_map.deinit();
 }
 
 /// Execute the given query and return results.
@@ -94,13 +90,31 @@ pub fn execute(self: *Repo, query: anytype) !switch (@TypeOf(query).ResultContex
     try query.validateDelete();
     var result = try self.adapter.execute(self, query.sql, query.field_values);
     return switch (@TypeOf(query).ResultContext) {
-        .one => try result.next(query),
+        .one => blk: {
+            const row = try result.next(query);
+            if (row) |capture| try self.result_map.put(capture.__jetquery_id, result);
+            break :blk row;
+        },
         .many => result,
         .none => blk: {
             result.deinit();
             break :blk {};
         },
     };
+}
+
+/// Free a single result's allocated memory. Use in conjunction with `findBy` and `find` as these
+/// methods simply return structs as defined by the Schema and do not have another way to deinit.
+pub fn free(self: *Repo, value: anytype) void {
+    if (self.result_map.getEntry(value.__jetquery_id)) |entry| {
+        entry.value_ptr.deinit();
+        _ = self.result_map.remove(value.__jetquery_id);
+    }
+}
+
+pub fn generateId(self: *Repo) i128 {
+    // We can probably risk wrapping here if an app loads >i128 records without freeing them
+    return self.result_id.fetchAdd(1, .monotonic);
 }
 
 pub const CreateTableOptions = struct { if_not_exists: bool = false };
@@ -286,12 +300,12 @@ test "relations" {
         .insert(.{ .id = 1, .name = "Bob" })
         .execute(&repo);
 
-    const maybe_cat = try jetquery.Query(Schema, .Cat)
+    const query = jetquery.Query(Schema, .Cat)
         .findBy(.{ .name = "Hercules" })
-        .relation(.owner, &.{})
-        .execute(&repo);
+        .relation(.owner, &.{});
 
-    if (maybe_cat) |cat| {
+    if (try query.execute(&repo)) |cat| {
+        defer repo.free(cat);
         try std.testing.expectEqualStrings("Hercules", cat.name);
         try std.testing.expectEqual(4, cat.paws);
         try std.testing.expectEqualStrings("Bob", cat.owner.name);

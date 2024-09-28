@@ -816,7 +816,15 @@ fn Statement(
                     };
                 }
 
-                const all_fields = base_fields ++ relations_fields;
+                const hidden_id_field = std.builtin.Type.StructField{
+                    .name = "__jetquery_id",
+                    .type = i128,
+                    .default_value = null,
+                    .is_comptime = false,
+                    .alignment = @alignOf(i128),
+                };
+
+                const all_fields = base_fields ++ relations_fields ++ .{hidden_id_field};
                 return @Type(.{
                     .@"struct" = .{
                         .layout = .auto,

@@ -19,7 +19,7 @@ pub const Adapter = union(enum) {
     /// Execute SQL with the active adapter.
     pub fn execute(
         self: *Adapter,
-        repo: *const jetquery.Repo,
+        repo: *jetquery.Repo,
         sql: []const u8,
         values: anytype,
     ) !jetquery.Result {

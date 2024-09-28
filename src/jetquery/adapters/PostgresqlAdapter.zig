@@ -16,6 +16,7 @@ lazy_connect: bool = false,
 pub const Result = struct {
     result: *pg.Result,
     allocator: std.mem.Allocator,
+    repo: *jetquery.Repo,
 
     pub fn deinit(self: *Result) void {
         self.result.deinit();
@@ -33,19 +34,20 @@ pub const Result = struct {
                     @field(
                         @field(result_row, relation.relation_name),
                         column_info.name,
-                    ) = resolvedValue(column_info, &row);
+                    ) = try resolvedValue(column_info, &row);
                 } else {
-                    @field(result_row, column_info.name) = resolvedValue(column_info, &row);
+                    @field(result_row, column_info.name) = try resolvedValue(column_info, &row);
                 }
             }
+            result_row.__jetquery_id = self.repo.generateId();
             return result_row;
         } else {
             return null;
         }
     }
 
-    pub fn all(self: *Result, query: anytype) ![]const @TypeOf(query).Definition {
-        var array = std.ArrayList(@TypeOf(query).Definition).init(self.allocator);
+    pub fn all(self: *Result, query: anytype) ![]const @TypeOf(query).ResultType {
+        var array = std.ArrayList(@TypeOf(query).ResultType).init(self.allocator);
         while (try self.next(query)) |row| try array.append(row);
         return try array.toOwnedSlice();
     }
@@ -55,7 +57,7 @@ pub const Result = struct {
     }
 };
 
-fn resolvedValue(column_info: ColumnInfo, row: *const pg.Row) column_info.type {
+fn resolvedValue(column_info: ColumnInfo, row: *const pg.Row) !column_info.type {
     return switch (column_info.type) {
         // TODO: pg.Numeric, pg.Cidr
         u8,
@@ -115,7 +117,7 @@ pub fn deinit(self: *PostgresqlAdapter) void {
 /// Execute the given query with a pooled connection.
 pub fn execute(
     self: *PostgresqlAdapter,
-    repo: *const jetquery.Repo,
+    repo: *jetquery.Repo,
     sql: []const u8,
     values: anytype,
 ) !jetquery.Result {
@@ -144,6 +146,7 @@ pub fn execute(
         .postgresql = .{
             .allocator = self.allocator,
             .result = result,
+            .repo = repo,
         },
     };
 }
