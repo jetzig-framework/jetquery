@@ -29,4 +29,10 @@ pub const Result = union(enum) {
             inline else => |*adapted_result| try adapted_result.all(query),
         };
     }
+
+    pub fn unary(self: *Result, T: type) !T {
+        return switch (self.*) {
+            inline else => |*adapted_result| try adapted_result.unary(T),
+        };
+    }
 };

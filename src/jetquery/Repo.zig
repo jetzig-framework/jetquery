@@ -91,13 +91,20 @@ pub fn execute(self: *Repo, query: anytype) !switch (@TypeOf(query).ResultContex
     var result = try self.adapter.execute(self, query.sql, query.field_values);
     return switch (@TypeOf(query).ResultContext) {
         .one => blk: {
+            switch (query.query_context) {
+                .count_all, .count_distinct => {
+                    defer result.deinit();
+                    return try result.unary(@TypeOf(query).ResultType);
+                },
+                else => {},
+            }
             const row = try result.next(query);
             if (row) |capture| try self.result_map.put(capture.__jetquery_id, result);
             break :blk row;
         },
         .many => result,
         .none => blk: {
-            result.deinit();
+            defer result.deinit();
             break :blk {};
         },
     };
@@ -213,12 +220,13 @@ test "Repo" {
 
     var create_table = try repo.adapter.execute(&repo, "create table cats (name varchar(255), paws int)", &.{});
     defer create_table.deinit();
-    var insert = try repo.adapter.execute(&repo, "insert into cats (name, paws) values ('Hercules', 4)", &.{});
-    defer insert.deinit();
+
+    try jetquery.Query(Schema, .Cat).insert(.{ .name = "Hercules", .paws = 4 }).execute(&repo);
+    try jetquery.Query(Schema, .Cat).insert(.{ .name = "Princes", .paws = 4 }).execute(&repo);
 
     const query = jetquery.Query(Schema, .Cat)
         .select(&.{ .name, .paws })
-        .where(.{ .name = "Hercules", .paws = 4 });
+        .where(.{ .paws = 4 });
 
     var result = try repo.execute(query);
     defer result.deinit();
@@ -230,6 +238,12 @@ test "Repo" {
     } else {
         try std.testing.expect(false);
     }
+
+    const count_all = try query.count(.all).execute(&repo);
+    try std.testing.expectEqual(2, count_all);
+
+    const count_distinct = try query.count(.distinct).execute(&repo);
+    try std.testing.expectEqual(1, count_distinct);
 }
 
 test "Repo.loadConfig" {

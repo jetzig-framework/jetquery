@@ -46,6 +46,28 @@ pub fn Query(Schema: type, comptime table_name: jetquery.DeclEnum(Schema)) type 
             return InitialStatement(Schema, Table).select(columns);
         }
 
+        /// Create a `SELECT` query defaulting to all columns selected:
+        /// ```zig
+        /// Query(Schema, .MyTable).where(.{ .foo = "bar" })
+        /// ```
+        /// Short-hand for:
+        /// ```zig
+        /// Query(Schema, .MyTable).select(&.{}).where(.{ .foo = "bar" })
+        /// ```
+        pub fn where(args: anytype) Statement(
+            .select,
+            Schema,
+            Table,
+            &.{},
+            &fields.fieldInfos(@TypeOf(args), .where),
+            Table.columns(),
+            &.{},
+            .many,
+            false,
+        ) {
+            return InitialStatement(Schema, Table).select(&.{}).where(args);
+        }
+
         /// Create an `UPDATE` query with the specified `args`, e.g.:
         /// ```zig
         /// Query(Schema, .MyTable).update(.{ .foo = "bar", .baz = "qux" }).where(.{ .quux = "corge" });
@@ -193,25 +215,7 @@ pub fn Query(Schema: type, comptime table_name: jetquery.DeclEnum(Schema)) type 
             .none,
             false,
         ) {
-            return Statement(
-                .none,
-                Schema,
-                Table,
-                &.{jetquery.relation.Relation(
-                    Schema,
-                    Table,
-                    name,
-                    if (select_columns.len == 0)
-                        std.enums.values(jetquery.relation.ColumnsEnum(Schema, Table, name))
-                    else
-                        select_columns,
-                )},
-                &.{},
-                &.{},
-                &.{},
-                .none,
-                false,
-            ){ .field_values = .{}, .field_errors = .{} };
+            return InitialStatement(Schema, Table).include(name, select_columns);
         }
     };
 }
@@ -292,6 +296,8 @@ fn Statement(
             args: anytype,
             comptime context: fields.FieldContext,
         ) S {
+            validateQueryContext(self.query_context, query_context);
+
             var statement: S = undefined;
 
             inline for (0..field_infos.len) |index| {
@@ -330,8 +336,6 @@ fn Statement(
             if (initial) .many else result_context,
             false,
         ) {
-            validateQueryContext(query_context, .select);
-
             const S = Statement(
                 .select,
                 Schema,
@@ -378,7 +382,7 @@ fn Statement(
             Table,
             &.{},
             &(fields.fieldInfos(@TypeOf(.{ .id = id }), .where) ++ fields.fieldInfos(@TypeOf(.{1}), .limit)),
-            Table.columns(),
+            if (columns.len == 0) Table.columns() else columns,
             &.{},
             .one,
             false,
@@ -393,7 +397,7 @@ fn Statement(
             Table,
             relations,
             field_infos ++ fields.fieldInfos(@TypeOf(args), .where) ++ fields.fieldInfos(@TypeOf(.{1}), .limit),
-            Table.columns(),
+            if (columns.len == 0) Table.columns() else columns,
             &.{},
             .one,
             false,
@@ -404,7 +408,7 @@ fn Statement(
                 Table,
                 relations,
                 field_infos ++ fields.fieldInfos(@TypeOf(args), .where) ++ fields.fieldInfos(@TypeOf(.{1}), .limit),
-                Table.columns(),
+                if (columns.len == 0) Table.columns() else columns,
                 &.{},
                 .one,
                 false,
@@ -414,6 +418,37 @@ fn Statement(
             statement.field_values[field_infos.len + arg_fields.len] = 1;
             statement.field_errors[field_infos.len + arg_fields.len] = null;
             return statement;
+        }
+
+        pub fn count(self: Self, comptime count_type: sql.CountContext) Statement(
+            switch (count_type) {
+                .all => .count_all,
+                .distinct => .count_distinct,
+            },
+            Schema,
+            Table,
+            relations,
+            field_infos,
+            &.{},
+            &.{},
+            .one,
+            false,
+        ) {
+            const S = Statement(
+                switch (count_type) {
+                    .all => .count_all,
+                    .distinct => .count_distinct,
+                },
+                Schema,
+                Table,
+                relations,
+                field_infos,
+                &.{},
+                &.{},
+                .one,
+                false,
+            );
+            return self.extend(S, .{}, .none);
         }
 
         pub fn update(self: Self, args: anytype) Statement(
@@ -516,7 +551,6 @@ fn Statement(
             return self.extend(S, .{}, .none);
         }
 
-        /// Apply a `LIMIT` clause to the current statement.
         pub fn limit(self: Self, bound: usize) Statement(
             query_context,
             Schema,
@@ -542,7 +576,6 @@ fn Statement(
             return self.extend(S, .{bound}, .limit);
         }
 
-        /// Apply an `ORDER BY` clause to the current statement.
         pub fn orderBy(self: Self, comptime args: anytype) Statement(
             query_context,
             Schema,
@@ -568,7 +601,7 @@ fn Statement(
             return self.extend(S, .{}, .order);
         }
 
-        pub fn relation(
+        pub fn include(
             self: Self,
             comptime name: jetquery.relation.RelationsEnum(Table),
             comptime select_columns: []const jetquery.relation.ColumnsEnum(Schema, Table, name),
@@ -576,7 +609,7 @@ fn Statement(
             query_context,
             Schema,
             Table,
-            &.{jetquery.relation.Relation(
+            relations ++ .{jetquery.relation.Relation(
                 Schema,
                 Table,
                 name,
@@ -595,7 +628,7 @@ fn Statement(
                 query_context,
                 Schema,
                 Table,
-                &.{jetquery.relation.Relation(
+                relations ++ .{jetquery.relation.Relation(
                     Schema,
                     Table,
                     name,
@@ -613,7 +646,6 @@ fn Statement(
             return self.extend(S, .{}, .none);
         }
 
-        /// Execute the query's SQL with bind params using the provided repo.
         pub fn execute(self: Self, repo: *jetquery.Repo) !switch (result_context) {
             .one => ?ResultType,
             .many => jetquery.Result,
@@ -673,6 +705,12 @@ fn Statement(
 
         pub fn QueryResultType() type {
             comptime {
+                switch (query_context) {
+                    // TODO: Is there a more sensible type to use here ?
+                    .count_all, .count_distinct => return i64,
+                    else => {},
+                }
+
                 var base_fields: [columns.len]std.builtin.Type.StructField = undefined;
 
                 for (columns, 0..) |column, index| {
@@ -768,6 +806,7 @@ fn timestampsFields(
     Table: type,
     comptime query_context: fields.FieldContext,
 ) [timestampsSize(Table, query_context)]fields.FieldInfo {
+    // TODO: Tidy this up a bit to remove all the repetition
     return if (hasTimestamps(Table)) switch (query_context) {
         .update => .{
             fields.fieldInfo(.{
@@ -823,13 +862,20 @@ fn now() i64 {
 
 fn validateQueryContext(comptime initial: sql.QueryContext, comptime attempted: sql.QueryContext) void {
     comptime {
-        switch (initial) {
-            attempted, .none => {},
-            else => {
-                @compileError(std.fmt.comptimePrint(
+        switch (attempted) {
+            .count_all, .count_distinct => switch (initial) {
+                .none, .select => {},
+                else => if (attempted != initial) @compileError(std.fmt.comptimePrint(
                     "Failed attempting to initialize `{s}` query already-initialized on `{s}` query.",
                     .{ @tagName(attempted), @tagName(initial) },
-                ));
+                )),
+            },
+            else => switch (initial) {
+                .none => {},
+                else => if (attempted != initial) @compileError(std.fmt.comptimePrint(
+                    "Failed attempting to initialize `{s}` query already-initialized on `{s}` query.",
+                    .{ @tagName(attempted), @tagName(initial) },
+                )),
             },
         }
     }

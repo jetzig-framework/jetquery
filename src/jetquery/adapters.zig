@@ -77,6 +77,13 @@ pub const Adapter = union(enum) {
         };
     }
 
+    /// SQL fragment used when generating a `COUNT` column, e.g. `COUNT(*)`
+    pub fn countSql(self: Adapter, context: jetquery.sql.CountContext) []const u8 {
+        return switch (self) {
+            inline else => |adapter| @TypeOf(adapter).countSql(context),
+        };
+    }
+
     /// SQL representing an inner join, e.g. `INNER JOIN "foo" ON "bar"."baz" = "foo"."baz"`
     pub fn innerJoinSql(
         self: Adapter,

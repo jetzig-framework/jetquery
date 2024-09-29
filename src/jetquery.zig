@@ -75,7 +75,7 @@ test "select (all)" {
     , query.sql);
 }
 
-test "where" {
+test "select (with `where`)" {
     const Schema = struct {
         pub const Cat = Table("cats", struct { name: []const u8, paws: i32 }, .{});
     };
@@ -87,6 +87,20 @@ test "where" {
 
     try std.testing.expectEqualStrings(
         \\SELECT "cats"."name", "cats"."paws" FROM "cats" WHERE "cats"."name" = $1 AND "cats"."paws" = $2
+    , query.sql);
+}
+
+test "where" {
+    const Schema = struct {
+        pub const Cat = Table("cats", struct { name: []const u8, paws: i32, color: []const u8 }, .{});
+    };
+
+    const paws = 4;
+    const query = Query(Schema, .Cat)
+        .where(.{ .name = "bar", .paws = paws });
+
+    try std.testing.expectEqualStrings(
+        \\SELECT "cats"."name", "cats"."paws", "cats"."color" FROM "cats" WHERE "cats"."name" = $1 AND "cats"."paws" = $2
     , query.sql);
 }
 
@@ -222,6 +236,28 @@ test "findBy" {
 
     try std.testing.expectEqualStrings(
         \\SELECT "cats"."id", "cats"."name", "cats"."paws" FROM "cats" WHERE "cats"."name" = $1 AND "cats"."paws" = $2 LIMIT $3
+    , query.sql);
+}
+
+test "count(.all)" {
+    const Schema = struct {
+        pub const Cat = Table("cats", struct { id: i32, name: []const u8, paws: i32 }, .{});
+    };
+    const query = Query(Schema, .Cat).where(.{ .name = "Hercules", .paws = 4 }).count(.all);
+
+    try std.testing.expectEqualStrings(
+        \\SELECT COUNT(*) FROM "cats" WHERE "cats"."name" = $1 AND "cats"."paws" = $2
+    , query.sql);
+}
+
+test "count(.distinct)" {
+    const Schema = struct {
+        pub const Cat = Table("cats", struct { id: i32, name: []const u8, paws: i32 }, .{});
+    };
+    const query = Query(Schema, .Cat).where(.{ .name = "Hercules", .paws = 4 }).count(.distinct);
+
+    try std.testing.expectEqualStrings(
+        \\SELECT COUNT(DISTINCT *) FROM "cats" WHERE "cats"."name" = $1 AND "cats"."paws" = $2
     , query.sql);
 }
 
@@ -398,24 +434,99 @@ test "timestamps (update)" {
 
 test "belongsTo" {
     const Schema = struct {
+        pub const Human = Table(
+            "humans",
+            struct { id: i32, cat_id: i32, name: []const u8 },
+            .{ .relations = .{ .cat = relation.belongsTo(.Cat, .{}) } },
+        );
+
         pub const Cat = Table(
             "cats",
-            struct { id: i32, owner_id: i32, name: []const u8, paws: i32, created_at: i64, updated_at: i64 },
-            .{ .relations = .{ .owner = relation.belongsTo(.Owner, .{}) } },
-        );
-
-        pub const Owner = Table(
-            "owners",
-            struct { id: i32, name: []const u8 },
-            .{ .relations = .{ .cats = relation.hasMany(.Cat, .{}) } },
+            struct { id: i32, name: []const u8, paws: i32, created_at: i64, updated_at: i64 },
+            .{ .relations = .{} },
         );
     };
-    const query = Query(Schema, .Cat)
-        .include(.owner, &.{})
-        .findBy(.{ .name = "Hercules" });
+    const query = Query(Schema, .Human)
+        .include(.cat, &.{})
+        .findBy(.{ .name = "Bob" });
 
     try std.testing.expectEqualStrings(
-        \\SELECT "cats"."id", "cats"."owner_id", "cats"."name", "cats"."paws", "cats"."created_at", "cats"."updated_at", "owners"."id", "owners"."name" FROM "cats" INNER JOIN "owners" ON "cats"."owner_id" = "owners"."id" WHERE "cats"."name" = $1 LIMIT $2
+        \\SELECT "humans"."id", "humans"."cat_id", "humans"."name", "cats"."id", "cats"."name", "cats"."paws", "cats"."created_at", "cats"."updated_at" FROM "humans" INNER JOIN "cats" ON "humans"."cat_id" = "cats"."id" WHERE "humans"."name" = $1 LIMIT $2
+    ,
+        query.sql,
+    );
+}
+
+test "belongsTo (multiple)" {
+    const Schema = struct {
+        pub const Human = Table(
+            "humans",
+            struct { id: i32, family_id: i32, cat_id: i32, name: []const u8 },
+            .{
+                .relations = .{
+                    .cat = relation.belongsTo(.Cat, .{}),
+                    .family = relation.belongsTo(.Family, .{}),
+                },
+            },
+        );
+
+        pub const Cat = Table(
+            "cats",
+            struct { id: i32, name: []const u8, paws: i32, created_at: i64, updated_at: i64 },
+            .{},
+        );
+
+        pub const Family = Table(
+            "families",
+            struct { id: i32, name: []const u8 },
+            .{},
+        );
+    };
+    const query = Query(Schema, .Human)
+        .include(.cat, &.{})
+        .include(.family, &.{})
+        .findBy(.{ .name = "Bob" });
+
+    try std.testing.expectEqualStrings(
+        \\SELECT "humans"."id", "humans"."family_id", "humans"."cat_id", "humans"."name", "cats"."id", "cats"."name", "cats"."paws", "cats"."created_at", "cats"."updated_at", "families"."id", "families"."name" FROM "humans" INNER JOIN "cats" ON "humans"."cat_id" = "cats"."id" INNER JOIN "families" ON "humans"."family_id" = "families"."id" WHERE "humans"."name" = $1 LIMIT $2
+    ,
+        query.sql,
+    );
+}
+
+test "belongsTo (with specified columns)" {
+    const Schema = struct {
+        pub const Human = Table(
+            "humans",
+            struct { id: i32, family_id: i32, cat_id: i32, name: []const u8 },
+            .{
+                .relations = .{
+                    .cat = relation.belongsTo(.Cat, .{}),
+                    .family = relation.belongsTo(.Family, .{}),
+                },
+            },
+        );
+
+        pub const Cat = Table(
+            "cats",
+            struct { id: i32, name: []const u8, paws: i32, created_at: i64, updated_at: i64 },
+            .{},
+        );
+
+        pub const Family = Table(
+            "families",
+            struct { id: i32, name: []const u8 },
+            .{},
+        );
+    };
+    const query = Query(Schema, .Human)
+        .include(.cat, &.{ .name, .paws })
+        .include(.family, &.{.name})
+        .select(&.{.name})
+        .findBy(.{ .name = "Bob" });
+
+    try std.testing.expectEqualStrings(
+        \\SELECT "humans"."name", "cats"."name", "cats"."paws", "families"."name" FROM "humans" INNER JOIN "cats" ON "humans"."cat_id" = "cats"."id" INNER JOIN "families" ON "humans"."family_id" = "families"."id" WHERE "humans"."name" = $1 LIMIT $2
     ,
         query.sql,
     );

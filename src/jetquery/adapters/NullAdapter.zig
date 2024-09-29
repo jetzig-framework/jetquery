@@ -41,6 +41,11 @@ pub fn notNullSql() []const u8 {
     return "";
 }
 
+pub fn countSql(context: jetquery.sql.CountContext) []const u8 {
+    _ = context;
+    return "";
+}
+
 pub fn paramSql(comptime index: usize) []const u8 {
     _ = index;
     return "";

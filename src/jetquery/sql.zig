@@ -2,9 +2,19 @@ const std = @import("std");
 
 const fields = @import("fields.zig");
 
-pub const QueryContext = enum { select, update, insert, delete, delete_all, none };
+pub const QueryContext = enum {
+    select,
+    update,
+    insert,
+    delete,
+    delete_all,
+    count_all,
+    count_distinct,
+    none,
+};
 
 pub fn OrderClause(Table: type) type {
+    // TODO: Allow ordering on relations.
     return struct {
         column: std.meta.FieldEnum(Table.Definition),
         direction: OrderDirection,
@@ -12,6 +22,10 @@ pub fn OrderClause(Table: type) type {
 }
 
 pub const OrderDirection = enum { ascending, descending };
+pub const CountContext = enum { all, distinct };
+pub const CountColumn = struct {
+    type: CountContext,
+};
 
 // Information about a column's position in a `SELECT` query, used to determine how to assign
 // result values to the `ResultType`. We cannot rely on the column name returned by PostgreSQL as
@@ -39,6 +53,7 @@ pub fn render(
         .update => renderUpdate(Table, Adapter, field_infos),
         .insert => renderInsert(Table, Adapter, field_infos),
         .delete, .delete_all => renderDelete(Table, Adapter, field_infos, query_context),
+        .count_all, .count_distinct => |tag| renderCount(Table, Adapter, tag, relations, field_infos),
         .none => "",
     };
 }
@@ -107,7 +122,7 @@ fn renderDelete(
     Table: type,
     Adapter: type,
     comptime field_infos: []const fields.FieldInfo,
-    query_context: QueryContext,
+    comptime query_context: QueryContext,
 ) []const u8 {
     const statement = std.fmt.comptimePrint("DELETE FROM {s}", .{Adapter.identifier(Table.table_name)});
     return switch (query_context) {
@@ -121,6 +136,36 @@ fn renderDelete(
             "Inconsistent query for DELETE: `" ++ @tagName(tag) ++ "` (this is a bug)",
         ),
     };
+}
+
+fn renderCount(
+    Table: type,
+    Adapter: type,
+    comptime query_context: QueryContext,
+    comptime relations: []const type,
+    comptime field_infos: []const fields.FieldInfo,
+) []const u8 {
+    comptime {
+        const count_type: CountContext = switch (query_context) {
+            .count_all => .all,
+            .count_distinct => .distinct,
+            else => @compileError("Failed generating count query for `" ++ @tagName(query_context) ++ "`"),
+        };
+        const count_column = " " ++ Adapter.countSql(count_type);
+        const from = std.fmt.comptimePrint(" FROM {s}", .{Adapter.identifier(Table.table_name)});
+        const joins = renderJoins(Adapter, Table, relations);
+
+        return std.fmt.comptimePrint(
+            "SELECT{s}{s}{s}{s}{s}",
+            .{
+                count_column,
+                from,
+                joins,
+                renderWhere(Adapter, Table, field_infos),
+                renderLimit(Adapter, field_infos),
+            },
+        );
+    }
 }
 
 fn renderLimit(
@@ -250,8 +295,8 @@ fn renderSelectColumns(
                     index,
                     total_columns,
                 ).len;
-                start += Relation.select_columns.len;
             }
+            start += Relation.select_columns.len;
         }
 
         var columns_buf: [columns_buf_len]u8 = undefined;
@@ -280,8 +325,8 @@ fn renderSelectColumns(
                 );
                 @memcpy(columns_buf[cursor .. cursor + column_identifier.len], column_identifier);
                 cursor += column_identifier.len;
-                start += Relation.select_columns.len;
             }
+            start += Relation.select_columns.len;
         }
         return &columns_buf;
     }

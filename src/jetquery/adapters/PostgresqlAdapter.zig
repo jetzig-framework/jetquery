@@ -47,6 +47,17 @@ pub const Result = struct {
         }
     }
 
+    pub fn unary(self: *Result, T: type) !T {
+        // This error should really never happen if used in conjunction with (e.g.) a `COUNT`
+        // query, but we return an error to allow the host app (e.g. Jetzig) to handle it instead
+        // of panicking.
+        const row = try self.result.next() orelse return error.JetQueryMissingRowInUnaryQuery;
+
+        if (row.values.len < 1) return error.JetQueryMissingColumnInUnaryQuery;
+
+        return row.get(T, 0);
+    }
+
     pub fn all(self: *Result, query: anytype) ![]const @TypeOf(query).ResultType {
         var array = std.ArrayList(@TypeOf(query).ResultType).init(self.allocator);
         while (try self.next(query)) |row| try array.append(row);
@@ -205,6 +216,14 @@ pub fn orderSql(Table: type, comptime order_clause: sql.OrderClause(Table)) []co
         "{s} {s}",
         .{ columnSql(Table, @tagName(order_clause.column)), direction },
     );
+}
+
+pub fn countSql(context: jetquery.sql.CountContext) []const u8 {
+    return switch (context) {
+        .all => "COUNT(*)",
+        // TODO: Use a column name here
+        .distinct => "COUNT(DISTINCT(...))",
+    };
 }
 
 pub fn innerJoinSql(
