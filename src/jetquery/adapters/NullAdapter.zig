@@ -41,8 +41,7 @@ pub fn notNullSql() []const u8 {
     return "";
 }
 
-pub fn countSql(context: jetquery.sql.CountContext) []const u8 {
-    _ = context;
+pub fn countSql() []const u8 {
     return "";
 }
 

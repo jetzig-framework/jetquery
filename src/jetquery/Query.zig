@@ -420,11 +420,8 @@ fn Statement(
             return statement;
         }
 
-        pub fn count(self: Self, comptime count_type: sql.CountContext) Statement(
-            switch (count_type) {
-                .all => .count_all,
-                .distinct => .count_distinct,
-            },
+        pub fn count(self: Self) Statement(
+            .count,
             Schema,
             Table,
             relations,
@@ -435,10 +432,7 @@ fn Statement(
             false,
         ) {
             const S = Statement(
-                switch (count_type) {
-                    .all => .count_all,
-                    .distinct => .count_distinct,
-                },
+                .count,
                 Schema,
                 Table,
                 relations,
@@ -451,6 +445,31 @@ fn Statement(
             return self.extend(S, .{}, .none);
         }
 
+        pub fn distinct(self: Self, comptime args: anytype) Statement(
+            query_context,
+            Schema,
+            Table,
+            relations,
+            field_infos,
+            &.{},
+            &.{},
+            .one,
+            false,
+        ) {
+            const S = Statement(
+                query_context,
+                Schema,
+                Table,
+                relations,
+                field_infos,
+                &.{},
+                &.{},
+                .one,
+                false,
+            );
+            _ = args;
+            return self.extend(S, .{}, .none);
+        }
         pub fn update(self: Self, args: anytype) Statement(
             .update,
             Schema,
@@ -707,7 +726,7 @@ fn Statement(
             comptime {
                 switch (query_context) {
                     // TODO: Is there a more sensible type to use here ?
-                    .count_all, .count_distinct => return i64,
+                    .count => return i64,
                     else => {},
                 }
 
@@ -863,7 +882,7 @@ fn now() i64 {
 fn validateQueryContext(comptime initial: sql.QueryContext, comptime attempted: sql.QueryContext) void {
     comptime {
         switch (attempted) {
-            .count_all, .count_distinct => switch (initial) {
+            .count => switch (initial) {
                 .none, .select => {},
                 else => if (attempted != initial) @compileError(std.fmt.comptimePrint(
                     "Failed attempting to initialize `{s}` query already-initialized on `{s}` query.",

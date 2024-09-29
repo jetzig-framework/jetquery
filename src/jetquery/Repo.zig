@@ -91,12 +91,9 @@ pub fn execute(self: *Repo, query: anytype) !switch (@TypeOf(query).ResultContex
     var result = try self.adapter.execute(self, query.sql, query.field_values);
     return switch (@TypeOf(query).ResultContext) {
         .one => blk: {
-            switch (query.query_context) {
-                .count_all, .count_distinct => {
-                    defer result.deinit();
-                    return try result.unary(@TypeOf(query).ResultType);
-                },
-                else => {},
+            if (query.query_context == .count) {
+                defer result.deinit();
+                return try result.unary(@TypeOf(query).ResultType);
             }
             const row = try result.next(query);
             if (row) |capture| try self.result_map.put(capture.__jetquery_id, result);
@@ -239,10 +236,10 @@ test "Repo" {
         try std.testing.expect(false);
     }
 
-    const count_all = try query.count(.all).execute(&repo);
+    const count_all = try query.count().execute(&repo);
     try std.testing.expectEqual(2, count_all);
 
-    const count_distinct = try query.count(.distinct).execute(&repo);
+    const count_distinct = try query.distinct(.{}).count().execute(&repo);
     try std.testing.expectEqual(1, count_distinct);
 }
 

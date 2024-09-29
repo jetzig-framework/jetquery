@@ -8,8 +8,7 @@ pub const QueryContext = enum {
     insert,
     delete,
     delete_all,
-    count_all,
-    count_distinct,
+    count,
     none,
 };
 
@@ -53,7 +52,7 @@ pub fn render(
         .update => renderUpdate(Table, Adapter, field_infos),
         .insert => renderInsert(Table, Adapter, field_infos),
         .delete, .delete_all => renderDelete(Table, Adapter, field_infos, query_context),
-        .count_all, .count_distinct => |tag| renderCount(Table, Adapter, tag, relations, field_infos),
+        .count => renderCount(Table, Adapter, relations, field_infos),
         .none => "",
     };
 }
@@ -141,17 +140,11 @@ fn renderDelete(
 fn renderCount(
     Table: type,
     Adapter: type,
-    comptime query_context: QueryContext,
     comptime relations: []const type,
     comptime field_infos: []const fields.FieldInfo,
 ) []const u8 {
     comptime {
-        const count_type: CountContext = switch (query_context) {
-            .count_all => .all,
-            .count_distinct => .distinct,
-            else => @compileError("Failed generating count query for `" ++ @tagName(query_context) ++ "`"),
-        };
-        const count_column = " " ++ Adapter.countSql(count_type);
+        const count_column = " " ++ Adapter.countSql();
         const from = std.fmt.comptimePrint(" FROM {s}", .{Adapter.identifier(Table.table_name)});
         const joins = renderJoins(Adapter, Table, relations);
 

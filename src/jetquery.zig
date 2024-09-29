@@ -243,7 +243,7 @@ test "count(.all)" {
     const Schema = struct {
         pub const Cat = Table("cats", struct { id: i32, name: []const u8, paws: i32 }, .{});
     };
-    const query = Query(Schema, .Cat).where(.{ .name = "Hercules", .paws = 4 }).count(.all);
+    const query = Query(Schema, .Cat).where(.{ .name = "Hercules", .paws = 4 }).count();
 
     try std.testing.expectEqualStrings(
         \\SELECT COUNT(*) FROM "cats" WHERE "cats"."name" = $1 AND "cats"."paws" = $2
@@ -254,7 +254,7 @@ test "count(.distinct)" {
     const Schema = struct {
         pub const Cat = Table("cats", struct { id: i32, name: []const u8, paws: i32 }, .{});
     };
-    const query = Query(Schema, .Cat).where(.{ .name = "Hercules", .paws = 4 }).count(.distinct);
+    const query = Query(Schema, .Cat).where(.{ .name = "Hercules", .paws = 4 }).distinct(.{}).count();
 
     try std.testing.expectEqualStrings(
         \\SELECT COUNT(DISTINCT *) FROM "cats" WHERE "cats"."name" = $1 AND "cats"."paws" = $2

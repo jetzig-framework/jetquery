@@ -218,12 +218,8 @@ pub fn orderSql(Table: type, comptime order_clause: sql.OrderClause(Table)) []co
     );
 }
 
-pub fn countSql(context: jetquery.sql.CountContext) []const u8 {
-    return switch (context) {
-        .all => "COUNT(*)",
-        // TODO: Use a column name here
-        .distinct => "COUNT(DISTINCT(...))",
-    };
+pub fn countSql() []const u8 {
+    return "COUNT(*)";
 }
 
 pub fn innerJoinSql(
