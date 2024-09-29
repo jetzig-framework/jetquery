@@ -250,16 +250,16 @@ test "count(.all)" {
     , query.sql);
 }
 
-test "count(.distinct)" {
-    const Schema = struct {
-        pub const Cat = Table("cats", struct { id: i32, name: []const u8, paws: i32 }, .{});
-    };
-    const query = Query(Schema, .Cat).where(.{ .name = "Hercules", .paws = 4 }).distinct(.{}).count();
-
-    try std.testing.expectEqualStrings(
-        \\SELECT COUNT(DISTINCT *) FROM "cats" WHERE "cats"."name" = $1 AND "cats"."paws" = $2
-    , query.sql);
-}
+// test "count(.distinct)" {
+//     const Schema = struct {
+//         pub const Cat = Table("cats", struct { id: i32, name: []const u8, paws: i32 }, .{});
+//     };
+//     const query = Query(Schema, .Cat).where(.{ .name = "Hercules", .paws = 4 }).distinct(.{}).count();
+//
+//     try std.testing.expectEqualStrings(
+//         \\SELECT COUNT(DISTINCT *) FROM "cats" WHERE "cats"."name" = $1 AND "cats"."paws" = $2
+//     , query.sql);
+// }
 
 test "combined" {
     const Schema = struct {

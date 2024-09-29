@@ -32,17 +32,9 @@ pub fn Query(Schema: type, comptime table_name: jetquery.DeclEnum(Schema)) type 
         /// ```
         pub fn select(
             comptime columns: []const std.meta.FieldEnum(Table.Definition),
-        ) Statement(
-            .select,
-            Schema,
-            Table,
-            &.{},
-            &fields.fieldInfos(@TypeOf(.{}), .none),
-            if (columns.len == 0) Table.columns() else columns,
-            &.{},
-            .many,
-            false,
-        ) {
+        ) Statement(.select, Schema, Table, .{
+            .columns = if (columns.len == 0) Table.columns() else columns,
+        }) {
             return InitialStatement(Schema, Table).select(columns);
         }
 
@@ -54,17 +46,10 @@ pub fn Query(Schema: type, comptime table_name: jetquery.DeclEnum(Schema)) type 
         /// ```zig
         /// Query(Schema, .MyTable).select(&.{}).where(.{ .foo = "bar" })
         /// ```
-        pub fn where(args: anytype) Statement(
-            .select,
-            Schema,
-            Table,
-            &.{},
-            &fields.fieldInfos(@TypeOf(args), .where),
-            Table.columns(),
-            &.{},
-            .many,
-            false,
-        ) {
+        pub fn where(args: anytype) Statement(.select, Schema, Table, .{
+            .field_infos = &fields.fieldInfos(@TypeOf(args), .where),
+            .columns = Table.columns(),
+        }) {
             return InitialStatement(Schema, Table).select(&.{}).where(args);
         }
 
@@ -72,17 +57,9 @@ pub fn Query(Schema: type, comptime table_name: jetquery.DeclEnum(Schema)) type 
         /// ```zig
         /// Query(Schema, .MyTable).update(.{ .foo = "bar", .baz = "qux" }).where(.{ .quux = "corge" });
         /// ```
-        pub fn update(args: anytype) Statement(
-            .update,
-            Schema,
-            Table,
-            &.{},
-            &(fields.fieldInfos(@TypeOf(args), .update) ++ timestampsFields(Table, .update)),
-            &.{},
-            &.{},
-            .none,
-            false,
-        ) {
+        pub fn update(args: anytype) Statement(.update, Schema, Table, .{
+            .field_infos = &(fields.fieldInfos(@TypeOf(args), .update) ++ timestampsFields(Table, .update)),
+        }) {
             return InitialStatement(Schema, Table).update(args);
         }
 
@@ -90,17 +67,9 @@ pub fn Query(Schema: type, comptime table_name: jetquery.DeclEnum(Schema)) type 
         /// ```zig
         /// Query(Schema, .MyTable).insert(.{ .foo = "bar", .baz = "qux" });
         /// ```
-        pub fn insert(args: anytype) Statement(
-            .insert,
-            Schema,
-            Table,
-            &.{},
-            &(fields.fieldInfos(@TypeOf(args), .insert) ++ timestampsFields(Table, .insert)),
-            &.{},
-            &.{},
-            .none,
-            false,
-        ) {
+        pub fn insert(args: anytype) Statement(.insert, Schema, Table, .{
+            .field_infos = &(fields.fieldInfos(@TypeOf(args), .insert) ++ timestampsFields(Table, .insert)),
+        }) {
             return InitialStatement(Schema, Table).insert(args);
         }
 
@@ -110,17 +79,7 @@ pub fn Query(Schema: type, comptime table_name: jetquery.DeclEnum(Schema)) type 
         /// ```zig
         /// Query(Schema, .MyTable).delete().where(.{ .foo = "bar" });
         /// ```
-        pub fn delete() Statement(
-            .delete,
-            Schema,
-            Table,
-            &.{},
-            &fields.fieldInfos(@TypeOf(.{}), .none),
-            &.{},
-            &.{},
-            .none,
-            false,
-        ) {
+        pub fn delete() Statement(.delete, Schema, Table, .{}) {
             return InitialStatement(Schema, Table).delete();
         }
 
@@ -129,17 +88,7 @@ pub fn Query(Schema: type, comptime table_name: jetquery.DeclEnum(Schema)) type 
         /// ```zig
         /// Query(Schema, .MyTable).deleteAll();
         /// ```
-        pub fn deleteAll() Statement(
-            .delete_all,
-            Schema,
-            Table,
-            &.{},
-            &fields.fieldInfos(@TypeOf(.{}), .none),
-            &.{},
-            &.{},
-            .none,
-            false,
-        ) {
+        pub fn deleteAll() Statement(.delete_all, Schema, Table, .{}) {
             return InitialStatement(Schema, Table).deleteAll();
         }
 
@@ -151,17 +100,12 @@ pub fn Query(Schema: type, comptime table_name: jetquery.DeclEnum(Schema)) type 
         /// ```zig
         /// Query(Schema, .MyTable).select(&.{}).where(.{ .id = id }).limit(1);
         /// ```
-        pub fn find(id: anytype) Statement(
-            .select,
-            Schema,
-            Table,
-            &.{},
-            &(fields.fieldInfos(@TypeOf(.{ .id = id }), .where) ++ fields.fieldInfos(@TypeOf(.{1}), .limit)),
-            Table.columns(),
-            &.{},
-            .one,
-            false,
-        ) {
+        pub fn find(id: anytype) Statement(.select, Schema, Table, .{
+            .field_infos = &(fields.fieldInfos(@TypeOf(.{ .id = id }), .where) ++
+                fields.fieldInfos(@TypeOf(.{1}), .limit)),
+            .columns = Table.columns(),
+            .result_context = .one,
+        }) {
             return InitialStatement(Schema, Table).find(id);
         }
 
@@ -173,17 +117,12 @@ pub fn Query(Schema: type, comptime table_name: jetquery.DeclEnum(Schema)) type 
         /// ```zig
         /// Query(Schema, .MyTable).select(&.{}).where(args).limit(1);
         /// ```
-        pub fn findBy(args: anytype) Statement(
-            .select,
-            Schema,
-            Table,
-            &.{},
-            &(fields.fieldInfos(@TypeOf(args), .where) ++ fields.fieldInfos(@TypeOf(.{1}), .limit)),
-            Table.columns(),
-            &.{},
-            .one,
-            false,
-        ) {
+        pub fn findBy(args: anytype) Statement(.select, Schema, Table, .{
+            .field_infos = &(fields.fieldInfos(@TypeOf(args), .where) ++
+                fields.fieldInfos(@TypeOf(.{1}), .limit)),
+            .columns = Table.columns(),
+            .result_context = .one,
+        }) {
             return InitialStatement(Schema, Table).findBy(args);
         }
 
@@ -196,11 +135,8 @@ pub fn Query(Schema: type, comptime table_name: jetquery.DeclEnum(Schema)) type 
         pub fn include(
             comptime name: jetquery.relation.RelationsEnum(Table),
             comptime select_columns: []const jetquery.relation.ColumnsEnum(Schema, Table, name),
-        ) Statement(
-            .none,
-            Schema,
-            Table,
-            &.{jetquery.relation.Relation(
+        ) Statement(.none, Schema, Table, .{
+            .relations = &.{jetquery.relation.Relation(
                 Schema,
                 Table,
                 name,
@@ -209,12 +145,7 @@ pub fn Query(Schema: type, comptime table_name: jetquery.DeclEnum(Schema)) type 
                 else
                     select_columns,
             )},
-            &.{},
-            &.{},
-            &.{},
-            .none,
-            false,
-        ) {
+        }) {
             return InitialStatement(Schema, Table).include(name, select_columns);
         }
     };
@@ -224,67 +155,64 @@ const MissingField = struct {
     missing: void,
 };
 
-fn InitialStatement(Schema: type, Table: type) Statement(
-    .none,
-    Schema,
-    Table,
-    &.{},
-    &.{},
-    &.{},
-    &.{},
-    .none,
-    true,
-) {
-    return Statement(
-        .none,
-        Schema,
-        Table,
-        &.{},
-        &.{},
-        &.{},
-        &.{},
-        .none,
-        true,
-    ){ .field_values = .{}, .field_errors = .{} };
+fn InitialStatement(Schema: type, Table: type) Statement(.none, Schema, Table, .{
+    .result_context = .none,
+    .initial = true,
+}) {
+    return Statement(.none, Schema, Table, .{
+        .result_context = .none,
+        .initial = true,
+    }){ .field_values = .{}, .field_errors = .{} };
 }
 
 fn SchemaTable(Schema: type, comptime name: jetquery.DeclEnum(Schema)) type {
     return @field(Schema, @tagName(name));
 }
 
+fn StatementOptions(Table: type, comptime query_context: sql.QueryContext) type {
+    return struct {
+        relations: []const type = &.{},
+        field_infos: []const fields.FieldInfo = &.{},
+        columns: []const std.meta.FieldEnum(Table.Definition) = &.{},
+        order_clauses: []const sql.OrderClause(Table) = &.{},
+        result_context: ResultContext = switch (query_context) {
+            .select => .many,
+            .update, .insert, .delete, .delete_all, .none => .none,
+            .count => .one,
+        },
+        initial: bool = false,
+        distinct: bool = false,
+    };
+}
+
 fn Statement(
     comptime query_context: sql.QueryContext,
     Schema: type,
     Table: type,
-    comptime relations: []const type,
-    comptime field_infos: []const fields.FieldInfo,
-    comptime columns: []const std.meta.FieldEnum(Table.Definition),
-    comptime order_clauses: []const sql.OrderClause(Table),
-    result_context: ResultContext,
-    initial: bool,
+    comptime options: StatementOptions(Table, query_context),
 ) type {
     return struct {
-        field_values: fields.FieldValues(Table, relations, field_infos),
+        field_values: fields.FieldValues(Table, options.relations, options.field_infos),
         limit_bound: ?usize = null,
-        field_errors: [field_infos.len]?anyerror,
+        field_errors: [options.field_infos.len]?anyerror,
 
         comptime query_context: sql.QueryContext = query_context,
-        comptime field_infos: []const fields.FieldInfo = field_infos,
-        comptime columns: []const std.meta.FieldEnum(Table.Definition) = columns,
-        comptime order_clauses: []const sql.OrderClause(Table) = order_clauses,
+        comptime field_infos: []const fields.FieldInfo = options.field_infos,
+        comptime columns: []const std.meta.FieldEnum(Table.Definition) = options.columns,
+        comptime order_clauses: []const sql.OrderClause(Table) = options.order_clauses,
 
         comptime sql: []const u8 = jetquery.sql.render(
             jetquery.adapters.Type(jetquery.config.database.adapter),
             query_context,
             Table,
-            relations,
-            field_infos,
-            columns,
-            order_clauses,
+            options.relations,
+            options.field_infos,
+            options.columns,
+            options.order_clauses,
         ),
 
         pub const Definition = Table.Definition;
-        pub const ResultContext = result_context;
+        pub const ResultContext = options.result_context;
         pub const ResultType = QueryResultType();
         pub const ColumnInfos = QueryColumnInfos();
 
@@ -300,21 +228,26 @@ fn Statement(
 
             var statement: S = undefined;
 
-            inline for (0..field_infos.len) |index| {
+            inline for (0..options.field_infos.len) |index| {
                 const value = self.field_values[index];
                 @field(statement.field_values, std.fmt.comptimePrint("{}", .{index})) = value;
                 statement.field_errors[index] = self.field_errors[index];
             }
 
             if (comptime hasTimestamps(Table)) {
-                updateTimestamps(S, &statement, field_infos, query_context);
+                updateTimestamps(S, &statement, options.field_infos, query_context);
             }
 
             const arg_fields = std.meta.fields(@TypeOf(args));
 
-            inline for (arg_fields, field_infos.len..) |field, index| {
+            inline for (arg_fields, options.field_infos.len..) |field, index| {
                 const value = @field(args, field.name);
-                const coerced = coercion.coerce(Table, relations, fields.fieldInfo(field, context), value);
+                const coerced = coercion.coerce(
+                    Table,
+                    options.relations,
+                    fields.fieldInfo(field, context),
+                    value,
+                );
                 @field(statement.field_values, std.fmt.comptimePrint("{}", .{index})) = coerced.value;
                 statement.field_errors[index] = coerced.err;
             }
@@ -325,298 +258,179 @@ fn Statement(
         pub fn select(
             self: Self,
             comptime select_columns: []const std.meta.FieldEnum(Table.Definition),
-        ) Statement(
-            .select,
-            Schema,
-            Table,
-            relations,
-            field_infos,
-            if (select_columns.len == 0) Table.columns() else select_columns,
-            order_clauses,
-            if (initial) .many else result_context,
-            false,
-        ) {
-            const S = Statement(
-                .select,
-                Schema,
-                Table,
-                relations,
-                field_infos,
-                if (select_columns.len == 0) Table.columns() else select_columns,
-                order_clauses,
-                if (initial) .many else result_context,
-                false,
-            );
+        ) Statement(.select, Schema, Table, .{
+            .relations = options.relations,
+            .field_infos = options.field_infos,
+            .columns = if (select_columns.len == 0) Table.columns() else select_columns,
+            .order_clauses = options.order_clauses,
+            .result_context = if (options.initial) .many else options.result_context,
+        }) {
+            const S = Statement(.select, Schema, Table, .{
+                .relations = options.relations,
+                .field_infos = options.field_infos,
+                .columns = if (select_columns.len == 0) Table.columns() else select_columns,
+                .order_clauses = options.order_clauses,
+                .result_context = if (options.initial) .many else options.result_context,
+            });
             return self.extend(S, .{}, .none);
         }
 
         /// Apply a `WHERE` clause to the current statement.
-        pub fn where(self: Self, args: anytype) Statement(
-            query_context,
-            Schema,
-            Table,
-            relations,
-            field_infos ++ fields.fieldInfos(@TypeOf(args), .where),
-            columns,
-            order_clauses,
-            result_context,
-            false,
-        ) {
-            const S = Statement(
-                query_context,
-                Schema,
-                Table,
-                relations,
-                field_infos ++ fields.fieldInfos(@TypeOf(args), .where),
-                columns,
-                order_clauses,
-                result_context,
-                false,
-            );
+        pub fn where(self: Self, args: anytype) Statement(query_context, Schema, Table, .{
+            .relations = options.relations,
+            .field_infos = options.field_infos ++ fields.fieldInfos(@TypeOf(args), .where),
+            .columns = options.columns,
+            .order_clauses = options.order_clauses,
+            .result_context = options.result_context,
+        }) {
+            const S = Statement(query_context, Schema, Table, .{
+                .relations = options.relations,
+                .field_infos = options.field_infos ++ fields.fieldInfos(@TypeOf(args), .where),
+                .columns = options.columns,
+                .order_clauses = options.order_clauses,
+                .result_context = options.result_context,
+            });
             return self.extend(S, args, .where);
         }
 
-        pub fn find(self: Self, id: anytype) Statement(
-            .select,
-            Schema,
-            Table,
-            &.{},
-            &(fields.fieldInfos(@TypeOf(.{ .id = id }), .where) ++ fields.fieldInfos(@TypeOf(.{1}), .limit)),
-            if (columns.len == 0) Table.columns() else columns,
-            &.{},
-            .one,
-            false,
-        ) {
+        pub fn find(self: Self, id: anytype) Statement(.select, Schema, Table, .{
+            .field_infos = &(fields.fieldInfos(@TypeOf(.{ .id = id }), .where) ++
+                fields.fieldInfos(@TypeOf(.{1}), .limit)),
+            .columns = if (options.columns.len == 0) Table.columns() else options.columns,
+            .result_context = .one,
+        }) {
             // No need to verify `id` presence as `fields.fieldInfos` will reject unknown fields.
             return self.findBy(.{ .id = id });
         }
 
-        pub fn findBy(self: Self, args: anytype) Statement(
-            .select,
-            Schema,
-            Table,
-            relations,
-            field_infos ++ fields.fieldInfos(@TypeOf(args), .where) ++ fields.fieldInfos(@TypeOf(.{1}), .limit),
-            if (columns.len == 0) Table.columns() else columns,
-            &.{},
-            .one,
-            false,
-        ) {
-            const S = Statement(
-                .select,
-                Schema,
-                Table,
-                relations,
-                field_infos ++ fields.fieldInfos(@TypeOf(args), .where) ++ fields.fieldInfos(@TypeOf(.{1}), .limit),
-                if (columns.len == 0) Table.columns() else columns,
-                &.{},
-                .one,
-                false,
-            );
+        pub fn findBy(self: Self, args: anytype) Statement(.select, Schema, Table, .{
+            .relations = options.relations,
+            .field_infos = options.field_infos ++
+                fields.fieldInfos(@TypeOf(args), .where) ++
+                fields.fieldInfos(@TypeOf(.{1}), .limit),
+            .columns = if (options.columns.len == 0) Table.columns() else options.columns,
+            .result_context = .one,
+        }) {
+            const S = Statement(.select, Schema, Table, .{
+                .relations = options.relations,
+                .field_infos = options.field_infos ++
+                    fields.fieldInfos(@TypeOf(args), .where) ++
+                    fields.fieldInfos(@TypeOf(.{1}), .limit),
+                .columns = if (options.columns.len == 0) Table.columns() else options.columns,
+                .result_context = .one,
+            });
             var statement = self.extend(S, args, .where);
             const arg_fields = std.meta.fields(@TypeOf(args));
-            statement.field_values[field_infos.len + arg_fields.len] = 1;
-            statement.field_errors[field_infos.len + arg_fields.len] = null;
+            statement.field_values[options.field_infos.len + arg_fields.len] = 1;
+            statement.field_errors[options.field_infos.len + arg_fields.len] = null;
             return statement;
         }
 
-        pub fn count(self: Self) Statement(
-            .count,
-            Schema,
-            Table,
-            relations,
-            field_infos,
-            &.{},
-            &.{},
-            .one,
-            false,
-        ) {
-            const S = Statement(
-                .count,
-                Schema,
-                Table,
-                relations,
-                field_infos,
-                &.{},
-                &.{},
-                .one,
-                false,
-            );
+        pub fn count(self: Self) Statement(.count, Schema, Table, .{
+            .relations = options.relations,
+            .field_infos = options.field_infos,
+        }) {
+            const S = Statement(.count, Schema, Table, .{
+                .relations = options.relations,
+                .field_infos = options.field_infos,
+            });
             return self.extend(S, .{}, .none);
         }
 
-        pub fn distinct(self: Self, comptime args: anytype) Statement(
-            query_context,
-            Schema,
-            Table,
-            relations,
-            field_infos,
-            &.{},
-            &.{},
-            .one,
-            false,
-        ) {
-            const S = Statement(
-                query_context,
-                Schema,
-                Table,
-                relations,
-                field_infos,
-                &.{},
-                &.{},
-                .one,
-                false,
-            );
+        pub fn distinct(self: Self, comptime args: anytype) Statement(query_context, Schema, Table, .{
+            .relations = options.relations,
+            .field_infos = options.field_infos,
+            .columns = options.columns,
+            .order_clauses = options.order_clauses,
+            .result_context = options.result_context,
+            .distinct = true,
+        }) {
+            const S = Statement(query_context, Schema, Table, .{
+                .relations = options.relations,
+                .field_infos = options.field_infos,
+                .columns = options.columns,
+                .order_clauses = options.order_clauses,
+                .result_context = options.result_context,
+                .distinct = true,
+            });
             _ = args;
             return self.extend(S, .{}, .none);
         }
-        pub fn update(self: Self, args: anytype) Statement(
-            .update,
-            Schema,
-            Table,
-            &.{},
-            &(fields.fieldInfos(@TypeOf(args), .update) ++ timestampsFields(Table, .update)),
-            &.{},
-            &.{},
-            .none,
-            false,
-        ) {
-            const S = Statement(
-                .update,
-                Schema,
-                Table,
-                &.{},
-                &(fields.fieldInfos(@TypeOf(args), .update) ++ timestampsFields(Table, .update)),
-                &.{},
-                &.{},
-                .none,
-                false,
-            );
+        pub fn update(self: Self, args: anytype) Statement(.update, Schema, Table, .{
+            .field_infos = &(fields.fieldInfos(@TypeOf(args), .update) ++ timestampsFields(Table, .update)),
+        }) {
+            const S = Statement(.update, Schema, Table, .{
+                .field_infos = &(fields.fieldInfos(@TypeOf(args), .update) ++ timestampsFields(Table, .update)),
+            });
             return self.extend(S, args, .update);
         }
 
-        pub fn insert(self: Self, args: anytype) Statement(
-            .insert,
-            Schema,
-            Table,
-            &.{},
-            &(fields.fieldInfos(@TypeOf(args), .insert) ++ timestampsFields(Table, .insert)),
-            &.{},
-            &.{},
-            .none,
-            false,
-        ) {
-            const S = Statement(
-                .insert,
-                Schema,
-                Table,
-                &.{},
-                &(fields.fieldInfos(@TypeOf(args), .insert) ++ timestampsFields(Table, .insert)),
-                &.{},
-                &.{},
-                .none,
-                false,
-            );
+        pub fn insert(self: Self, args: anytype) Statement(.insert, Schema, Table, .{
+            .field_infos = &(fields.fieldInfos(@TypeOf(args), .insert) ++
+                timestampsFields(Table, .insert)),
+        }) {
+            const S = Statement(.insert, Schema, Table, .{
+                .field_infos = &(fields.fieldInfos(@TypeOf(args), .insert) ++
+                    timestampsFields(Table, .insert)),
+            });
             return self.extend(S, args, .insert);
         }
 
-        pub fn delete(self: Self) Statement(
-            .delete,
-            Schema,
-            Table,
-            &.{},
-            &fields.fieldInfos(@TypeOf(.{}), .none),
-            &.{},
-            &.{},
-            .none,
-            false,
-        ) {
-            const S = Statement(
-                .delete,
-                Schema,
-                Table,
-                &.{},
-                &fields.fieldInfos(@TypeOf(.{}), .none),
-                &.{},
-                &.{},
-                .none,
-                false,
+        pub fn delete(self: Self) Statement(.delete, Schema, Table, .{
+            .field_infos = &fields.fieldInfos(@TypeOf(.{}), .none),
+        }) {
+            // TODO: Add support for `DELETE ... USING ...`
+            if (comptime options.relations.len != 0) @compileError(
+                "Failed attempting to generate `DELETE` query with relations. " ++
+                    "This error occurred to prevent accidential deletion of potentially unexpected behaviour.",
             );
+            const S = Statement(.delete, Schema, Table, .{
+                .field_infos = &fields.fieldInfos(@TypeOf(.{}), .none),
+            });
             return self.extend(S, .{}, .none);
         }
 
-        pub fn deleteAll(self: Self) Statement(
-            .delete_all,
-            Schema,
-            Table,
-            &.{},
-            &fields.fieldInfos(@TypeOf(.{}), .none),
-            &.{},
-            &.{},
-            .none,
-            false,
-        ) {
-            const S = Statement(
-                .delete_all,
-                Schema,
-                Table,
-                &.{},
-                &fields.fieldInfos(@TypeOf(.{}), .none),
-                &.{},
-                &.{},
-                .none,
-                false,
+        pub fn deleteAll(self: Self) Statement(.delete_all, Schema, Table, .{}) {
+            // TODO: Add support for `DELETE ... USING ...`
+            if (comptime options.relations.len != 0) @compileError(
+                "Failed attempting to generate `DELETE` query with relations. " ++
+                    "This error occurred to prevent accidential deletion of potentially unexpected behaviour.",
             );
+            const S = Statement(.delete_all, Schema, Table, .{});
             return self.extend(S, .{}, .none);
         }
 
-        pub fn limit(self: Self, bound: usize) Statement(
-            query_context,
-            Schema,
-            Table,
-            relations,
-            field_infos ++ fields.fieldInfos(@TypeOf(.{bound}), .limit),
-            columns,
-            order_clauses,
-            result_context,
-            false,
-        ) {
-            const S = Statement(
-                query_context,
-                Schema,
-                Table,
-                relations,
-                field_infos ++ fields.fieldInfos(@TypeOf(.{bound}), .limit),
-                columns,
-                order_clauses,
-                result_context,
-                false,
-            );
+        pub fn limit(self: Self, bound: usize) Statement(query_context, Schema, Table, .{
+            .relations = options.relations,
+            .field_infos = options.field_infos ++ fields.fieldInfos(@TypeOf(.{bound}), .limit),
+            .columns = options.columns,
+            .order_clauses = options.order_clauses,
+            .result_context = options.result_context,
+        }) {
+            const S = Statement(query_context, Schema, Table, .{
+                .relations = options.relations,
+                .field_infos = options.field_infos ++ fields.fieldInfos(@TypeOf(.{bound}), .limit),
+                .columns = options.columns,
+                .order_clauses = options.order_clauses,
+                .result_context = options.result_context,
+            });
             return self.extend(S, .{bound}, .limit);
         }
 
-        pub fn orderBy(self: Self, comptime args: anytype) Statement(
-            query_context,
-            Schema,
-            Table,
-            relations,
-            field_infos,
-            columns,
-            &translateOrderBy(Table, args),
-            result_context,
-            false,
-        ) {
-            const S = Statement(
-                query_context,
-                Schema,
-                Table,
-                relations,
-                field_infos,
-                columns,
-                &translateOrderBy(Table, args),
-                result_context,
-                false,
-            );
+        pub fn orderBy(self: Self, comptime args: anytype) Statement(query_context, Schema, Table, .{
+            .relations = options.relations,
+            .field_infos = options.field_infos,
+            .columns = options.columns,
+            .order_clauses = &translateOrderBy(Table, args),
+            .result_context = options.result_context,
+        }) {
+            const S = Statement(query_context, Schema, Table, .{
+                .relations = options.relations,
+                .field_infos = options.field_infos,
+                .columns = options.columns,
+                .order_clauses = &translateOrderBy(Table, args),
+                .result_context = options.result_context,
+            });
             return self.extend(S, .{}, .order);
         }
 
@@ -624,11 +438,8 @@ fn Statement(
             self: Self,
             comptime name: jetquery.relation.RelationsEnum(Table),
             comptime select_columns: []const jetquery.relation.ColumnsEnum(Schema, Table, name),
-        ) Statement(
-            query_context,
-            Schema,
-            Table,
-            relations ++ .{jetquery.relation.Relation(
+        ) Statement(query_context, Schema, Table, .{
+            .relations = options.relations ++ .{jetquery.relation.Relation(
                 Schema,
                 Table,
                 name,
@@ -637,17 +448,13 @@ fn Statement(
                 else
                     select_columns,
             )},
-            field_infos,
-            columns,
-            order_clauses,
-            result_context,
-            false,
-        ) {
-            const S = Statement(
-                query_context,
-                Schema,
-                Table,
-                relations ++ .{jetquery.relation.Relation(
+            .field_infos = options.field_infos,
+            .columns = options.columns,
+            .order_clauses = options.order_clauses,
+            .result_context = options.result_context,
+        }) {
+            const S = Statement(query_context, Schema, Table, .{
+                .relations = options.relations ++ .{jetquery.relation.Relation(
                     Schema,
                     Table,
                     name,
@@ -656,16 +463,15 @@ fn Statement(
                     else
                         select_columns,
                 )},
-                field_infos,
-                columns,
-                order_clauses,
-                result_context,
-                false,
-            );
+                .field_infos = options.field_infos,
+                .columns = options.columns,
+                .order_clauses = options.order_clauses,
+                .result_context = options.result_context,
+            });
             return self.extend(S, .{}, .none);
         }
 
-        pub fn execute(self: Self, repo: *jetquery.Repo) !switch (result_context) {
+        pub fn execute(self: Self, repo: *jetquery.Repo) !switch (options.result_context) {
             .one => ?ResultType,
             .many => jetquery.Result,
             .none => void,
@@ -673,7 +479,7 @@ fn Statement(
             return try repo.execute(self);
         }
 
-        pub fn values(self: Self) fields.FieldValues(Table, relations, field_infos) {
+        pub fn values(self: Self) fields.FieldValues(Table, options.relations, options.field_infos) {
             return self.field_values;
         }
 
@@ -697,7 +503,7 @@ fn Statement(
         pub fn QueryColumnInfos() [totalColumnLen()]sql.ColumnInfo {
             comptime {
                 var column_infos: [totalColumnLen()]sql.ColumnInfo = undefined;
-                for (columns, 0..) |column, index| {
+                for (options.columns, 0..) |column, index| {
                     column_infos[index] = .{
                         .name = @tagName(column),
                         .type = std.meta.FieldType(Table.Definition, column),
@@ -705,8 +511,8 @@ fn Statement(
                         .relation = null,
                     };
                 }
-                var start: usize = columns.len;
-                for (relations) |Relation| {
+                var start: usize = options.columns.len;
+                for (options.relations) |Relation| {
                     for (Relation.select_columns, start..) |column, index| {
                         column_infos[index] = .{
                             .name = @tagName(column),
@@ -730,9 +536,9 @@ fn Statement(
                     else => {},
                 }
 
-                var base_fields: [columns.len]std.builtin.Type.StructField = undefined;
+                var base_fields: [options.columns.len]std.builtin.Type.StructField = undefined;
 
-                for (columns, 0..) |column, index| {
+                for (options.columns, 0..) |column, index| {
                     const T = std.meta.fieldInfo(Table.Definition, column).type;
                     base_fields[index] = .{
                         .name = @tagName(column),
@@ -743,8 +549,8 @@ fn Statement(
                     };
                 }
 
-                var relations_fields: [relations.len]std.builtin.Type.StructField = undefined;
-                for (relations, 0..) |Relation, relation_index| {
+                var relations_fields: [options.relations.len]std.builtin.Type.StructField = undefined;
+                for (options.relations, 0..) |Relation, relation_index| {
                     var relation_fields: [Relation.select_columns.len]std.builtin.Type.StructField = undefined;
                     for (Relation.select_columns, 0..) |column, index| {
                         const T = std.meta.FieldType(Relation.Source.Definition, column);
@@ -793,8 +599,8 @@ fn Statement(
 
         fn totalColumnLen() usize {
             comptime {
-                var len: usize = columns.len;
-                for (relations) |Relation| {
+                var len: usize = options.columns.len;
+                for (options.relations) |Relation| {
                     len += Relation.select_columns.len;
                 }
                 return len;
