@@ -18,10 +18,6 @@ pub const Query = @import("jetquery/Query.zig").Query;
 pub const Table = @import("jetquery/Table.zig").Table;
 pub const Column = @import("jetquery/Column.zig");
 pub const Value = @import("jetquery/Value.zig").Value;
-pub const FieldInfo = @import("jetquery/Query.zig").FieldInfo;
-pub const FieldContext = @import("jetquery/Query.zig").FieldContext;
-pub const QueryType = @import("jetquery/Query.zig").QueryType;
-pub const OrderClause = @import("jetquery/Query.zig").OrderClause;
 
 pub const adapter = std.enums.nameCast(adapters.Name, config.database.adapter);
 pub const timestamp_updated_column_name = "updated_at";
@@ -414,7 +410,9 @@ test "belongsTo" {
             .{ .relations = .{ .cats = relation.hasMany(.Cat, .{}) } },
         );
     };
-    const query = Query(Schema, .Cat).findBy(.{ .name = "Hercules" }).relation(.owner, &.{});
+    const query = Query(Schema, .Cat)
+        .include(.owner, &.{})
+        .findBy(.{ .name = "Hercules" });
 
     try std.testing.expectEqualStrings(
         \\SELECT "cats"."id", "cats"."owner_id", "cats"."name", "cats"."paws", "cats"."created_at", "cats"."updated_at", "owners"."id", "owners"."name" FROM "cats" INNER JOIN "owners" ON "cats"."owner_id" = "owners"."id" WHERE "cats"."name" = $1 LIMIT $2

@@ -301,8 +301,8 @@ test "relations" {
         .execute(&repo);
 
     const query = jetquery.Query(Schema, .Cat)
-        .findBy(.{ .name = "Hercules" })
-        .relation(.owner, &.{});
+        .include(.owner, &.{})
+        .findBy(.{ .name = "Hercules" });
 
     if (try query.execute(&repo)) |cat| {
         defer repo.free(cat);

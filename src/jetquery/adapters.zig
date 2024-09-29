@@ -83,12 +83,17 @@ pub const Adapter = union(enum) {
         Table: type,
         JoinTable: type,
         comptime name: []const u8,
-        comptime options: jetquery.sql.JoinOptions,
+        comptime options: JoinOptions,
     ) []const u8 {
         return switch (self) {
             inline else => |adapter| @TypeOf(adapter).innerJoinSql(Table, JoinTable, name, options),
         };
     }
+};
+
+pub const JoinOptions = struct {
+    foreign_key: ?[]const u8 = null,
+    primary_key: ?[]const u8 = null,
 };
 
 pub const test_adapter = Adapter{ .postgresql = .{

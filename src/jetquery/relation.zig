@@ -35,7 +35,10 @@ pub fn Relation(
 }
 
 pub const RelationType = enum { belongs_to, has_many };
-pub const BelongsToOptions = struct {};
+pub const BelongsToOptions = struct {
+    primary_key: ?[]const u8 = null,
+    foreign_key: ?[]const u8 = null,
+};
 
 pub fn belongsTo(comptime model_name: anytype, comptime belongs_to_options: BelongsToOptions) type {
     return struct {

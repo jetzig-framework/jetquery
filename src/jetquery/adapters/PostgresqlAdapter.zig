@@ -3,7 +3,8 @@ const std = @import("std");
 const pg = @import("pg");
 
 const jetquery = @import("../../jetquery.zig");
-const ColumnInfo = @import("../Query.zig").ColumnInfo;
+const fields = @import("../fields.zig");
+const sql = @import("../sql.zig");
 
 const PostgresqlAdapter = @This();
 
@@ -57,7 +58,7 @@ pub const Result = struct {
     }
 };
 
-fn resolvedValue(column_info: ColumnInfo, row: *const pg.Row) !column_info.type {
+fn resolvedValue(column_info: sql.ColumnInfo, row: *const pg.Row) !column_info.type {
     return switch (column_info.type) {
         // TODO: pg.Numeric, pg.Cidr
         u8,
@@ -118,7 +119,7 @@ pub fn deinit(self: *PostgresqlAdapter) void {
 pub fn execute(
     self: *PostgresqlAdapter,
     repo: *jetquery.Repo,
-    sql: []const u8,
+    query: []const u8,
     values: anytype,
 ) !jetquery.Result {
     if (!self.connected and self.lazy_connect) self.pool = try initPool(self.allocator, self.options);
@@ -127,20 +128,20 @@ pub fn execute(
     var connection = try self.pool.acquire();
     errdefer self.pool.release(connection);
 
-    const result = connection.queryOpts(sql, values, options) catch |err| {
+    const result = connection.queryOpts(query, values, options) catch |err| {
         if (connection.err) |connection_error| {
             try repo.eventCallback(.{
-                .sql = sql,
+                .sql = query,
                 .err = .{ .message = connection_error.message },
                 .status = .fail,
             });
         } else {
-            try repo.eventCallback(.{ .sql = sql, .err = .{ .message = "Unknown error" }, .status = .fail });
+            try repo.eventCallback(.{ .sql = query, .err = .{ .message = "Unknown error" }, .status = .fail });
         }
         return err;
     };
 
-    try repo.eventCallback(.{ .sql = sql });
+    try repo.eventCallback(.{ .sql = query });
 
     return .{
         .postgresql = .{
@@ -194,7 +195,7 @@ pub fn paramSql(comptime index: usize) []const u8 {
     return std.fmt.comptimePrint("${}", .{index + 1});
 }
 
-pub fn orderSql(Table: type, comptime order_clause: jetquery.OrderClause(Table)) []const u8 {
+pub fn orderSql(Table: type, comptime order_clause: sql.OrderClause(Table)) []const u8 {
     const direction = switch (order_clause.direction) {
         .ascending => "ASC",
         .descending => "DESC",
@@ -210,15 +211,21 @@ pub fn innerJoinSql(
     Table: type,
     JoinTable: type,
     comptime name: []const u8,
-    comptime options: jetquery.sql.JoinOptions,
+    comptime options: jetquery.adapters.JoinOptions,
 ) []const u8 {
-    _ = options;
-    // TODO: relation type switch
+    const foreign_key = options.foreign_key orelse name ++ "_id";
+    const primary_key = options.primary_key orelse "id";
 
     return std.fmt.comptimePrint(
         \\ INNER JOIN "{s}" ON "{s}"."{s}" = "{s}"."{s}"
     ,
-        .{ JoinTable.table_name, Table.table_name, name ++ "_id", JoinTable.table_name, "id" },
+        .{
+            JoinTable.table_name,
+            Table.table_name,
+            foreign_key,
+            JoinTable.table_name,
+            primary_key,
+        },
     );
 }
 

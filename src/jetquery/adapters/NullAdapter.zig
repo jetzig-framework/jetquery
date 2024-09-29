@@ -50,7 +50,7 @@ pub fn innerJoinSql(
     Table: type,
     JoinTable: type,
     comptime name: []const u8,
-    comptime options: jetquery.sql.JoinOptions,
+    comptime options: jetquery.adapters.JoinOptions,
 ) []const u8 {
     _ = Table;
     _ = JoinTable;
