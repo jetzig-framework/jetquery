@@ -2,7 +2,7 @@ const std = @import("std");
 
 const fields = @import("fields.zig");
 
-pub const QueryType = enum { select, update, insert, delete, delete_all, none };
+pub const QueryContext = enum { select, update, insert, delete, delete_all, none };
 
 pub fn OrderClause(Table: type) type {
     return struct {
@@ -27,18 +27,18 @@ pub const ColumnInfo = struct {
 
 pub fn render(
     Adapter: type,
-    query_type: QueryType,
+    query_context: QueryContext,
     Table: type,
     relations: []const type,
     comptime field_infos: []const fields.FieldInfo,
     comptime columns: []const std.meta.FieldEnum(Table.Definition),
     comptime order_clauses: []const OrderClause(Table),
 ) []const u8 {
-    return switch (query_type) {
+    return switch (query_context) {
         .select => renderSelect(Table, Adapter, relations, columns, field_infos, order_clauses),
         .update => renderUpdate(Table, Adapter, field_infos),
         .insert => renderInsert(Table, Adapter, field_infos),
-        .delete, .delete_all => renderDelete(Table, Adapter, field_infos, query_type),
+        .delete, .delete_all => renderDelete(Table, Adapter, field_infos, query_context),
         .none => "",
     };
 }
@@ -107,10 +107,10 @@ fn renderDelete(
     Table: type,
     Adapter: type,
     comptime field_infos: []const fields.FieldInfo,
-    query_type: QueryType,
+    query_context: QueryContext,
 ) []const u8 {
     const statement = std.fmt.comptimePrint("DELETE FROM {s}", .{Adapter.identifier(Table.table_name)});
-    return switch (query_type) {
+    return switch (query_context) {
         .delete_all => statement,
         .delete => std.fmt.comptimePrint("{s}{s}{s}", .{
             statement,

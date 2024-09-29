@@ -61,29 +61,7 @@ pub fn Query(Schema: type, comptime table_name: jetquery.DeclEnum(Schema)) type 
             .none,
             false,
         ) {
-            var statement: Statement(
-                .update,
-                Schema,
-                Table,
-                &.{},
-                &(fields.fieldInfos(@TypeOf(args), .update) ++ timestampsFields(Table, .update)),
-                &.{},
-                &.{},
-                .none,
-                false,
-            ) = undefined;
-            const arg_fields = std.meta.fields(@TypeOf(args));
-            inline for (arg_fields, 0..) |field, index| {
-                const value = @field(args, field.name);
-                const coerced = coercion.coerce(Table, &.{}, fields.fieldInfo(field, .update), value);
-                @field(statement.field_values, std.fmt.comptimePrint("{}", .{index})) = coerced.value;
-                statement.field_errors[index] = coerced.err;
-            }
-            if (comptime hasTimestamps(Table)) {
-                @field(statement.field_values, std.fmt.comptimePrint("{}", .{arg_fields.len})) = now();
-                statement.field_errors[arg_fields.len] = null;
-            }
-            return statement;
+            return InitialStatement(Schema, Table).update(args);
         }
 
         /// Create an `INSERT` query with the specified `args`, e.g.:
@@ -101,34 +79,7 @@ pub fn Query(Schema: type, comptime table_name: jetquery.DeclEnum(Schema)) type 
             .none,
             false,
         ) {
-            var statement: Statement(
-                .insert,
-                Schema,
-                Table,
-                &.{},
-                &(fields.fieldInfos(@TypeOf(args), .insert) ++ timestampsFields(Table, .insert)),
-                &.{},
-                &.{},
-                .none,
-                false,
-            ) = undefined;
-
-            const arg_fields = std.meta.fields(@TypeOf(args));
-
-            inline for (arg_fields, 0..) |field, index| {
-                const value = @field(args, field.name);
-                const coerced = coercion.coerce(Table, &.{}, fields.fieldInfo(field, .insert), value);
-                @field(statement.field_values, std.fmt.comptimePrint("{}", .{index})) = coerced.value;
-                statement.field_errors[index] = coerced.err;
-            }
-            if (comptime hasTimestamps(Table)) {
-                const timestamp = now();
-                @field(statement.field_values, std.fmt.comptimePrint("{}", .{arg_fields.len})) = timestamp;
-                statement.field_errors[arg_fields.len] = null;
-                @field(statement.field_values, std.fmt.comptimePrint("{}", .{arg_fields.len + 1})) = timestamp;
-                statement.field_errors[arg_fields.len + 1] = null;
-            }
-            return statement;
+            return InitialStatement(Schema, Table).insert(args);
         }
 
         /// Create a `DELETE` query. As a safety measure, a `delete()` query **must** have a
@@ -148,17 +99,7 @@ pub fn Query(Schema: type, comptime table_name: jetquery.DeclEnum(Schema)) type 
             .none,
             false,
         ) {
-            return Statement(
-                .delete,
-                Schema,
-                Table,
-                &.{},
-                &fields.fieldInfos(@TypeOf(.{}), .none),
-                &.{},
-                &.{},
-                .none,
-                false,
-            ){ .field_values = .{}, .field_errors = .{} };
+            return InitialStatement(Schema, Table).delete();
         }
 
         /// Create a `DELETE` query that does not require a `WHERE` clause to delete all records
@@ -177,17 +118,7 @@ pub fn Query(Schema: type, comptime table_name: jetquery.DeclEnum(Schema)) type 
             .none,
             false,
         ) {
-            return Statement(
-                .delete_all,
-                Schema,
-                Table,
-                &.{},
-                &fields.fieldInfos(@TypeOf(.{}), .none),
-                &.{},
-                &.{},
-                .none,
-                false,
-            ){ .field_values = .{}, .field_errors = .{} };
+            return InitialStatement(Schema, Table).deleteAll();
         }
 
         /// Create a `SELECT` query to return a single row matching the given ID.
@@ -209,34 +140,7 @@ pub fn Query(Schema: type, comptime table_name: jetquery.DeclEnum(Schema)) type 
             .one,
             false,
         ) {
-            var statement: Statement(
-                .select,
-                Schema,
-                Table,
-                &.{},
-                &(fields.fieldInfos(@TypeOf(.{ .id = id }), .where) ++ fields.fieldInfos(@TypeOf(.{1}), .limit)),
-                Table.columns(),
-                &.{},
-                .one,
-                false,
-            ) = undefined;
-            if (comptime @hasField(Table.Definition, "id")) {
-                const coerced = coercion.coerce(
-                    Table,
-                    &.{},
-                    fields.fieldInfo(std.meta.fieldInfo(Table.Definition, .id), .where),
-                    id,
-                );
-                if (coerced.err) |err| {
-                    statement.field_errors = .{ err, null };
-                } else {
-                    statement.field_values = .{ coerced.value, 1 };
-                    statement.field_errors = .{ null, null };
-                }
-            } else {
-                statement.field_errors = .{ error.JetQueryMissingIdField, null };
-            }
-            return statement;
+            return InitialStatement(Schema, Table).find(id);
         }
 
         /// Create a `SELECT` query to return a single row matching the given args.
@@ -345,7 +249,7 @@ fn SchemaTable(Schema: type, comptime name: jetquery.DeclEnum(Schema)) type {
 }
 
 fn Statement(
-    comptime query_type: sql.QueryType,
+    comptime query_context: sql.QueryContext,
     Schema: type,
     Table: type,
     comptime relations: []const type,
@@ -360,14 +264,14 @@ fn Statement(
         limit_bound: ?usize = null,
         field_errors: [field_infos.len]?anyerror,
 
-        comptime query_type: sql.QueryType = query_type,
+        comptime query_context: sql.QueryContext = query_context,
         comptime field_infos: []const fields.FieldInfo = field_infos,
         comptime columns: []const std.meta.FieldEnum(Table.Definition) = columns,
         comptime order_clauses: []const sql.OrderClause(Table) = order_clauses,
 
         comptime sql: []const u8 = jetquery.sql.render(
             jetquery.adapters.Type(jetquery.config.database.adapter),
-            query_type,
+            query_context,
             Table,
             relations,
             field_infos,
@@ -385,22 +289,31 @@ fn Statement(
         pub fn extend(
             self: Self,
             S: type,
-            statement: *S,
             args: anytype,
             comptime context: fields.FieldContext,
         ) S {
+            var statement: S = undefined;
+
             inline for (0..field_infos.len) |index| {
                 const value = self.field_values[index];
                 @field(statement.field_values, std.fmt.comptimePrint("{}", .{index})) = value;
                 statement.field_errors[index] = self.field_errors[index];
             }
-            inline for (std.meta.fields(@TypeOf(args)), field_infos.len..) |field, index| {
+
+            if (comptime hasTimestamps(Table)) {
+                updateTimestamps(S, &statement, field_infos, query_context);
+            }
+
+            const arg_fields = std.meta.fields(@TypeOf(args));
+
+            inline for (arg_fields, field_infos.len..) |field, index| {
                 const value = @field(args, field.name);
                 const coerced = coercion.coerce(Table, relations, fields.fieldInfo(field, context), value);
                 @field(statement.field_values, std.fmt.comptimePrint("{}", .{index})) = coerced.value;
                 statement.field_errors[index] = coerced.err;
             }
-            return statement.*;
+
+            return statement;
         }
 
         pub fn select(
@@ -417,9 +330,9 @@ fn Statement(
             if (initial) .many else result_context,
             false,
         ) {
-            validateQueryType(query_type, .select);
+            validateQueryContext(query_context, .select);
 
-            var statement: Statement(
+            const S = Statement(
                 .select,
                 Schema,
                 Table,
@@ -429,13 +342,13 @@ fn Statement(
                 order_clauses,
                 if (initial) .many else result_context,
                 false,
-            ) = undefined;
-            return self.extend(@TypeOf(statement), &statement, .{}, .none);
+            );
+            return self.extend(S, .{}, .none);
         }
 
         /// Apply a `WHERE` clause to the current statement.
         pub fn where(self: Self, args: anytype) Statement(
-            query_type,
+            query_context,
             Schema,
             Table,
             relations,
@@ -445,8 +358,8 @@ fn Statement(
             result_context,
             false,
         ) {
-            var statement: Statement(
-                query_type,
+            const S = Statement(
+                query_context,
                 Schema,
                 Table,
                 relations,
@@ -455,8 +368,23 @@ fn Statement(
                 order_clauses,
                 result_context,
                 false,
-            ) = undefined;
-            return self.extend(@TypeOf(statement), &statement, args, .where);
+            );
+            return self.extend(S, args, .where);
+        }
+
+        pub fn find(self: Self, id: anytype) Statement(
+            .select,
+            Schema,
+            Table,
+            &.{},
+            &(fields.fieldInfos(@TypeOf(.{ .id = id }), .where) ++ fields.fieldInfos(@TypeOf(.{1}), .limit)),
+            Table.columns(),
+            &.{},
+            .one,
+            false,
+        ) {
+            // No need to verify `id` presence as `fields.fieldInfos` will reject unknown fields.
+            return self.findBy(.{ .id = id });
         }
 
         pub fn findBy(self: Self, args: anytype) Statement(
@@ -470,7 +398,7 @@ fn Statement(
             .one,
             false,
         ) {
-            var statement: Statement(
+            const S = Statement(
                 .select,
                 Schema,
                 Table,
@@ -480,17 +408,117 @@ fn Statement(
                 &.{},
                 .one,
                 false,
-            ) = undefined;
-            _ = self.extend(@TypeOf(statement), &statement, args, .where);
+            );
+            var statement = self.extend(S, args, .where);
             const arg_fields = std.meta.fields(@TypeOf(args));
             statement.field_values[field_infos.len + arg_fields.len] = 1;
             statement.field_errors[field_infos.len + arg_fields.len] = null;
             return statement;
         }
 
+        pub fn update(self: Self, args: anytype) Statement(
+            .update,
+            Schema,
+            Table,
+            &.{},
+            &(fields.fieldInfos(@TypeOf(args), .update) ++ timestampsFields(Table, .update)),
+            &.{},
+            &.{},
+            .none,
+            false,
+        ) {
+            const S = Statement(
+                .update,
+                Schema,
+                Table,
+                &.{},
+                &(fields.fieldInfos(@TypeOf(args), .update) ++ timestampsFields(Table, .update)),
+                &.{},
+                &.{},
+                .none,
+                false,
+            );
+            return self.extend(S, args, .update);
+        }
+
+        pub fn insert(self: Self, args: anytype) Statement(
+            .insert,
+            Schema,
+            Table,
+            &.{},
+            &(fields.fieldInfos(@TypeOf(args), .insert) ++ timestampsFields(Table, .insert)),
+            &.{},
+            &.{},
+            .none,
+            false,
+        ) {
+            const S = Statement(
+                .insert,
+                Schema,
+                Table,
+                &.{},
+                &(fields.fieldInfos(@TypeOf(args), .insert) ++ timestampsFields(Table, .insert)),
+                &.{},
+                &.{},
+                .none,
+                false,
+            );
+            return self.extend(S, args, .insert);
+        }
+
+        pub fn delete(self: Self) Statement(
+            .delete,
+            Schema,
+            Table,
+            &.{},
+            &fields.fieldInfos(@TypeOf(.{}), .none),
+            &.{},
+            &.{},
+            .none,
+            false,
+        ) {
+            const S = Statement(
+                .delete,
+                Schema,
+                Table,
+                &.{},
+                &fields.fieldInfos(@TypeOf(.{}), .none),
+                &.{},
+                &.{},
+                .none,
+                false,
+            );
+            return self.extend(S, .{}, .none);
+        }
+
+        pub fn deleteAll(self: Self) Statement(
+            .delete_all,
+            Schema,
+            Table,
+            &.{},
+            &fields.fieldInfos(@TypeOf(.{}), .none),
+            &.{},
+            &.{},
+            .none,
+            false,
+        ) {
+            const S = Statement(
+                .delete_all,
+                Schema,
+                Table,
+                &.{},
+                &fields.fieldInfos(@TypeOf(.{}), .none),
+                &.{},
+                &.{},
+                .none,
+                false,
+            );
+            return self.extend(S, .{}, .none);
+        }
+
         /// Apply a `LIMIT` clause to the current statement.
         pub fn limit(self: Self, bound: usize) Statement(
-            query_type,
+            query_context,
             Schema,
             Table,
             relations,
@@ -500,8 +528,8 @@ fn Statement(
             result_context,
             false,
         ) {
-            var statement: Statement(
-                query_type,
+            const S = Statement(
+                query_context,
                 Schema,
                 Table,
                 relations,
@@ -510,13 +538,13 @@ fn Statement(
                 order_clauses,
                 result_context,
                 false,
-            ) = undefined;
-            return self.extend(@TypeOf(statement), &statement, .{bound}, .limit);
+            );
+            return self.extend(S, .{bound}, .limit);
         }
 
         /// Apply an `ORDER BY` clause to the current statement.
         pub fn orderBy(self: Self, comptime args: anytype) Statement(
-            query_type,
+            query_context,
             Schema,
             Table,
             relations,
@@ -526,8 +554,8 @@ fn Statement(
             result_context,
             false,
         ) {
-            var statement: Statement(
-                query_type,
+            const S = Statement(
+                query_context,
                 Schema,
                 Table,
                 relations,
@@ -536,8 +564,8 @@ fn Statement(
                 &translateOrderBy(Table, args),
                 result_context,
                 false,
-            ) = undefined;
-            return self.extend(@TypeOf(statement), &statement, .{}, .order);
+            );
+            return self.extend(S, .{}, .order);
         }
 
         pub fn relation(
@@ -545,7 +573,7 @@ fn Statement(
             comptime name: jetquery.relation.RelationsEnum(Table),
             comptime select_columns: []const jetquery.relation.ColumnsEnum(Schema, Table, name),
         ) Statement(
-            query_type,
+            query_context,
             Schema,
             Table,
             &.{jetquery.relation.Relation(
@@ -563,8 +591,8 @@ fn Statement(
             result_context,
             false,
         ) {
-            var statement: Statement(
-                query_type,
+            const S = Statement(
+                query_context,
                 Schema,
                 Table,
                 &.{jetquery.relation.Relation(
@@ -581,8 +609,8 @@ fn Statement(
                 order_clauses,
                 result_context,
                 false,
-            ) = undefined;
-            return self.extend(@TypeOf(statement), &statement, .{}, .none);
+            );
+            return self.extend(S, .{}, .none);
         }
 
         /// Execute the query's SQL with bind params using the provided repo.
@@ -605,7 +633,7 @@ fn Statement(
         }
 
         pub fn validateDelete(self: Self) !void {
-            if (query_type == .delete and !self.hasWhereClause()) return error.JetQueryUnsafeDelete;
+            if (query_context == .delete and !self.hasWhereClause()) return error.JetQueryUnsafeDelete;
         }
 
         fn hasWhereClause(self: Self) bool {
@@ -738,9 +766,9 @@ fn translateOrderBy(
 
 fn timestampsFields(
     Table: type,
-    comptime query_type: fields.FieldContext,
-) [timestampsSize(Table, query_type)]fields.FieldInfo {
-    return if (hasTimestamps(Table)) switch (query_type) {
+    comptime query_context: fields.FieldContext,
+) [timestampsSize(Table, query_context)]fields.FieldInfo {
+    return if (hasTimestamps(Table)) switch (query_context) {
         .update => .{
             fields.fieldInfo(.{
                 .name = "updated_at",
@@ -748,7 +776,7 @@ fn timestampsFields(
                 .default_value = null,
                 .is_comptime = false,
                 .alignment = @alignOf(usize),
-            }, query_type), // TODO
+            }, query_context),
         },
         .insert => .{
             fields.fieldInfo(.{
@@ -757,17 +785,17 @@ fn timestampsFields(
                 .default_value = null,
                 .is_comptime = false,
                 .alignment = @alignOf(usize),
-            }, query_type), // TODO
+            }, query_context),
             fields.fieldInfo(.{
                 .name = "updated_at",
                 .type = usize,
                 .default_value = null,
                 .is_comptime = false,
                 .alignment = @alignOf(usize),
-            }, query_type), // TODO
+            }, query_context),
         },
         else => @compileError(
-            "Timestamps detection not relevant for `" ++ @tagName(query_type) ++ "` query. (This is a bug).",
+            "Timestamps detection not relevant for `" ++ @tagName(query_context) ++ "` query. (This is a bug).",
         ),
     } else .{};
 }
@@ -777,14 +805,14 @@ fn hasTimestamps(Table: type) bool {
         @hasField(Table.Definition, jetquery.column_names.updated_at);
 }
 
-fn timestampsSize(Table: type, comptime query_type: fields.FieldContext) u2 {
+fn timestampsSize(Table: type, comptime query_context: fields.FieldContext) u2 {
     if (!hasTimestamps(Table)) return 0;
 
-    return switch (query_type) {
+    return switch (query_context) {
         .update => 1,
         .insert => 2,
         else => @compileError(
-            "Timestamps detection not relevant for `" ++ @tagName(query_type) ++ "` query. (This is a bug).",
+            "Timestamps detection not relevant for `" ++ @tagName(query_context) ++ "` query. (This is a bug).",
         ),
     };
 }
@@ -793,7 +821,7 @@ fn now() i64 {
     return std.time.microTimestamp();
 }
 
-fn validateQueryType(comptime initial: sql.QueryType, comptime attempted: sql.QueryType) void {
+fn validateQueryContext(comptime initial: sql.QueryContext, comptime attempted: sql.QueryContext) void {
     comptime {
         switch (initial) {
             attempted, .none => {},
@@ -804,5 +832,30 @@ fn validateQueryType(comptime initial: sql.QueryType, comptime attempted: sql.Qu
                 ));
             },
         }
+    }
+}
+
+fn updateTimestamps(
+    T: type,
+    statement: *T,
+    comptime field_infos: []const fields.FieldInfo,
+    comptime context: sql.QueryContext,
+) void {
+    switch (context) {
+        .update => {
+            const timestamp = now();
+            const index = field_infos.len - 1; // Guaranteed by `Statement.update()`
+            @field(statement.field_values, std.fmt.comptimePrint("{}", .{index})) = timestamp;
+            statement.field_errors[index] = null;
+        },
+        .insert => {
+            const timestamp = now();
+            const index = field_infos.len - 2; // Guaranteed by `Statement.insert()`
+            @field(statement.field_values, std.fmt.comptimePrint("{}", .{index})) = timestamp;
+            statement.field_errors[index] = null;
+            @field(statement.field_values, std.fmt.comptimePrint("{}", .{index + 1})) = timestamp;
+            statement.field_errors[index + 1] = null;
+        },
+        else => {},
     }
 }
