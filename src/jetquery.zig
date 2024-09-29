@@ -239,7 +239,7 @@ test "findBy" {
     , query.sql);
 }
 
-test "count(.all)" {
+test "count()" {
     const Schema = struct {
         pub const Cat = Table("cats", struct { id: i32, name: []const u8, paws: i32 }, .{});
     };
@@ -250,16 +250,34 @@ test "count(.all)" {
     , query.sql);
 }
 
-// test "count(.distinct)" {
-//     const Schema = struct {
-//         pub const Cat = Table("cats", struct { id: i32, name: []const u8, paws: i32 }, .{});
-//     };
-//     const query = Query(Schema, .Cat).where(.{ .name = "Hercules", .paws = 4 }).distinct(.{}).count();
-//
-//     try std.testing.expectEqualStrings(
-//         \\SELECT COUNT(DISTINCT *) FROM "cats" WHERE "cats"."name" = $1 AND "cats"."paws" = $2
-//     , query.sql);
-// }
+test "distinct().count()" {
+    const Schema = struct {
+        pub const Cat = Table("cats", struct { id: i32, name: []const u8, paws: i32 }, .{});
+    };
+    const query = Query(Schema, .Cat).where(.{ .name = "Hercules", .paws = 4 }).distinct(.{.name}).count();
+
+    try std.testing.expectEqualStrings(
+        \\SELECT COUNT(DISTINCT("cats"."name")) FROM "cats" WHERE "cats"."name" = $1 AND "cats"."paws" = $2
+    , query.sql);
+}
+
+test "nested distinct().count()" {
+    const Schema = struct {
+        pub const Cat = Table("cats", struct { id: i32, name: []const u8, paws: i32 }, .{});
+        pub const Human = Table(
+            "humans",
+            struct { cat_id: i32, name: []const u8 },
+            .{
+                .relations = .{ .cat = relation.belongsTo(.Cat, .{}) },
+            },
+        );
+    };
+    const query = Query(Schema, .Human).include(.cat, &.{}).where(.{ .name = "Bob" }).distinct(.{ .name, .{ .cat = .{.name} } }).count();
+
+    try std.testing.expectEqualStrings(
+        \\SELECT COUNT(DISTINCT("humans"."name", "cats"."name")) FROM "humans" INNER JOIN "cats" ON "humans"."cat_id" = "cats"."id" WHERE "humans"."name" = $1
+    , query.sql);
+}
 
 test "combined" {
     const Schema = struct {

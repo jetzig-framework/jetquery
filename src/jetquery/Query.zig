@@ -145,6 +145,7 @@ pub fn Query(Schema: type, comptime table_name: jetquery.DeclEnum(Schema)) type 
                 else
                     select_columns,
             )},
+            .initial = true,
         }) {
             return InitialStatement(Schema, Table).include(name, select_columns);
         }
@@ -181,7 +182,7 @@ fn StatementOptions(Table: type, comptime query_context: sql.QueryContext) type 
             .count => .one,
         },
         initial: bool = false,
-        distinct: bool = false,
+        distinct: ?[]const fields.distinct.DistinctColumn = null,
     };
 }
 
@@ -209,6 +210,7 @@ fn Statement(
             options.field_infos,
             options.columns,
             options.order_clauses,
+            options.distinct,
         ),
 
         pub const Definition = Table.Definition;
@@ -263,6 +265,7 @@ fn Statement(
             .field_infos = options.field_infos,
             .columns = if (select_columns.len == 0) Table.columns() else select_columns,
             .order_clauses = options.order_clauses,
+            .distinct = options.distinct,
             .result_context = if (options.initial) .many else options.result_context,
         }) {
             const S = Statement(.select, Schema, Table, .{
@@ -270,6 +273,7 @@ fn Statement(
                 .field_infos = options.field_infos,
                 .columns = if (select_columns.len == 0) Table.columns() else select_columns,
                 .order_clauses = options.order_clauses,
+                .distinct = options.distinct,
                 .result_context = if (options.initial) .many else options.result_context,
             });
             return self.extend(S, .{}, .none);
@@ -279,15 +283,17 @@ fn Statement(
         pub fn where(self: Self, args: anytype) Statement(query_context, Schema, Table, .{
             .relations = options.relations,
             .field_infos = options.field_infos ++ fields.fieldInfos(@TypeOf(args), .where),
-            .columns = options.columns,
+            .columns = if (options.initial) Table.columns() else options.columns,
             .order_clauses = options.order_clauses,
+            .distinct = options.distinct,
             .result_context = options.result_context,
         }) {
             const S = Statement(query_context, Schema, Table, .{
                 .relations = options.relations,
                 .field_infos = options.field_infos ++ fields.fieldInfos(@TypeOf(args), .where),
-                .columns = options.columns,
+                .columns = if (options.initial) Table.columns() else options.columns,
                 .order_clauses = options.order_clauses,
+                .distinct = options.distinct,
                 .result_context = options.result_context,
             });
             return self.extend(S, args, .where);
@@ -329,10 +335,12 @@ fn Statement(
         pub fn count(self: Self) Statement(.count, Schema, Table, .{
             .relations = options.relations,
             .field_infos = options.field_infos,
+            .distinct = options.distinct,
         }) {
             const S = Statement(.count, Schema, Table, .{
                 .relations = options.relations,
                 .field_infos = options.field_infos,
+                .distinct = options.distinct,
             });
             return self.extend(S, .{}, .none);
         }
@@ -343,7 +351,7 @@ fn Statement(
             .columns = options.columns,
             .order_clauses = options.order_clauses,
             .result_context = options.result_context,
-            .distinct = true,
+            .distinct = &fields.distinct.translate(Table, options.columns, options.relations, args),
         }) {
             const S = Statement(query_context, Schema, Table, .{
                 .relations = options.relations,
@@ -351,9 +359,9 @@ fn Statement(
                 .columns = options.columns,
                 .order_clauses = options.order_clauses,
                 .result_context = options.result_context,
-                .distinct = true,
+                .distinct = &fields.distinct.translate(Table, options.columns, options.relations, args),
             });
-            _ = args;
+
             return self.extend(S, .{}, .none);
         }
         pub fn update(self: Self, args: anytype) Statement(.update, Schema, Table, .{
@@ -452,6 +460,7 @@ fn Statement(
             .columns = options.columns,
             .order_clauses = options.order_clauses,
             .result_context = options.result_context,
+            .initial = options.initial,
         }) {
             const S = Statement(query_context, Schema, Table, .{
                 .relations = options.relations ++ .{jetquery.relation.Relation(
@@ -467,6 +476,7 @@ fn Statement(
                 .columns = options.columns,
                 .order_clauses = options.order_clauses,
                 .result_context = options.result_context,
+                .initial = options.initial,
             });
             return self.extend(S, .{}, .none);
         }

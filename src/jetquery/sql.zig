@@ -46,13 +46,14 @@ pub fn render(
     comptime field_infos: []const fields.FieldInfo,
     comptime columns: []const std.meta.FieldEnum(Table.Definition),
     comptime order_clauses: []const OrderClause(Table),
+    comptime distinct: ?[]const fields.distinct.DistinctColumn,
 ) []const u8 {
     return switch (query_context) {
         .select => renderSelect(Table, Adapter, relations, columns, field_infos, order_clauses),
         .update => renderUpdate(Table, Adapter, field_infos),
         .insert => renderInsert(Table, Adapter, field_infos),
         .delete, .delete_all => renderDelete(Table, Adapter, field_infos, query_context),
-        .count => renderCount(Table, Adapter, relations, field_infos),
+        .count => renderCount(Table, Adapter, relations, field_infos, distinct),
         .none => "",
     };
 }
@@ -142,9 +143,10 @@ fn renderCount(
     Adapter: type,
     comptime relations: []const type,
     comptime field_infos: []const fields.FieldInfo,
+    comptime distinct: ?[]const fields.distinct.DistinctColumn,
 ) []const u8 {
     comptime {
-        const count_column = " " ++ Adapter.countSql();
+        const count_column = " " ++ Adapter.countSql(distinct);
         const from = std.fmt.comptimePrint(" FROM {s}", .{Adapter.identifier(Table.table_name)});
         const joins = renderJoins(Adapter, Table, relations);
 
@@ -241,16 +243,16 @@ fn renderJoins(Adapter: type, Table: type, relations: []const type) []const u8 {
 
 fn renderInnerJoin(Adapter: type, Table: type, Relation: type) []const u8 {
     const PrimaryKey = std.meta.FieldEnum(Table.Definition);
-    const ForeignKey = std.meta.FieldEnum(Table.Definition);
+    const ForeignKey = std.meta.FieldEnum(Relation.Source.Definition);
 
     const primary_key: PrimaryKey = std.enums.nameCast(
         PrimaryKey,
-        Relation.options.primary_key orelse "id",
+        Relation.options.primary_key orelse Relation.relation_name ++ "_id",
     );
 
     const foreign_key: ForeignKey = std.enums.nameCast(
         ForeignKey,
-        Relation.options.primary_key orelse Relation.relation_name ++ "_id",
+        Relation.options.foreign_key orelse "id",
     );
 
     return Adapter.innerJoinSql(

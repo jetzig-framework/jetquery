@@ -1,4 +1,5 @@
 const jetquery = @import("../../jetquery.zig");
+const fields = @import("../fields.zig");
 
 const NullAdapter = @This();
 
@@ -41,7 +42,8 @@ pub fn notNullSql() []const u8 {
     return "";
 }
 
-pub fn countSql() []const u8 {
+pub fn countSql(comptime distinct: ?[]const fields.distinct.DistinctColumn) []const u8 {
+    _ = distinct;
     return "";
 }
 

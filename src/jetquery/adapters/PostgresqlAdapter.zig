@@ -218,8 +218,37 @@ pub fn orderSql(Table: type, comptime order_clause: sql.OrderClause(Table)) []co
     );
 }
 
-pub fn countSql() []const u8 {
-    return "COUNT(*)";
+pub fn countSql(comptime distinct: ?[]const fields.distinct.DistinctColumn) []const u8 {
+    // TODO: Move some of this back into `sql.zig`.
+    return if (comptime distinct) |distinct_columns| blk: {
+        const template = "{s}.{s}{s}";
+        var size: usize = 0;
+        for (distinct_columns, 0..) |column, index| {
+            size += std.fmt.count(
+                template,
+                .{
+                    identifier(column.table.table_name),
+                    identifier(column.name),
+                    if (index + 1 < distinct_columns.len) ", " else "",
+                },
+            );
+        }
+        var buf: [size]u8 = undefined;
+        var cursor: usize = 0;
+        for (distinct_columns, 0..) |column, index| {
+            const column_sql = std.fmt.comptimePrint(
+                template,
+                .{
+                    identifier(column.table.table_name),
+                    identifier(column.name),
+                    if (index + 1 < distinct_columns.len) ", " else "",
+                },
+            );
+            @memcpy(buf[cursor .. cursor + column_sql.len], column_sql);
+            cursor += column_sql.len;
+        }
+        break :blk std.fmt.comptimePrint("COUNT(DISTINCT({s}))", .{buf});
+    } else "COUNT(*)";
 }
 
 pub fn innerJoinSql(
@@ -237,9 +266,9 @@ pub fn innerJoinSql(
         .{
             JoinTable.table_name,
             Table.table_name,
-            foreign_key,
-            JoinTable.table_name,
             primary_key,
+            JoinTable.table_name,
+            foreign_key,
         },
     );
 }

@@ -78,9 +78,12 @@ pub const Adapter = union(enum) {
     }
 
     /// SQL fragment used when generating a `COUNT` column, e.g. `COUNT(*)`
-    pub fn countSql(self: Adapter) []const u8 {
+    pub fn countSql(
+        self: Adapter,
+        comptime distinct: ?[]const jetquery.fields.distinct.DistinctColumn,
+    ) []const u8 {
         return switch (self) {
-            inline else => |adapter| @TypeOf(adapter).countSql(),
+            inline else => |adapter| @TypeOf(adapter).countSql(distinct),
         };
     }
 

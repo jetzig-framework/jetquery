@@ -2,6 +2,8 @@ const std = @import("std");
 
 const jetcommon = @import("jetcommon");
 
+pub const distinct = @import("fields/distinct.zig");
+
 pub const FieldContext = enum { where, update, insert, limit, order, none };
 
 pub const FieldInfo = struct {
