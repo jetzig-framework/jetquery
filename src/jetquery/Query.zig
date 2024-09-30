@@ -4,7 +4,6 @@ const jetcommon = @import("jetcommon");
 
 const jetquery = @import("../jetquery.zig");
 
-const fields = @import("fields.zig");
 const coercion = @import("coercion.zig");
 const sql = @import("sql.zig");
 
@@ -24,16 +23,14 @@ pub fn Query(Schema: type, comptime table_name: jetquery.DeclEnum(Schema)) type 
 
         /// Create a `SELECT` query with the specified `columns`, e.g.:
         /// ```zig
-        /// Query(Schema, .MyTable).select(&.{ .foo, .bar }).where(.{ .foo = "qux" });
+        /// Query(Schema, .MyTable).select(.{ .foo, .bar }).where(.{ .foo = "qux" });
         /// ```
         /// Pass an empty `columns` array to select all columns:
         /// ```zig
-        /// Query(Schema, .MyTable).select(&.{}).where(.{ .foo = "qux" });
+        /// Query(Schema, .MyTable).select(.{}).where(.{ .foo = "qux" });
         /// ```
-        pub fn select(
-            comptime columns: []const std.meta.FieldEnum(Table.Definition),
-        ) Statement(.select, Schema, Table, .{
-            .columns = if (columns.len == 0) Table.columns() else columns,
+        pub fn select(comptime columns: anytype) Statement(.select, Schema, Table, .{
+            .columns = &jetquery.columns.translate(Table, &.{}, columns),
         }) {
             return InitialStatement(Schema, Table).select(columns);
         }
@@ -44,11 +41,11 @@ pub fn Query(Schema: type, comptime table_name: jetquery.DeclEnum(Schema)) type 
         /// ```
         /// Short-hand for:
         /// ```zig
-        /// Query(Schema, .MyTable).select(&.{}).where(.{ .foo = "bar" })
+        /// Query(Schema, .MyTable).select(.{}).where(.{ .foo = "bar" })
         /// ```
         pub fn where(args: anytype) Statement(.select, Schema, Table, .{
-            .field_infos = &fields.fieldInfos(@TypeOf(args), .where),
-            .columns = Table.columns(),
+            .field_infos = &jetquery.fields.fieldInfos(@TypeOf(args), .where),
+            .columns = &Table.columns(),
             .default_select = true,
         }) {
             return InitialStatement(Schema, Table).where(args);
@@ -59,7 +56,7 @@ pub fn Query(Schema: type, comptime table_name: jetquery.DeclEnum(Schema)) type 
         /// Query(Schema, .MyTable).update(.{ .foo = "bar", .baz = "qux" }).where(.{ .quux = "corge" });
         /// ```
         pub fn update(args: anytype) Statement(.update, Schema, Table, .{
-            .field_infos = &(fields.fieldInfos(@TypeOf(args), .update) ++ timestampsFields(Table, .update)),
+            .field_infos = &(jetquery.fields.fieldInfos(@TypeOf(args), .update) ++ timestampsFields(Table, .update)),
         }) {
             return InitialStatement(Schema, Table).update(args);
         }
@@ -69,7 +66,7 @@ pub fn Query(Schema: type, comptime table_name: jetquery.DeclEnum(Schema)) type 
         /// Query(Schema, .MyTable).insert(.{ .foo = "bar", .baz = "qux" });
         /// ```
         pub fn insert(args: anytype) Statement(.insert, Schema, Table, .{
-            .field_infos = &(fields.fieldInfos(@TypeOf(args), .insert) ++ timestampsFields(Table, .insert)),
+            .field_infos = &(jetquery.fields.fieldInfos(@TypeOf(args), .insert) ++ timestampsFields(Table, .insert)),
         }) {
             return InitialStatement(Schema, Table).insert(args);
         }
@@ -99,12 +96,12 @@ pub fn Query(Schema: type, comptime table_name: jetquery.DeclEnum(Schema)) type 
         /// ```
         /// Short-hand for:
         /// ```zig
-        /// Query(Schema, .MyTable).select(&.{}).where(.{ .id = id }).limit(1);
+        /// Query(Schema, .MyTable).select(.{}).where(.{ .id = id }).limit(1);
         /// ```
         pub fn find(id: anytype) Statement(.select, Schema, Table, .{
-            .field_infos = &(fields.fieldInfos(@TypeOf(.{ .id = id }), .where) ++
-                fields.fieldInfos(@TypeOf(.{1}), .limit)),
-            .columns = Table.columns(),
+            .field_infos = &(jetquery.fields.fieldInfos(@TypeOf(.{ .id = id }), .where) ++
+                jetquery.fields.fieldInfos(@TypeOf(.{1}), .limit)),
+            .columns = &Table.columns(),
             .result_context = .one,
         }) {
             return InitialStatement(Schema, Table).find(id);
@@ -116,12 +113,12 @@ pub fn Query(Schema: type, comptime table_name: jetquery.DeclEnum(Schema)) type 
         /// ```
         /// Short-hand for:
         /// ```zig
-        /// Query(Schema, .MyTable).select(&.{}).where(args).limit(1);
+        /// Query(Schema, .MyTable).select(.{}).where(args).limit(1);
         /// ```
         pub fn findBy(args: anytype) Statement(.select, Schema, Table, .{
-            .field_infos = &(fields.fieldInfos(@TypeOf(args), .where) ++
-                fields.fieldInfos(@TypeOf(.{1}), .limit)),
-            .columns = Table.columns(),
+            .field_infos = &(jetquery.fields.fieldInfos(@TypeOf(args), .where) ++
+                jetquery.fields.fieldInfos(@TypeOf(.{1}), .limit)),
+            .columns = &Table.columns(),
             .result_context = .one,
         }) {
             return InitialStatement(Schema, Table).findBy(args);
@@ -135,17 +132,11 @@ pub fn Query(Schema: type, comptime table_name: jetquery.DeclEnum(Schema)) type 
         /// ```
         pub fn include(
             comptime name: jetquery.relation.RelationsEnum(Table),
-            comptime select_columns: []const jetquery.relation.ColumnsEnum(Schema, Table, name),
+            comptime select_columns: anytype,
         ) Statement(.none, Schema, Table, .{
-            .relations = &.{jetquery.relation.Relation(
-                Schema,
-                Table,
-                name,
-                if (select_columns.len == 0)
-                    std.enums.values(jetquery.relation.ColumnsEnum(Schema, Table, name))
-                else
-                    select_columns,
-            )},
+            .relations = &.{
+                jetquery.relation.Relation(Schema, Table, name, select_columns),
+            },
             .default_select = true,
         }) {
             return InitialStatement(Schema, Table).include(name, select_columns);
@@ -166,7 +157,7 @@ pub fn Query(Schema: type, comptime table_name: jetquery.DeclEnum(Schema)) type 
             Schema,
             Table,
             .{
-                .distinct = &fields.distinct.translate(Table, &.{}, columns),
+                .distinct = &jetquery.columns.translate(Table, &.{}, columns),
                 .result_context = .many,
             },
         ) {
@@ -193,19 +184,19 @@ fn SchemaTable(Schema: type, comptime name: jetquery.DeclEnum(Schema)) type {
     return @field(Schema, @tagName(name));
 }
 
-fn StatementOptions(Table: type, comptime query_context: sql.QueryContext) type {
+fn StatementOptions(comptime query_context: sql.QueryContext) type {
     return struct {
         relations: []const type = &.{},
-        field_infos: []const fields.FieldInfo = &.{},
-        columns: []const std.meta.FieldEnum(Table.Definition) = &.{},
-        order_clauses: []const sql.OrderClause(Table) = &.{},
+        field_infos: []const jetquery.fields.FieldInfo = &.{},
+        columns: []const jetquery.columns.Column = &.{},
+        order_clauses: []const sql.OrderClause = &.{},
         result_context: ResultContext = switch (query_context) {
             .select => .many,
             .update, .insert, .delete, .delete_all, .none => .none,
             .count => .one,
         },
         default_select: bool = false,
-        distinct: ?[]const fields.distinct.DistinctColumn = null,
+        distinct: ?[]const jetquery.columns.Column = null,
     };
 }
 
@@ -213,17 +204,17 @@ fn Statement(
     comptime query_context: sql.QueryContext,
     Schema: type,
     Table: type,
-    comptime options: StatementOptions(Table, query_context),
+    comptime options: StatementOptions(query_context),
 ) type {
     return struct {
-        field_values: fields.FieldValues(Table, options.relations, options.field_infos),
+        field_values: jetquery.fields.FieldValues(Table, options.relations, options.field_infos),
         limit_bound: ?usize = null,
         field_errors: [options.field_infos.len]?anyerror,
 
         comptime query_context: sql.QueryContext = query_context,
-        comptime field_infos: []const fields.FieldInfo = options.field_infos,
-        comptime columns: []const std.meta.FieldEnum(Table.Definition) = options.columns,
-        comptime order_clauses: []const sql.OrderClause(Table) = options.order_clauses,
+        comptime field_infos: []const jetquery.fields.FieldInfo = options.field_infos,
+        comptime columns: []const jetquery.columns.Column = options.columns,
+        comptime order_clauses: []const sql.OrderClause = options.order_clauses,
 
         comptime sql: []const u8 = jetquery.sql.render(
             jetquery.adapters.Type(jetquery.config.database.adapter),
@@ -247,20 +238,16 @@ fn Statement(
             self: Self,
             S: type,
             args: anytype,
-            comptime context: fields.FieldContext,
+            comptime context: jetquery.fields.FieldContext,
         ) S {
             validateQueryContext(self.query_context, query_context);
 
             var statement: S = undefined;
 
-            inline for (0..options.field_infos.len) |index| {
+            inline for (0..self.field_infos.len) |index| {
                 const value = self.field_values[index];
                 @field(statement.field_values, std.fmt.comptimePrint("{}", .{index})) = value;
                 statement.field_errors[index] = self.field_errors[index];
-            }
-
-            if (comptime hasTimestamps(Table)) {
-                updateTimestamps(S, &statement, options.field_infos, query_context);
             }
 
             const arg_fields = std.meta.fields(@TypeOf(args));
@@ -270,11 +257,15 @@ fn Statement(
                 const coerced = coercion.coerce(
                     Table,
                     options.relations,
-                    fields.fieldInfo(field, context),
+                    jetquery.fields.fieldInfo(field, context),
                     value,
                 );
                 @field(statement.field_values, std.fmt.comptimePrint("{}", .{index})) = coerced.value;
                 statement.field_errors[index] = coerced.err;
+            }
+
+            if (comptime hasTimestamps(Table)) {
+                updateTimestamps(S, &statement, statement.field_infos, statement.query_context);
             }
 
             return statement;
@@ -282,11 +273,11 @@ fn Statement(
 
         pub fn select(
             self: Self,
-            comptime select_columns: []const std.meta.FieldEnum(Table.Definition),
+            comptime select_columns: anytype,
         ) Statement(.select, Schema, Table, .{
             .relations = options.relations,
             .field_infos = options.field_infos,
-            .columns = if (select_columns.len == 0) Table.columns() else select_columns,
+            .columns = &jetquery.columns.translate(Table, options.relations, select_columns),
             .order_clauses = options.order_clauses,
             .distinct = options.distinct,
             .result_context = if (options.default_select) .many else options.result_context,
@@ -294,7 +285,7 @@ fn Statement(
             const S = Statement(.select, Schema, Table, .{
                 .relations = options.relations,
                 .field_infos = options.field_infos,
-                .columns = if (select_columns.len == 0) Table.columns() else select_columns,
+                .columns = &jetquery.columns.translate(Table, options.relations, select_columns),
                 .order_clauses = options.order_clauses,
                 .distinct = options.distinct,
                 .result_context = if (options.default_select) .many else options.result_context,
@@ -312,8 +303,8 @@ fn Statement(
             Table,
             .{
                 .relations = options.relations,
-                .field_infos = options.field_infos ++ fields.fieldInfos(@TypeOf(args), .where),
-                .columns = if (options.default_select) Table.columns() else options.columns,
+                .field_infos = options.field_infos ++ jetquery.fields.fieldInfos(@TypeOf(args), .where),
+                .columns = if (options.default_select) &Table.columns() else options.columns,
                 .order_clauses = options.order_clauses,
                 .distinct = options.distinct,
                 .result_context = switch (options.result_context) {
@@ -328,8 +319,8 @@ fn Statement(
                 else => |tag| tag,
             }, Schema, Table, .{
                 .relations = options.relations,
-                .field_infos = options.field_infos ++ fields.fieldInfos(@TypeOf(args), .where),
-                .columns = if (options.default_select) Table.columns() else options.columns,
+                .field_infos = options.field_infos ++ jetquery.fields.fieldInfos(@TypeOf(args), .where),
+                .columns = if (options.default_select) &Table.columns() else options.columns,
                 .order_clauses = options.order_clauses,
                 .distinct = options.distinct,
                 .result_context = switch (options.result_context) {
@@ -342,29 +333,29 @@ fn Statement(
         }
 
         pub fn find(self: Self, id: anytype) Statement(.select, Schema, Table, .{
-            .field_infos = &(fields.fieldInfos(@TypeOf(.{ .id = id }), .where) ++
-                fields.fieldInfos(@TypeOf(.{1}), .limit)),
-            .columns = if (options.columns.len == 0) Table.columns() else options.columns,
+            .field_infos = &(jetquery.fields.fieldInfos(@TypeOf(.{ .id = id }), .where) ++
+                jetquery.fields.fieldInfos(@TypeOf(.{1}), .limit)),
+            .columns = if (options.columns.len == 0) &Table.columns() else options.columns,
             .result_context = .one,
         }) {
-            // No need to verify `id` presence as `fields.fieldInfos` will reject unknown fields.
+            // No need to verify `id` presence as `jetquery.fields.fieldInfos` will reject unknown fields.
             return self.findBy(.{ .id = id });
         }
 
         pub fn findBy(self: Self, args: anytype) Statement(.select, Schema, Table, .{
             .relations = options.relations,
             .field_infos = options.field_infos ++
-                fields.fieldInfos(@TypeOf(args), .where) ++
-                fields.fieldInfos(@TypeOf(.{1}), .limit),
-            .columns = if (options.columns.len == 0) Table.columns() else options.columns,
+                jetquery.fields.fieldInfos(@TypeOf(args), .where) ++
+                jetquery.fields.fieldInfos(@TypeOf(.{1}), .limit),
+            .columns = if (options.columns.len == 0) &Table.columns() else options.columns,
             .result_context = .one,
         }) {
             const S = Statement(.select, Schema, Table, .{
                 .relations = options.relations,
                 .field_infos = options.field_infos ++
-                    fields.fieldInfos(@TypeOf(args), .where) ++
-                    fields.fieldInfos(@TypeOf(.{1}), .limit),
-                .columns = if (options.columns.len == 0) Table.columns() else options.columns,
+                    jetquery.fields.fieldInfos(@TypeOf(args), .where) ++
+                    jetquery.fields.fieldInfos(@TypeOf(.{1}), .limit),
+                .columns = if (options.columns.len == 0) &Table.columns() else options.columns,
                 .result_context = .one,
             });
             var statement = self.extend(S, args, .where);
@@ -393,7 +384,7 @@ fn Statement(
             .columns = &.{},
             .order_clauses = options.order_clauses,
             .result_context = .many,
-            .distinct = &fields.distinct.translate(Table, options.relations, args),
+            .distinct = &jetquery.columns.translate(Table, options.relations, args),
         }) {
             const S = Statement(.select, Schema, Table, .{
                 .relations = options.relations,
@@ -401,7 +392,7 @@ fn Statement(
                 .columns = &.{},
                 .order_clauses = options.order_clauses,
                 .result_context = .many,
-                .distinct = &fields.distinct.translate(Table, options.relations, args),
+                .distinct = &jetquery.columns.translate(Table, options.relations, args),
             });
             if (!options.default_select) @compileError(
                 std.fmt.comptimePrint(
@@ -414,27 +405,29 @@ fn Statement(
             return self.extend(S, .{}, .none);
         }
         pub fn update(self: Self, args: anytype) Statement(.update, Schema, Table, .{
-            .field_infos = &(fields.fieldInfos(@TypeOf(args), .update) ++ timestampsFields(Table, .update)),
+            .field_infos = &(jetquery.fields.fieldInfos(@TypeOf(args), .update) ++
+                timestampsFields(Table, .update)),
         }) {
             const S = Statement(.update, Schema, Table, .{
-                .field_infos = &(fields.fieldInfos(@TypeOf(args), .update) ++ timestampsFields(Table, .update)),
+                .field_infos = &(jetquery.fields.fieldInfos(@TypeOf(args), .update) ++
+                    timestampsFields(Table, .update)),
             });
             return self.extend(S, args, .update);
         }
 
         pub fn insert(self: Self, args: anytype) Statement(.insert, Schema, Table, .{
-            .field_infos = &(fields.fieldInfos(@TypeOf(args), .insert) ++
+            .field_infos = &(jetquery.fields.fieldInfos(@TypeOf(args), .insert) ++
                 timestampsFields(Table, .insert)),
         }) {
             const S = Statement(.insert, Schema, Table, .{
-                .field_infos = &(fields.fieldInfos(@TypeOf(args), .insert) ++
+                .field_infos = &(jetquery.fields.fieldInfos(@TypeOf(args), .insert) ++
                     timestampsFields(Table, .insert)),
             });
             return self.extend(S, args, .insert);
         }
 
         pub fn delete(self: Self) Statement(.delete, Schema, Table, .{
-            .field_infos = &fields.fieldInfos(@TypeOf(.{}), .none),
+            .field_infos = &jetquery.fields.fieldInfos(@TypeOf(.{}), .none),
         }) {
             // TODO: Add support for `DELETE ... USING ...`
             if (comptime options.relations.len != 0) @compileError(
@@ -442,7 +435,7 @@ fn Statement(
                     "This error occurred to prevent accidential deletion of potentially unexpected behaviour.",
             );
             const S = Statement(.delete, Schema, Table, .{
-                .field_infos = &fields.fieldInfos(@TypeOf(.{}), .none),
+                .field_infos = &jetquery.fields.fieldInfos(@TypeOf(.{}), .none),
             });
             return self.extend(S, .{}, .none);
         }
@@ -459,14 +452,14 @@ fn Statement(
 
         pub fn limit(self: Self, bound: usize) Statement(query_context, Schema, Table, .{
             .relations = options.relations,
-            .field_infos = options.field_infos ++ fields.fieldInfos(@TypeOf(.{bound}), .limit),
+            .field_infos = options.field_infos ++ jetquery.fields.fieldInfos(@TypeOf(.{bound}), .limit),
             .columns = options.columns,
             .order_clauses = options.order_clauses,
             .result_context = options.result_context,
         }) {
             const S = Statement(query_context, Schema, Table, .{
                 .relations = options.relations,
-                .field_infos = options.field_infos ++ fields.fieldInfos(@TypeOf(.{bound}), .limit),
+                .field_infos = options.field_infos ++ jetquery.fields.fieldInfos(@TypeOf(.{bound}), .limit),
                 .columns = options.columns,
                 .order_clauses = options.order_clauses,
                 .result_context = options.result_context,
@@ -494,17 +487,10 @@ fn Statement(
         pub fn include(
             self: Self,
             comptime name: jetquery.relation.RelationsEnum(Table),
-            comptime select_columns: []const jetquery.relation.ColumnsEnum(Schema, Table, name),
+            comptime select_columns: anytype,
         ) Statement(query_context, Schema, Table, .{
-            .relations = options.relations ++ .{jetquery.relation.Relation(
-                Schema,
-                Table,
-                name,
-                if (select_columns.len == 0)
-                    std.enums.values(jetquery.relation.ColumnsEnum(Schema, Table, name))
-                else
-                    select_columns,
-            )},
+            .relations = options.relations ++
+                .{jetquery.relation.Relation(Schema, Table, name, select_columns)},
             .field_infos = options.field_infos,
             .columns = options.columns,
             .order_clauses = options.order_clauses,
@@ -512,15 +498,8 @@ fn Statement(
             .default_select = options.default_select,
         }) {
             const S = Statement(query_context, Schema, Table, .{
-                .relations = options.relations ++ .{jetquery.relation.Relation(
-                    Schema,
-                    Table,
-                    name,
-                    if (select_columns.len == 0)
-                        std.enums.values(jetquery.relation.ColumnsEnum(Schema, Table, name))
-                    else
-                        select_columns,
-                )},
+                .relations = options.relations ++
+                    .{jetquery.relation.Relation(Schema, Table, name, select_columns)},
                 .field_infos = options.field_infos,
                 .columns = options.columns,
                 .order_clauses = options.order_clauses,
@@ -538,7 +517,7 @@ fn Statement(
             return try repo.execute(self);
         }
 
-        pub fn values(self: Self) fields.FieldValues(Table, options.relations, options.field_infos) {
+        pub fn values(self: Self) jetquery.fields.FieldValues(Table, options.relations, options.field_infos) {
             return self.field_values;
         }
 
@@ -564,8 +543,8 @@ fn Statement(
                 var column_infos: [totalColumnLen()]sql.ColumnInfo = undefined;
                 for (options.columns, 0..) |column, index| {
                     column_infos[index] = .{
-                        .name = @tagName(column),
-                        .type = std.meta.FieldType(Table.Definition, column),
+                        .name = column.name,
+                        .type = column.type,
                         .index = index,
                         .relation = null,
                     };
@@ -574,8 +553,8 @@ fn Statement(
                 for (options.relations) |Relation| {
                     for (Relation.select_columns, start..) |column, index| {
                         column_infos[index] = .{
-                            .name = @tagName(column),
-                            .type = std.meta.FieldType(Relation.Source.Definition, column),
+                            .name = column.name,
+                            .type = column.type,
                             .index = index,
                             .relation = Relation,
                         };
@@ -598,13 +577,12 @@ fn Statement(
                 var base_fields: [options.columns.len]std.builtin.Type.StructField = undefined;
 
                 for (options.columns, 0..) |column, index| {
-                    const T = std.meta.fieldInfo(Table.Definition, column).type;
                     base_fields[index] = .{
-                        .name = @tagName(column),
-                        .type = T,
+                        .name = column.name ++ "",
+                        .type = column.type,
                         .default_value = null,
                         .is_comptime = false,
-                        .alignment = @alignOf(T),
+                        .alignment = @alignOf(column.type),
                     };
                 }
 
@@ -612,21 +590,22 @@ fn Statement(
                 for (options.relations, 0..) |Relation, relation_index| {
                     var relation_fields: [Relation.select_columns.len]std.builtin.Type.StructField = undefined;
                     for (Relation.select_columns, 0..) |column, index| {
-                        const T = std.meta.FieldType(Relation.Source.Definition, column);
                         relation_fields[index] = .{
-                            .name = @tagName(column),
-                            .type = T,
+                            .name = column.name ++ "",
+                            .type = column.type,
                             .default_value = null,
                             .is_comptime = false,
-                            .alignment = @alignOf(T),
+                            .alignment = @alignOf(column.type),
                         };
                     }
+
                     const RT = @Type(.{ .@"struct" = .{
                         .layout = .auto,
                         .fields = &relation_fields,
                         .decls = &.{},
                         .is_tuple = false,
                     } });
+
                     relations_fields[relation_index] = .{
                         .name = Relation.relation_name,
                         .type = RT,
@@ -671,14 +650,13 @@ fn Statement(
 fn translateOrderBy(
     Table: type,
     comptime args: anytype,
-) [std.meta.fields(@TypeOf(args)).len]sql.OrderClause(Table) {
+) [std.meta.fields(@TypeOf(args)).len]sql.OrderClause {
     comptime {
-        var clauses: [std.meta.fields(@TypeOf(args)).len]sql.OrderClause(Table) = undefined;
-        const Columns = std.meta.FieldEnum(Table.Definition);
+        var clauses: [std.meta.fields(@TypeOf(args)).len]sql.OrderClause = undefined;
 
         for (std.meta.fields(@TypeOf(args)), 0..) |field, index| {
             clauses[index] = .{
-                .column = std.enums.nameCast(Columns, field.name),
+                .column = Table.column(field.name),
                 .direction = std.enums.nameCast(sql.OrderDirection, @tagName(@field(args, field.name))),
             };
         }
@@ -688,33 +666,33 @@ fn translateOrderBy(
 
 fn timestampsFields(
     Table: type,
-    comptime query_context: fields.FieldContext,
-) [timestampsSize(Table, query_context)]fields.FieldInfo {
+    comptime query_context: jetquery.fields.FieldContext,
+) [timestampsSize(Table, query_context)]jetquery.fields.FieldInfo {
     // TODO: Tidy this up a bit to remove all the repetition
-    return if (hasTimestamps(Table)) switch (query_context) {
+    return if (comptime hasTimestamps(Table)) switch (query_context) {
         .update => .{
-            fields.fieldInfo(.{
+            jetquery.fields.fieldInfo(.{
                 .name = "updated_at",
-                .type = usize,
+                .type = i64,
                 .default_value = null,
                 .is_comptime = false,
-                .alignment = @alignOf(usize),
+                .alignment = @alignOf(i64),
             }, query_context),
         },
         .insert => .{
-            fields.fieldInfo(.{
+            jetquery.fields.fieldInfo(.{
                 .name = "created_at",
-                .type = usize,
+                .type = i64,
                 .default_value = null,
                 .is_comptime = false,
-                .alignment = @alignOf(usize),
+                .alignment = @alignOf(i64),
             }, query_context),
-            fields.fieldInfo(.{
+            jetquery.fields.fieldInfo(.{
                 .name = "updated_at",
-                .type = usize,
+                .type = i64,
                 .default_value = null,
                 .is_comptime = false,
-                .alignment = @alignOf(usize),
+                .alignment = @alignOf(i64),
             }, query_context),
         },
         else => @compileError(
@@ -724,11 +702,11 @@ fn timestampsFields(
 }
 
 fn hasTimestamps(Table: type) bool {
-    return @hasField(Table.Definition, jetquery.column_names.created_at) and
-        @hasField(Table.Definition, jetquery.column_names.updated_at);
+    return @hasField(Table.Definition, jetquery.default_column_names.created_at) and
+        @hasField(Table.Definition, jetquery.default_column_names.updated_at);
 }
 
-fn timestampsSize(Table: type, comptime query_context: fields.FieldContext) u2 {
+fn timestampsSize(Table: type, comptime query_context: jetquery.fields.FieldContext) u2 {
     if (!hasTimestamps(Table)) return 0;
 
     return switch (query_context) {
@@ -768,23 +746,31 @@ fn validateQueryContext(comptime initial: sql.QueryContext, comptime attempted: 
 fn updateTimestamps(
     T: type,
     statement: *T,
-    comptime field_infos: []const fields.FieldInfo,
+    comptime field_infos: []const jetquery.fields.FieldInfo,
     comptime context: sql.QueryContext,
 ) void {
-    switch (context) {
+    _ = field_infos;
+    switch (comptime context) {
         .update => {
             const timestamp = now();
-            const index = field_infos.len - 1; // Guaranteed by `Statement.update()`
-            @field(statement.field_values, std.fmt.comptimePrint("{}", .{index})) = timestamp;
-            statement.field_errors[index] = null;
+            inline for (statement.field_infos, 0..) |field_info, index| {
+                if (comptime std.mem.eql(u8, field_info.name, jetquery.default_column_names.updated_at)) {
+                    @field(statement.field_values, std.fmt.comptimePrint("{}", .{index})) = timestamp;
+                    statement.field_errors[index] = null;
+                }
+            }
         },
         .insert => {
             const timestamp = now();
-            const index = field_infos.len - 2; // Guaranteed by `Statement.insert()`
-            @field(statement.field_values, std.fmt.comptimePrint("{}", .{index})) = timestamp;
-            statement.field_errors[index] = null;
-            @field(statement.field_values, std.fmt.comptimePrint("{}", .{index + 1})) = timestamp;
-            statement.field_errors[index + 1] = null;
+            inline for (statement.field_infos, 0..) |field_info, index| {
+                if (comptime std.mem.eql(u8, field_info.name, jetquery.default_column_names.updated_at)) {
+                    @field(statement.field_values, std.fmt.comptimePrint("{}", .{index})) = timestamp;
+                    statement.field_errors[index] = null;
+                } else if (comptime std.mem.eql(u8, field_info.name, jetquery.default_column_names.created_at)) {
+                    @field(statement.field_values, std.fmt.comptimePrint("{}", .{index})) = timestamp;
+                    statement.field_errors[index] = null;
+                }
+            }
         },
         else => {},
     }

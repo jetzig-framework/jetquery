@@ -15,21 +15,27 @@ pub fn ColumnsEnum(Schema: type, Table: type, comptime name: RelationsEnum(Table
     }
 }
 
+pub fn RelationTable(Schema: type, Table: type, comptime name: RelationsEnum(Table)) type {
+    const relation = @field(Table.relations, @tagName(name));
+    const source = std.enums.nameCast(std.meta.DeclEnum(Schema), relation.relation_model_name);
+
+    return @field(Schema, @tagName(source));
+}
+
 pub fn Relation(
     Schema: type,
     Table: type,
     comptime name: RelationsEnum(Table),
-    columns: []const ColumnsEnum(Schema, Table, name),
+    comptime columns: anytype,
 ) type {
     comptime {
         const relation = @field(Table.relations, @tagName(name));
-        const source = std.enums.nameCast(std.meta.DeclEnum(Schema), relation.relation_model_name);
         return struct {
-            pub const Source = @field(Schema, @tagName(source));
+            pub const Source = RelationTable(Schema, Table, name);
             pub const relation_type = relation.relation_type;
             pub const options = relation.options;
             pub const relation_name = @tagName(name);
-            pub const select_columns = columns;
+            pub const select_columns = jetquery.columns.translate(Source, &.{}, columns);
         };
     }
 }

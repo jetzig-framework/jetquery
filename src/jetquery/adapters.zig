@@ -71,7 +71,7 @@ pub const Adapter = union(enum) {
     }
 
     /// SQL representing an `ORDER BY` directive, e.g. `"foo" DESC`
-    pub fn orderSql(self: Adapter, Table: type, comptime order_clause: jetquery.OrderClause(Table)) []const u8 {
+    pub fn orderSql(self: Adapter, Table: type, comptime order_clause: jetquery.OrderClause) []const u8 {
         return switch (self) {
             inline else => |adapter| @TypeOf(adapter).orderSql(Table, order_clause),
         };
@@ -80,7 +80,7 @@ pub const Adapter = union(enum) {
     /// SQL fragment used when generating a `COUNT` column, e.g. `COUNT(*)`
     pub fn countSql(
         self: Adapter,
-        comptime distinct: ?[]const jetquery.fields.distinct.DistinctColumn,
+        comptime distinct: ?[]const jetquery.columns.Column,
     ) []const u8 {
         return switch (self) {
             inline else => |adapter| @TypeOf(adapter).countSql(distinct),

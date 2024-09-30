@@ -42,7 +42,7 @@ pub fn notNullSql() []const u8 {
     return "";
 }
 
-pub fn countSql(comptime distinct: ?[]const fields.distinct.DistinctColumn) []const u8 {
+pub fn countSql(comptime distinct: ?[]const jetquery.columns.Column) []const u8 {
     _ = distinct;
     return "";
 }

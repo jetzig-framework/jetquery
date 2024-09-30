@@ -2,8 +2,6 @@ const std = @import("std");
 
 const jetcommon = @import("jetcommon");
 
-pub const distinct = @import("fields/distinct.zig");
-
 pub const FieldContext = enum { where, update, insert, limit, order, none };
 
 pub const FieldInfo = struct {
@@ -13,11 +11,13 @@ pub const FieldInfo = struct {
 };
 
 pub fn fieldInfos(T: type, comptime context: FieldContext) [std.meta.fields(T).len]FieldInfo {
-    var value_fields: [std.meta.fields(T).len]FieldInfo = undefined;
-    for (std.meta.fields(T), 0..) |field, index| {
-        value_fields[index] = fieldInfo(field, context);
+    comptime {
+        var value_fields: [std.meta.fields(T).len]FieldInfo = undefined;
+        for (std.meta.fields(T), 0..) |field, index| {
+            value_fields[index] = fieldInfo(field, context);
+        }
+        return value_fields;
     }
-    return value_fields;
 }
 
 pub fn fieldInfo(comptime field: std.builtin.Type.StructField, comptime context: FieldContext) FieldInfo {
@@ -70,7 +70,7 @@ pub fn ColumnType(Table: type, relations: []const type, comptime field_info: Fie
 
         @compileError(std.fmt.comptimePrint(
             "No column `{s}` defined in Schema for `{s}`.",
-            .{ field_info.name, Table.table_name },
+            .{ field_info.name, Table.name },
         ));
     }
 }

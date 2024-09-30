@@ -56,7 +56,7 @@ pub fn run(self: Migrate) !void {
 
 fn isMigrated(self: Migrate, migration: Migration) !bool {
     const query = jetquery.Query(Schema, .Migrations)
-        .select(&.{.version})
+        .select(.{.version})
         .where(.{ .version = migration.version });
 
     var result = try self.repo.execute(query);
@@ -103,7 +103,7 @@ test "migrate" {
     try migrate.run();
 
     const query1 = jetquery.Query(Schema, .Migrations)
-        .select(&.{.version});
+        .select(.{.version});
     var result1 = try repo.execute(query1);
     defer result1.deinit();
 
@@ -123,7 +123,7 @@ test "migrate" {
         }, .{});
     };
     const query2 = jetquery.Query(TestSchema, .Cat)
-        .select(&.{ .name, .paws, .created_at, .updated_at });
+        .select(.{ .name, .paws, .created_at, .updated_at });
     var result2 = try repo.execute(query2);
     defer result2.deinit();
 }

@@ -10,7 +10,9 @@ pub const sql = @import("jetquery/sql.zig");
 pub const relation = @import("jetquery/relation.zig");
 pub const Migration = @import("jetquery/Migration.zig");
 pub const table = @import("jetquery/table.zig");
-pub const column_names = @import("jetquery/column_names.zig");
+pub const fields = @import("jetquery/fields.zig");
+pub const columns = @import("jetquery/columns.zig");
+pub const default_column_names = @import("jetquery/default_column_names.zig");
 pub const Row = @import("jetquery/Row.zig");
 pub const Result = @import("jetquery/Result.zig").Result;
 pub const events = @import("jetquery/events.zig");
@@ -18,6 +20,7 @@ pub const Query = @import("jetquery/Query.zig").Query;
 pub const Table = @import("jetquery/Table.zig").Table;
 pub const Column = @import("jetquery/Column.zig");
 pub const Value = @import("jetquery/Value.zig").Value;
+pub const DateTime = jetcommon.types.DateTime;
 
 pub const adapter = std.enums.nameCast(adapters.Name, config.database.adapter);
 pub const timestamp_updated_column_name = "updated_at";
@@ -28,20 +31,20 @@ pub const timestamp_created_column_name = "created_at";
 pub fn DeclEnum(T: type) type {
     comptime {
         const decls = std.meta.declarations(T);
-        var fields: [decls.len]std.builtin.Type.EnumField = undefined;
+        var enum_fields: [decls.len]std.builtin.Type.EnumField = undefined;
         const TagType = std.math.IntFittingRange(
             0,
             if (decls.len == 0) 0 else decls.len - 1,
         );
 
         for (decls, 0..) |decl, index| {
-            fields[index] = .{ .name = decl.name, .value = index };
+            enum_fields[index] = .{ .name = decl.name, .value = index };
         }
 
         return @Type(.{
             .@"enum" = .{
                 .tag_type = TagType,
-                .fields = &fields,
+                .fields = &enum_fields,
                 .decls = &.{},
                 .is_exhaustive = true,
             },
@@ -57,7 +60,7 @@ test "select" {
     const Schema = struct {
         pub const Cat = Table("cats", struct { name: []const u8, paws: i32 }, .{});
     };
-    const query = Query(Schema, .Cat).select(&.{ .name, .paws });
+    const query = Query(Schema, .Cat).select(.{ .name, .paws });
 
     try std.testing.expectEqualStrings(
         \\SELECT "cats"."name", "cats"."paws" FROM "cats"
@@ -68,7 +71,7 @@ test "select (all)" {
     const Schema = struct {
         pub const Cat = Table("cats", struct { name: []const u8, paws: i32 }, .{});
     };
-    const query = Query(Schema, .Cat).select(&.{});
+    const query = Query(Schema, .Cat).select(.{});
 
     try std.testing.expectEqualStrings(
         \\SELECT "cats"."name", "cats"."paws" FROM "cats"
@@ -82,7 +85,7 @@ test "select (with `where`)" {
 
     const paws = 4;
     const query = Query(Schema, .Cat)
-        .select(&.{ .name, .paws })
+        .select(.{ .name, .paws })
         .where(.{ .name = "bar", .paws = paws });
 
     try std.testing.expectEqualStrings(
@@ -110,7 +113,7 @@ test "where (multiple)" {
     };
 
     const query = Query(Schema, .Cat)
-        .select(&.{ .name, .paws })
+        .select(.{ .name, .paws })
         .where(.{ .name = "bar" })
         .where(.{ .paws = 4 });
 
@@ -124,7 +127,7 @@ test "limit" {
         pub const Cat = Table("cats", struct { name: []const u8, paws: i32 }, .{});
     };
     const query = Query(Schema, .Cat)
-        .select(&.{ .name, .paws })
+        .select(.{ .name, .paws })
         .limit(100);
 
     try std.testing.expectEqualStrings(
@@ -137,7 +140,7 @@ test "order by" {
         pub const Cat = Table("cats", struct { name: []const u8, paws: i32 }, .{});
     };
     const query = Query(Schema, .Cat)
-        .select(&.{ .name, .paws })
+        .select(.{ .name, .paws })
         .orderBy(.{ .name = .ascending });
 
     try std.testing.expectEqualStrings(
@@ -272,7 +275,7 @@ test "nested distinct().count()" {
             },
         );
     };
-    const query = Query(Schema, .Human).include(.cat, &.{}).where(.{ .name = "Bob" }).distinct(.{ .name, .{ .cat = .{.name} } }).count();
+    const query = Query(Schema, .Human).include(.cat, .{}).where(.{ .name = "Bob" }).distinct(.{ .name, .{ .cat = .{.name} } }).count();
 
     try std.testing.expectEqualStrings(
         \\SELECT COUNT(DISTINCT("humans"."name", "cats"."name")) FROM "humans" INNER JOIN "cats" ON "humans"."cat_id" = "cats"."id" WHERE "humans"."name" = $1
@@ -284,7 +287,7 @@ test "combined" {
         pub const Cat = Table("cats", struct { id: i32, name: []const u8, paws: i32 }, .{});
     };
     const query = Query(Schema, .Cat)
-        .select(&.{ .name, .paws })
+        .select(.{ .name, .paws })
         .where(.{ .name = "Hercules" })
         .limit(10)
         .orderBy(.{ .name = .ascending });
@@ -316,7 +319,7 @@ test "boolean coercion" {
         pub const Cat = Table("cats", struct { name: []const u8, intelligent: bool }, .{});
     };
     const query = Query(Schema, .Cat)
-        .select(&.{.name})
+        .select(.{.name})
         .where(.{ .intelligent = "1" });
 
     try std.testing.expectEqual(query.values().@"0", true);
@@ -327,7 +330,7 @@ test "integer coercion" {
         pub const Cat = Table("cats", struct { name: []const u8, paws: i32 }, .{});
     };
     const query = Query(Schema, .Cat)
-        .select(&.{.name})
+        .select(.{.name})
         .where(.{ .paws = "4" });
 
     try std.testing.expectEqual(query.values().@"0", 4);
@@ -338,7 +341,7 @@ test "float coercion" {
         pub const Cat = Table("cats", struct { name: []const u8, intelligence: f64 }, .{});
     };
     const query = Query(Schema, .Cat)
-        .select(&.{.name})
+        .select(.{.name})
         .where(.{ .intelligence = "10.2" });
 
     try std.testing.expectEqual(query.values().@"0", 10.2);
@@ -387,7 +390,7 @@ test "failed coercion (bool)" {
         pub const Cat = Table("cats", struct { name: []const u8, intelligent: bool }, .{});
     };
     const query = Query(Schema, .Cat)
-        .select(&.{.name})
+        .select(.{.name})
         .where(.{ .intelligent = "not a bool" });
 
     try std.testing.expectError(error.JetQueryInvalidBooleanString, query.validateValues());
@@ -398,7 +401,7 @@ test "failed coercion (int)" {
         pub const Cat = Table("cats", struct { name: []const u8, paws: i32 }, .{});
     };
     const query = Query(Schema, .Cat)
-        .select(&.{.name})
+        .select(.{.name})
         .where(.{ .paws = "not an int" });
 
     try std.testing.expectError(error.JetQueryInvalidIntegerString, query.validateValues());
@@ -409,7 +412,7 @@ test "failed coercion (float)" {
         pub const Cat = Table("cats", struct { name: []const u8, intelligence: f64 }, .{});
     };
     const query = Query(Schema, .Cat)
-        .select(&.{.name})
+        .select(.{.name})
         .where(.{ .intelligence = "not a float" });
 
     try std.testing.expectError(error.JetQueryInvalidFloatString, query.validateValues());
@@ -465,7 +468,7 @@ test "belongsTo" {
         );
     };
     const query = Query(Schema, .Human)
-        .include(.cat, &.{})
+        .include(.cat, .{})
         .findBy(.{ .name = "Bob" });
 
     try std.testing.expectEqualStrings(
@@ -501,8 +504,8 @@ test "belongsTo (multiple)" {
         );
     };
     const query = Query(Schema, .Human)
-        .include(.cat, &.{})
-        .include(.family, &.{})
+        .include(.cat, .{})
+        .include(.family, .{})
         .findBy(.{ .name = "Bob" });
 
     try std.testing.expectEqualStrings(
@@ -538,9 +541,9 @@ test "belongsTo (with specified columns)" {
         );
     };
     const query = Query(Schema, .Human)
-        .include(.cat, &.{ .name, .paws })
-        .include(.family, &.{.name})
-        .select(&.{.name})
+        .include(.cat, .{ .name, .paws })
+        .include(.family, .{.name})
+        .select(.{.name})
         .findBy(.{ .name = "Bob" });
 
     try std.testing.expectEqualStrings(

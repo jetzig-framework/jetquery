@@ -3,7 +3,6 @@ const std = @import("std");
 const pg = @import("pg");
 
 const jetquery = @import("../../jetquery.zig");
-const fields = @import("../fields.zig");
 const sql = @import("../sql.zig");
 
 const PostgresqlAdapter = @This();
@@ -188,7 +187,7 @@ pub fn identifier(comptime name: []const u8) []const u8 {
 pub fn columnSql(Table: type, comptime name: []const u8) []const u8 {
     return std.fmt.comptimePrint(
         \\"{s}"."{s}"
-    , .{ Table.table_name, name });
+    , .{ Table.name, name });
 }
 
 /// SQL fragment used to indicate a primary key.
@@ -206,7 +205,7 @@ pub fn paramSql(comptime index: usize) []const u8 {
     return std.fmt.comptimePrint("${}", .{index + 1});
 }
 
-pub fn orderSql(Table: type, comptime order_clause: sql.OrderClause(Table)) []const u8 {
+pub fn orderSql(Table: type, comptime order_clause: sql.OrderClause) []const u8 {
     const direction = switch (order_clause.direction) {
         .ascending => "ASC",
         .descending => "DESC",
@@ -214,11 +213,11 @@ pub fn orderSql(Table: type, comptime order_clause: sql.OrderClause(Table)) []co
 
     return std.fmt.comptimePrint(
         "{s} {s}",
-        .{ columnSql(Table, @tagName(order_clause.column)), direction },
+        .{ columnSql(Table, order_clause.column.name), direction },
     );
 }
 
-pub fn countSql(comptime distinct: ?[]const fields.distinct.DistinctColumn) []const u8 {
+pub fn countSql(comptime distinct: ?[]const jetquery.columns.Column) []const u8 {
     // TODO: Move some of this back into `sql.zig`.
     return if (comptime distinct) |distinct_columns| blk: {
         const template = "{s}.{s}{s}";
@@ -227,7 +226,7 @@ pub fn countSql(comptime distinct: ?[]const fields.distinct.DistinctColumn) []co
             size += std.fmt.count(
                 template,
                 .{
-                    identifier(column.table.table_name),
+                    identifier(column.table.name),
                     identifier(column.name),
                     if (index + 1 < distinct_columns.len) ", " else "",
                 },
@@ -239,7 +238,7 @@ pub fn countSql(comptime distinct: ?[]const fields.distinct.DistinctColumn) []co
             const column_sql = std.fmt.comptimePrint(
                 template,
                 .{
-                    identifier(column.table.table_name),
+                    identifier(column.table.name),
                     identifier(column.name),
                     if (index + 1 < distinct_columns.len) ", " else "",
                 },
@@ -264,10 +263,10 @@ pub fn innerJoinSql(
         \\ INNER JOIN "{s}" ON "{s}"."{s}" = "{s}"."{s}"
     ,
         .{
-            JoinTable.table_name,
-            Table.table_name,
+            JoinTable.name,
+            Table.name,
             primary_key,
-            JoinTable.table_name,
+            JoinTable.name,
             foreign_key,
         },
     );

@@ -1,6 +1,6 @@
 const std = @import("std");
 
-const fields = @import("fields.zig");
+const jetquery = @import("../jetquery.zig");
 
 pub const QueryContext = enum {
     select,
@@ -12,13 +12,11 @@ pub const QueryContext = enum {
     none,
 };
 
-pub fn OrderClause(Table: type) type {
+pub const OrderClause = struct {
     // TODO: Allow ordering on relations.
-    return struct {
-        column: std.meta.FieldEnum(Table.Definition),
-        direction: OrderDirection,
-    };
-}
+    column: jetquery.columns.Column,
+    direction: OrderDirection,
+};
 
 pub const OrderDirection = enum { ascending, descending };
 pub const CountContext = enum { all, distinct };
@@ -43,10 +41,10 @@ pub fn render(
     query_context: QueryContext,
     Table: type,
     relations: []const type,
-    comptime field_infos: []const fields.FieldInfo,
-    comptime columns: []const std.meta.FieldEnum(Table.Definition),
-    comptime order_clauses: []const OrderClause(Table),
-    comptime distinct: ?[]const fields.distinct.DistinctColumn,
+    comptime field_infos: []const jetquery.fields.FieldInfo,
+    comptime columns: []const jetquery.columns.Column,
+    comptime order_clauses: []const OrderClause,
+    comptime distinct: ?[]const jetquery.columns.Column,
 ) []const u8 {
     return switch (query_context) {
         .select => renderSelect(Table, Adapter, relations, columns, field_infos, order_clauses),
@@ -62,13 +60,13 @@ fn renderSelect(
     Table: type,
     Adapter: type,
     relations: []const type,
-    comptime columns: []const std.meta.FieldEnum(Table.Definition),
-    comptime field_infos: []const fields.FieldInfo,
-    comptime order_clauses: []const OrderClause(Table),
+    comptime columns: []const jetquery.columns.Column,
+    comptime field_infos: []const jetquery.fields.FieldInfo,
+    comptime order_clauses: []const OrderClause,
 ) []const u8 {
     comptime {
         const select_columns = renderSelectColumns(Adapter, Table, relations, columns);
-        const from = std.fmt.comptimePrint(" FROM {s}", .{Adapter.identifier(Table.table_name)});
+        const from = std.fmt.comptimePrint(" FROM {s}", .{Adapter.identifier(Table.name)});
         const joins = renderJoins(Adapter, Table, relations);
 
         return std.fmt.comptimePrint(
@@ -88,13 +86,13 @@ fn renderSelect(
 fn renderUpdate(
     Table: type,
     Adapter: type,
-    comptime field_infos: []const fields.FieldInfo,
+    comptime field_infos: []const jetquery.fields.FieldInfo,
 ) []const u8 {
     var buf: [paramsBufSize(Adapter, Table, field_infos, .update, .assign)]u8 = undefined;
     return std.fmt.comptimePrint(
         "UPDATE {s} SET {s}{s}",
         .{
-            Adapter.identifier(Table.table_name),
+            Adapter.identifier(Table.name),
             renderParams(&buf, Adapter, Table, field_infos, .update, .assign),
             renderWhere(Adapter, Table, field_infos),
         },
@@ -104,14 +102,14 @@ fn renderUpdate(
 fn renderInsert(
     Table: type,
     Adapter: type,
-    comptime field_infos: []const fields.FieldInfo,
+    comptime field_infos: []const jetquery.fields.FieldInfo,
 ) []const u8 {
     var params_buf: [paramsBufSize(Adapter, Table, field_infos, .insert, .column)]u8 = undefined;
     var values_buf: [paramsBufSize(Adapter, Table, field_infos, .insert, .value)]u8 = undefined;
     return std.fmt.comptimePrint(
         "INSERT INTO {s} ({s}) VALUES ({s})",
         .{
-            Adapter.identifier(Table.table_name),
+            Adapter.identifier(Table.name),
             renderParams(&params_buf, Adapter, Table, field_infos, .insert, .column),
             renderParams(&values_buf, Adapter, Table, field_infos, .insert, .value),
         },
@@ -121,10 +119,10 @@ fn renderInsert(
 fn renderDelete(
     Table: type,
     Adapter: type,
-    comptime field_infos: []const fields.FieldInfo,
+    comptime field_infos: []const jetquery.fields.FieldInfo,
     comptime query_context: QueryContext,
 ) []const u8 {
-    const statement = std.fmt.comptimePrint("DELETE FROM {s}", .{Adapter.identifier(Table.table_name)});
+    const statement = std.fmt.comptimePrint("DELETE FROM {s}", .{Adapter.identifier(Table.name)});
     return switch (query_context) {
         .delete_all => statement,
         .delete => std.fmt.comptimePrint("{s}{s}{s}", .{
@@ -142,12 +140,12 @@ fn renderCount(
     Table: type,
     Adapter: type,
     comptime relations: []const type,
-    comptime field_infos: []const fields.FieldInfo,
-    comptime distinct: ?[]const fields.distinct.DistinctColumn,
+    comptime field_infos: []const jetquery.fields.FieldInfo,
+    comptime distinct: ?[]const jetquery.columns.Column,
 ) []const u8 {
     comptime {
         const count_column = " " ++ Adapter.countSql(distinct);
-        const from = std.fmt.comptimePrint(" FROM {s}", .{Adapter.identifier(Table.table_name)});
+        const from = std.fmt.comptimePrint(" FROM {s}", .{Adapter.identifier(Table.name)});
         const joins = renderJoins(Adapter, Table, relations);
 
         return std.fmt.comptimePrint(
@@ -165,7 +163,7 @@ fn renderCount(
 
 fn renderLimit(
     Adapter: type,
-    comptime field_infos: []const fields.FieldInfo,
+    comptime field_infos: []const jetquery.fields.FieldInfo,
 ) []const u8 {
     if (!hasParam(field_infos, .limit)) return "";
 
@@ -178,7 +176,7 @@ fn renderLimit(
 fn renderOrder(
     Table: type,
     Adapter: type,
-    comptime order_clauses: []const OrderClause(Table),
+    comptime order_clauses: []const OrderClause,
 ) []const u8 {
     if (order_clauses.len == 0) return "";
 
@@ -205,7 +203,7 @@ fn renderOrder(
 fn renderWhere(
     Adapter: type,
     Table: type,
-    comptime field_infos: []const fields.FieldInfo,
+    comptime field_infos: []const jetquery.fields.FieldInfo,
 ) []const u8 {
     if (!hasParam(field_infos, .where)) return "";
 
@@ -267,7 +265,7 @@ fn renderSelectColumns(
     Adapter: type,
     Table: type,
     relations: []const type,
-    comptime columns: []const std.meta.FieldEnum(Table.Definition),
+    comptime columns: []const jetquery.columns.Column,
 ) []const u8 {
     comptime {
         var total_columns: usize = columns.len;
@@ -277,7 +275,7 @@ fn renderSelectColumns(
 
         var columns_buf_len: usize = 0;
         for (columns, 0..) |column, index| {
-            columns_buf_len += renderSelectColumn(Adapter, Table, @tagName(column), index, total_columns).len;
+            columns_buf_len += renderSelectColumn(Adapter, Table, column.name, index, total_columns).len;
         }
 
         var start = columns.len;
@@ -286,7 +284,7 @@ fn renderSelectColumns(
                 columns_buf_len += renderSelectColumn(
                     Adapter,
                     Relation.Source,
-                    @tagName(column),
+                    column.name,
                     index,
                     total_columns,
                 ).len;
@@ -300,7 +298,7 @@ fn renderSelectColumns(
             const column_identifier = renderSelectColumn(
                 Adapter,
                 Table,
-                @tagName(column),
+                column.name,
                 index,
                 total_columns,
             );
@@ -314,7 +312,7 @@ fn renderSelectColumns(
                 const column_identifier = renderSelectColumn(
                     Adapter,
                     Relation.Source,
-                    @tagName(column),
+                    column.name,
                     index,
                     total_columns,
                 );
@@ -345,8 +343,8 @@ fn renderSelectColumn(
 fn paramsBufSize(
     Adapter: type,
     Table: type,
-    comptime field_infos: []const fields.FieldInfo,
-    comptime context: fields.FieldContext,
+    comptime field_infos: []const jetquery.fields.FieldInfo,
+    comptime context: jetquery.fields.FieldContext,
     comptime format: enum { column, value, assign },
 ) usize {
     var buf_len: usize = 0;
@@ -395,8 +393,8 @@ fn renderParams(
     buf: []u8,
     Adapter: type,
     Table: type,
-    comptime field_infos: []const fields.FieldInfo,
-    comptime context: fields.FieldContext,
+    comptime field_infos: []const jetquery.fields.FieldInfo,
+    comptime context: jetquery.fields.FieldContext,
     comptime format: enum { column, value, assign },
 ) []const u8 {
     if (!hasParam(field_infos, context)) @compileError("Failed compiling UPDATE query with empty params.");
@@ -445,9 +443,9 @@ fn renderParams(
 }
 
 fn fieldContext(
-    comptime field_infos: []const fields.FieldInfo,
+    comptime field_infos: []const jetquery.fields.FieldInfo,
     comptime index: usize,
-    comptime context: fields.FieldContext,
+    comptime context: jetquery.fields.FieldContext,
 ) bool {
     return if (field_infos.len > index)
         field_infos[index].context == context
@@ -456,8 +454,8 @@ fn fieldContext(
 }
 
 fn lastParamIndex(
-    comptime field_infos: []const fields.FieldInfo,
-    comptime context: fields.FieldContext,
+    comptime field_infos: []const jetquery.fields.FieldInfo,
+    comptime context: jetquery.fields.FieldContext,
 ) usize {
     var maybe_index: ?usize = null;
 
@@ -471,8 +469,8 @@ fn lastParamIndex(
 }
 
 fn hasParam(
-    comptime field_infos: []const fields.FieldInfo,
-    comptime context: fields.FieldContext,
+    comptime field_infos: []const jetquery.fields.FieldInfo,
+    comptime context: jetquery.fields.FieldContext,
 ) bool {
     for (field_infos) |field| {
         if (field.context == context) return true;
