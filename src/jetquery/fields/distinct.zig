@@ -7,18 +7,17 @@ pub const DistinctColumn = struct {
 
 pub fn translate(
     Table: type,
-    comptime columns: []const std.meta.FieldEnum(Table.Definition),
     relations: []const type,
     comptime args: anytype,
-) [sizeOf(Table, columns, relations, args)]DistinctColumn {
+) [sizeOf(Table, relations, args)]DistinctColumn {
     comptime {
-        var fields: [sizeOf(Table, columns, relations, args)]DistinctColumn = undefined;
+        var fields: [sizeOf(Table, relations, args)]DistinctColumn = undefined;
         var index: usize = 0;
 
         for (args) |arg| {
             switch (@typeInfo(@TypeOf(arg))) {
                 .enum_literal => {
-                    fields[index] = primaryDistinctColumn(Table, columns, arg);
+                    fields[index] = primaryDistinctColumn(Table, arg);
                     index += 1;
                 },
 
@@ -43,7 +42,6 @@ pub fn translate(
 
 fn sizeOf(
     Table: type,
-    comptime columns: []const std.meta.FieldEnum(Table.Definition),
     comptime relations: []const type,
     comptime args: anytype,
 ) usize {
@@ -52,7 +50,7 @@ fn sizeOf(
         for (args) |arg| {
             switch (@typeInfo(@TypeOf(arg))) {
                 .enum_literal => {
-                    _ = primaryDistinctColumn(Table, columns, arg);
+                    _ = primaryDistinctColumn(Table, arg);
                     size += 1;
                 },
 
@@ -124,11 +122,10 @@ fn Union(
 
 fn primaryDistinctColumn(
     Table: type,
-    columns: []const std.meta.FieldEnum(Table.Definition),
     arg: anytype,
 ) DistinctColumn {
     comptime {
-        for (columns) |column| {
+        for (Table.columns()) |column| {
             if (std.mem.eql(u8, @tagName(column), @tagName(arg))) return .{
                 .table = Table,
                 .name = @tagName(arg),

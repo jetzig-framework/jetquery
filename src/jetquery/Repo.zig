@@ -239,7 +239,7 @@ test "Repo" {
     const count_all = try query.count().execute(&repo);
     try std.testing.expectEqual(2, count_all);
 
-    const count_distinct = try query.distinct(.{.paws}).count().execute(&repo);
+    const count_distinct = try jetquery.Query(Schema, .Cat).distinct(.{.paws}).count().execute(&repo);
     try std.testing.expectEqual(1, count_distinct);
 }
 

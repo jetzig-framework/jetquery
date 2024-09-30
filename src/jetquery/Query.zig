@@ -49,8 +49,9 @@ pub fn Query(Schema: type, comptime table_name: jetquery.DeclEnum(Schema)) type 
         pub fn where(args: anytype) Statement(.select, Schema, Table, .{
             .field_infos = &fields.fieldInfos(@TypeOf(args), .where),
             .columns = Table.columns(),
+            .default_select = true,
         }) {
-            return InitialStatement(Schema, Table).select(&.{}).where(args);
+            return InitialStatement(Schema, Table).where(args);
         }
 
         /// Create an `UPDATE` query with the specified `args`, e.g.:
@@ -129,8 +130,8 @@ pub fn Query(Schema: type, comptime table_name: jetquery.DeclEnum(Schema)) type 
         /// Indicate that a relation should be fetched with this query. Pass an array of columns
         /// to select from the relation, or pass an empty array to select all columns.
         /// ```zig
-        /// Query(Schema, .MyTable).include(.MyRelation, &.{.foo, .bar});
-        /// Query(Schema, .MyTable).include(.MyRelation, &.{});
+        /// Query(Schema, .MyTable).include(.my_relation, &.{.foo, .bar});
+        /// Query(Schema, .MyTable).include(.my_relation, &.{});
         /// ```
         pub fn include(
             comptime name: jetquery.relation.RelationsEnum(Table),
@@ -145,9 +146,31 @@ pub fn Query(Schema: type, comptime table_name: jetquery.DeclEnum(Schema)) type 
                 else
                     select_columns,
             )},
-            .initial = true,
+            .default_select = true,
         }) {
             return InitialStatement(Schema, Table).include(name, select_columns);
+        }
+
+        /// Create a `SELECT DISTINCT` query with the specified `columns`, e.g.:
+        /// ```zig
+        /// Query(Schema, .MyTable).distinct(.{ .foo, .bar }).where(.{ .foo = "qux" });
+        /// ```
+        ///
+        /// ```zig
+        /// Query(Schema, .MyTable)
+        ///     .include(.my_relation)
+        ///     .distinct(.{ .foo, .{ .my_relation = .{.bar} });
+        /// ```
+        pub fn distinct(comptime columns: anytype) Statement(
+            .select,
+            Schema,
+            Table,
+            .{
+                .distinct = &fields.distinct.translate(Table, &.{}, columns),
+                .result_context = .many,
+            },
+        ) {
+            return InitialStatement(Schema, Table).distinct(columns);
         }
     };
 }
@@ -158,11 +181,11 @@ const MissingField = struct {
 
 fn InitialStatement(Schema: type, Table: type) Statement(.none, Schema, Table, .{
     .result_context = .none,
-    .initial = true,
+    .default_select = true,
 }) {
     return Statement(.none, Schema, Table, .{
         .result_context = .none,
-        .initial = true,
+        .default_select = true,
     }){ .field_values = .{}, .field_errors = .{} };
 }
 
@@ -181,7 +204,7 @@ fn StatementOptions(Table: type, comptime query_context: sql.QueryContext) type 
             .update, .insert, .delete, .delete_all, .none => .none,
             .count => .one,
         },
-        initial: bool = false,
+        default_select: bool = false,
         distinct: ?[]const fields.distinct.DistinctColumn = null,
     };
 }
@@ -266,7 +289,7 @@ fn Statement(
             .columns = if (select_columns.len == 0) Table.columns() else select_columns,
             .order_clauses = options.order_clauses,
             .distinct = options.distinct,
-            .result_context = if (options.initial) .many else options.result_context,
+            .result_context = if (options.default_select) .many else options.result_context,
         }) {
             const S = Statement(.select, Schema, Table, .{
                 .relations = options.relations,
@@ -274,27 +297,46 @@ fn Statement(
                 .columns = if (select_columns.len == 0) Table.columns() else select_columns,
                 .order_clauses = options.order_clauses,
                 .distinct = options.distinct,
-                .result_context = if (options.initial) .many else options.result_context,
+                .result_context = if (options.default_select) .many else options.result_context,
             });
             return self.extend(S, .{}, .none);
         }
 
         /// Apply a `WHERE` clause to the current statement.
-        pub fn where(self: Self, args: anytype) Statement(query_context, Schema, Table, .{
-            .relations = options.relations,
-            .field_infos = options.field_infos ++ fields.fieldInfos(@TypeOf(args), .where),
-            .columns = if (options.initial) Table.columns() else options.columns,
-            .order_clauses = options.order_clauses,
-            .distinct = options.distinct,
-            .result_context = options.result_context,
-        }) {
-            const S = Statement(query_context, Schema, Table, .{
+        pub fn where(self: Self, args: anytype) Statement(
+            switch (query_context) {
+                .none => .select,
+                else => |tag| tag,
+            },
+            Schema,
+            Table,
+            .{
                 .relations = options.relations,
                 .field_infos = options.field_infos ++ fields.fieldInfos(@TypeOf(args), .where),
-                .columns = if (options.initial) Table.columns() else options.columns,
+                .columns = if (options.default_select) Table.columns() else options.columns,
                 .order_clauses = options.order_clauses,
                 .distinct = options.distinct,
-                .result_context = options.result_context,
+                .result_context = switch (options.result_context) {
+                    .none => .many,
+                    else => |tag| tag,
+                },
+                .default_select = options.default_select,
+            },
+        ) {
+            const S = Statement(switch (query_context) {
+                .none => .select,
+                else => |tag| tag,
+            }, Schema, Table, .{
+                .relations = options.relations,
+                .field_infos = options.field_infos ++ fields.fieldInfos(@TypeOf(args), .where),
+                .columns = if (options.default_select) Table.columns() else options.columns,
+                .order_clauses = options.order_clauses,
+                .distinct = options.distinct,
+                .result_context = switch (options.result_context) {
+                    .none => .many,
+                    else => |tag| tag,
+                },
+                .default_select = options.default_select,
             });
             return self.extend(S, args, .where);
         }
@@ -345,22 +387,29 @@ fn Statement(
             return self.extend(S, .{}, .none);
         }
 
-        pub fn distinct(self: Self, comptime args: anytype) Statement(query_context, Schema, Table, .{
+        pub fn distinct(self: Self, comptime args: anytype) Statement(.select, Schema, Table, .{
             .relations = options.relations,
             .field_infos = options.field_infos,
-            .columns = options.columns,
+            .columns = &.{},
             .order_clauses = options.order_clauses,
-            .result_context = options.result_context,
-            .distinct = &fields.distinct.translate(Table, options.columns, options.relations, args),
+            .result_context = .many,
+            .distinct = &fields.distinct.translate(Table, options.relations, args),
         }) {
-            const S = Statement(query_context, Schema, Table, .{
+            const S = Statement(.select, Schema, Table, .{
                 .relations = options.relations,
                 .field_infos = options.field_infos,
-                .columns = options.columns,
+                .columns = &.{},
                 .order_clauses = options.order_clauses,
-                .result_context = options.result_context,
-                .distinct = &fields.distinct.translate(Table, options.columns, options.relations, args),
+                .result_context = .many,
+                .distinct = &fields.distinct.translate(Table, options.relations, args),
             });
+            if (!options.default_select) @compileError(
+                std.fmt.comptimePrint(
+                    "Failed attempting to set distinct columns when `select` already invoked. " ++
+                        "Use `Model.distinct(...)` to issue a distinct query.",
+                    .{},
+                ),
+            );
 
             return self.extend(S, .{}, .none);
         }
@@ -460,7 +509,7 @@ fn Statement(
             .columns = options.columns,
             .order_clauses = options.order_clauses,
             .result_context = options.result_context,
-            .initial = options.initial,
+            .default_select = options.default_select,
         }) {
             const S = Statement(query_context, Schema, Table, .{
                 .relations = options.relations ++ .{jetquery.relation.Relation(
@@ -476,7 +525,7 @@ fn Statement(
                 .columns = options.columns,
                 .order_clauses = options.order_clauses,
                 .result_context = options.result_context,
-                .initial = options.initial,
+                .default_select = options.default_select,
             });
             return self.extend(S, .{}, .none);
         }
