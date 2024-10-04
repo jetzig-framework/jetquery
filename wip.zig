@@ -1,4 +1,5 @@
 const std = @import("std");
+const native_endian = @import("builtin").cpu.arch.endian();
 
 pub fn main() !void {
     var hercules_buf: [8]u8 = undefined;
@@ -44,47 +45,117 @@ pub fn main() !void {
     //     .{ .abc = "xyz" },
     // };
 
-    const foo = comptime blk: {
+    const WhereClause = struct {
+        context: []const ValueType,
+        sql: []const u8,
+
+        pub fn Tuple(self: @This()) type {
+            comptime {
+                var types: [self.context.len]type = undefined;
+                for (self.context, 0..) |ctx, index| types[index] = ctx.type;
+                return std.meta.Tuple(&types);
+            }
+        }
+
+        pub fn values(self: @This(), args: anytype) self.Tuple() {
+            var vals: self.Tuple() = undefined;
+            inline for (self.context, 0..) |ctx, index| {
+                const name = std.fmt.comptimePrint("{d}", .{index});
+                @field(vals, name) = resolve(
+                    @TypeOf(@field(vals, name)),
+                    args,
+                    ctx.path,
+                );
+            }
+            return vals;
+        }
+
+        fn resolve(T: type, args: anytype, comptime path: []const u8) T {
+            comptime var FT: type = @TypeOf(args);
+            var field: FT = undefined;
+            comptime var index: usize = 0;
+            inline for (path) |char| {
+                const field_name: ?[]const u8 = comptime if (char == 0) path[0..index] else null;
+                if (field_name) |name| {
+                    @compileLog(std.fmt.comptimePrint("field_name: {s}\n", .{name}));
+                    field = @field(field, name);
+                    FT = @TypeOf(field);
+                }
+                index += 1;
+            }
+            return @field(field, path[index..]);
+        }
+    };
+
+    const clause: WhereClause = comptime blk: {
         const node = parseNodeComptime(@TypeOf(where), @TypeOf(where), "root", &.{});
         // debugNode(node, 0);
         var buf: [1024]u8 = undefined;
         var stream = std.io.fixedBufferStream(&buf);
         var index: usize = 0;
         try node.render(stream.writer(), &index, 0, null);
-        break :blk stream.getWritten() ++ "";
+        break :blk .{ .sql = stream.getWritten() ++ "", .context = &node.values_info() };
     };
-    std.debug.print("{s}\n", .{foo});
+    // inline for (clause.context) |ctx| std.debug.print("{any}\n", .{ctx.type});
+    // var vals: clause.context.tuple = undefined;
+    std.debug.print("**** {s}\n\n", .{clause.sql});
+    std.debug.print("**** {any}\n\n", .{clause.Tuple()});
+    _ = clause.values(where);
+    // std.debug.print("**** {any}\n\n", .{clause.values(where)});
+    // inline for (clause.context) |ctx| {
+    //     std.debug.print("**** {s}\n", .{ctx.path});
+    // }
+    // std.debug.print("**** {any}\n\n", .{WhereClause.values(clause.context, clause.Tuple(), where)});
+    // std.debug.print("{any}\n", .{context.Values});
+
+    // var paths: [count][]const u8 = undefined;
+    //
+    // var tuple: [count]type = undefined;
+    // for (types, 0..) |value_type, value_index| {
+    //     tuple[value_index] = value_type.type;
+    // }
+    // .{ .paths = &paths, .tuple = std.meta.Tuple(&tuple) };
 }
 
-fn parseNodeComptime(OG: type, T: type, comptime name: []const u8, comptime chain: [][]const u8) Node {
+const Context = struct {
+    tuple: type,
+    paths: [][]const u8,
+};
+
+fn parseNodeComptime(OG: type, T: type, comptime name: []const u8, comptime path: [][]const u8) Node {
     comptime {
         return switch (@typeInfo(T)) {
             .@"struct" => |info| blk: {
                 var nodes: [info.fields.len]Node = undefined;
 
                 for (info.fields, 0..) |field, index| {
-                    var appended_chain: [chain.len + 1][]const u8 = undefined;
-                    for (0..chain.len) |idx| appended_chain[idx] = chain[idx];
-                    appended_chain[chain.len] = field.name;
-                    nodes[index] = parseNodeComptime(OG, field.type, field.name, &appended_chain);
+                    var appended_path: [path.len + 1][]const u8 = undefined;
+                    for (0..path.len) |idx| appended_path[idx] = path[idx];
+                    appended_path[path.len] = field.name;
+                    nodes[index] = parseNodeComptime(OG, field.type, field.name, &appended_path);
                 }
                 break :blk .{ .group = .{ .children = &nodes } };
             },
             .enum_literal => blk: {
-                if (chain.len == 0) @compileError("oops");
+                if (path.len == 0) @compileError("oops");
 
                 var t: type = OG;
-                for (chain[0 .. chain.len - 1]) |c| {
+                for (path[0 .. path.len - 1]) |c| {
                     t = std.meta.FieldType(t, std.enums.nameCast(std.meta.FieldEnum(t), c));
                 }
                 const value: t = undefined;
-                const condition = @field(value, chain[chain.len - 1]);
+                const condition = @field(value, path[path.len - 1]);
                 break :blk .{ .condition = condition };
             },
-            else => .{ .value = .{ .name = name, .type = T, .path = chain } },
+            else => .{ .value = .{ .name = name, .type = T, .path = path } },
         };
     }
 }
+
+const ValueType = struct {
+    type: type,
+    path: []const u8,
+};
 
 const Node = union(enum) {
     pub const Condition = enum { NOT, AND, OR };
@@ -92,7 +163,38 @@ const Node = union(enum) {
         name: []const u8,
         type: type,
         path: [][]const u8,
+
+        fn joinPath(comptime self: Value) [self.pathSize()]u8 {
+            comptime {
+                var buf: [self.pathSize()]u8 = undefined;
+                var cursor: usize = 0;
+                for (self.path[0 .. self.path.len - 1]) |field_name| {
+                    @memcpy(buf[cursor .. cursor + field_name.len], field_name);
+                    std.mem.writeInt(
+                        u8,
+                        buf[cursor + field_name.len .. cursor + field_name.len + 1],
+                        0,
+                        native_endian,
+                    );
+                    cursor += field_name.len + 1;
+                }
+                @memcpy(buf[cursor..], self.path[self.path.len - 1]);
+                return buf;
+            }
+        }
+
+        fn pathSize(comptime self: Value) usize {
+            comptime {
+                var size: usize = 0;
+                for (self.path[0 .. self.path.len - 1]) |field_name| {
+                    size += field_name.len + 1;
+                }
+                size += self.path[self.path.len - 1].len;
+                return size;
+            }
+        }
     };
+
     pub const Group = struct {
         children: []const Node,
     };
@@ -134,6 +236,69 @@ const Node = union(enum) {
                 }
                 if (group.children.len > 1) try writer.print(")", .{});
             },
+        }
+    }
+
+    pub fn values_info(comptime self: Node) [self.countValues()]ValueType {
+        var types: [self.countValues()]ValueType = undefined;
+        var index: usize = 0;
+
+        switch (self) {
+            .condition => {},
+            .value => |value| {
+                types[index.*] = .{ .type = value.type, .path = &value.joinPath() };
+                index.* += 1;
+            },
+            .group => |group| {
+                appendValueTypes(group, &types, &index);
+            },
+        }
+
+        return types;
+    }
+
+    fn countValues(comptime self: Node) usize {
+        var count: usize = 0;
+
+        switch (self) {
+            .condition => {},
+            .value => {
+                count += 1;
+            },
+            .group => |group| {
+                countGroupValues(group, &count);
+            },
+        }
+
+        return count;
+    }
+
+    fn countGroupValues(comptime group: Group, comptime count: *usize) void {
+        for (group.children) |child| {
+            switch (child) {
+                .condition => {},
+                .value => {
+                    count.* += 1;
+                },
+                .group => |capture| {
+                    countGroupValues(capture, count);
+                },
+            }
+        }
+    }
+
+    fn appendValueTypes(comptime group: Group, comptime types: []ValueType, comptime index: *usize) void {
+        for (group.children) |child| {
+            switch (child) {
+                .condition => {},
+                .value => |value| {
+                    types[index.*] = .{ .type = value.type, .path = &value.joinPath() };
+                    index.* += 1;
+                },
+                .group => |capture| {
+                    appendValueTypes(capture, types, index);
+                },
+            }
         }
     }
 };
