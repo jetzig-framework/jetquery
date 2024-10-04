@@ -1,46 +1,48 @@
 const std = @import("std");
 
 pub fn main() !void {
-    // var hercules_buf: [8]u8 = undefined;
-    // const hercules = try std.fmt.bufPrint(&hercules_buf, "{s}", .{"Hercules"});
-    //
-    // const where = .{
-    //     .{ .NOT, .{ .foo = "bar" } },
-    //     .{ .bar = hercules },
-    //     .{
-    //         .OR,
-    //         .{ .qux = "quux" },
-    //         .{ .NOT, .{ .blah = hercules, .bloop = "blop" } },
-    //     },
-    //     .{
-    //         .AND,
-    //         .{ .qux = "quux" },
-    //         .{ .OR, .{ .blah = hercules, .bloop = "blop" } },
-    //         .{ .peep = .{ .boop = "hey", .bop = "ho" } },
-    //     },
-    //     .{
-    //         .NOT,
-    //         .{ .qux = "quux" },
-    //         .{ .OR, .{ .blah = hercules, .bloop = "blop" } },
-    //     },
-    // };
+    var hercules_buf: [8]u8 = undefined;
+    const hercules = try std.fmt.bufPrint(&hercules_buf, "{s}", .{"Hercules"});
 
     const where = .{
-        .{ .foo = "bar" }, .OR,
+        .NOT,
+        .{ .foo = "bar" },
+        .{ .bar = hercules },
+        .OR,
         .{
-            .{ .baz = "qux" },
-            .OR,
-            .{
-                .plox = "plux",
-                .boop = "bap",
-            },
-            .NOT,
-            .{ .plax = "plax" },
-            .AND,
-            .{ .NOT, .{ .bap = "bop", .boooop = "baap" } },
+            .{ .qux = "quux" },
+            .{ .OR, .{ .blah = hercules, .bloop = "blop" } },
         },
-        .{ .abc = "xyz" },
+        .{
+            .{ .qux = "quux" },
+            .{ .OR, .{ .blah = hercules, .bloop = "blop" } },
+            .{ .peep = .{ .boop = "hey", .bop = "ho" } },
+        },
+        .NOT,
+        .{
+            .{ .qux = "quux" },
+            .OR,
+            .{ .blah = hercules, .bloop = "blop" },
+        },
     };
+
+    // const where = .{
+    //     .{ .foo = "bar" },
+    //     .OR,
+    //     .{
+    //         .{ .baz = "qux" },
+    //         .OR,
+    //         .{
+    //             .plox = "plux",
+    //             .boop = "bap",
+    //         },
+    //         .NOT,
+    //         .{ .plax = "plax" },
+    //         .NOT,
+    //         .{ .bap = "bop", .boooop = "baap" },
+    //     },
+    //     .{ .abc = "xyz" },
+    // };
 
     const foo = comptime blk: {
         const node = parseNodeComptime(@TypeOf(where), @TypeOf(where), "root", &.{});
@@ -48,9 +50,6 @@ pub fn main() !void {
         var buf: [1024]u8 = undefined;
         var stream = std.io.fixedBufferStream(&buf);
         var index: usize = 0;
-        // var conditions: [1024]Node.Condition = undefined;
-        // conditions[0] = .AND;
-        // var condition_index: usize = 0;
         try node.render(stream.writer(), &index, 0, null);
         break :blk stream.getWritten() ++ "";
     };
@@ -109,16 +108,10 @@ const Node = union(enum) {
         comptime depth: usize,
         comptime prev: ?Node,
     ) !void {
-        // const px = switch (self) {
-        //     .group => "G",
-        //     .value => "V",
-        //     .condition => "",
-        // };
-        // if (self == .value or self == .group) try writer.print("\n" ++ px ++ (" " ** depth), .{});
         switch (self) {
             .condition => |capture| {
                 const operator = switch (capture) {
-                    .NOT => "AND NOT",
+                    .NOT => if (prev == null) "NOT" else "AND NOT",
                     else => |tag| @tagName(tag),
                 };
                 try writer.print(" {s} ", .{operator});
@@ -130,34 +123,16 @@ const Node = union(enum) {
                 try writer.print("{s}{s} = ${}", .{ prefix, value.name, value_index.* });
             },
             .group => |group| {
-                // var value_count: usize = 0;
-                // for (group.children) |child| {
-                //     if (child != .condition) value_count += 1;
-                // }
-                // const operator = if (group_index == 0) "" else switch (conditions[condition_index.*]) {
-                //     .not => "and not ",
-                //     .and, .or => |tag| @tagname(tag),
-                // };
-                // if (value_count > 0) try writer.print(" (", .{});
-                // try writer.print(" (", .{});
-                try writer.print("(", .{});
+                if (group.children.len > 1) try writer.print("(", .{});
                 var prev_child: ?Node = null;
                 for (group.children) |child| {
-                    //     // if (child_index > 0 and child == .group) try writer.print(" ZAND ", .{});
                     if (prev_child) |capture| {
                         if (child == .group and capture == .group) try writer.print(" AND ", .{});
                     }
                     try child.render(writer, value_index, depth + 1, prev_child);
                     prev_child = child;
                 }
-                try writer.print(")", .{});
-                // if (value_count > 0) try writer.print(" )", .{});
-                // const suffix = switch (conditions[condition_index.*]) {
-                //     .NOT => " AND ",
-                //     .AND, .OR => |tag| " " ++ @tagName(tag) ++ " ",
-                // };
-                // if (group_index == 0) try writer.print("{s}", .{suffix});
-                // condition_index.* -= 1;
+                if (group.children.len > 1) try writer.print(")", .{});
             },
         }
     }
