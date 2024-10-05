@@ -1,35 +1,57 @@
 const std = @import("std");
-const native_endian = @import("builtin").cpu.arch.endian();
+
+const fields = @import("fields.zig");
+const coercion = @import("coercion.zig");
 
 const Where = @This();
 
-sql: []const u8,
-Tuple: type,
-
-pub fn init(T: type) Where {
-    const node = nodeTree(T, T, "root", &.{});
-    const context = node.context();
-
-    // std.debug.print("**** {s}\n\n", .{context.sql});
-    // std.debug.print("**** {any}\n\n", .{context.Tuple});
-    // const vals = context.values(args);
-    // std.debug.print("**** {any}\n\n", .{vals});
-    return .{ .sql = context.sql, .Tuple = context.Tuple };
+fn ClauseValues(context: Node.Context) type {
+    return struct {
+        values: context.ValuesTuple,
+        errors: context.ErrorsTuple,
+    };
 }
 
-pub fn values(comptime self: Where, args: anytype) self.Tuple {
-    var vals: self.Tuple = undefined;
+pub fn values(
+    comptime context: Node.Context,
+    args: anytype,
+) ClauseValues(context) {
+    var vals: context.ValuesTuple = undefined;
+    var errors: context.ErrorsTuple = undefined;
+    assignValues(args, context.ValuesTuple, &vals, context.ErrorsTuple, &errors, context.fields, -1);
+    return .{ .values = vals, .errors = errors };
+}
+
+pub fn tree(Table: type, T: type, comptime field_context: fields.FieldContext) Node {
     var index: usize = 0;
-    assignValues(args, self.Tuple, &vals, &index);
-    return vals;
+    return nodeTree(Table, T, T, "root", undefined, &.{}, field_context, &index);
 }
 
-pub fn tree(T: type) Node {
-    return nodeTree(T, T, "root", &.{});
-}
-
-pub fn nodeTree(OG: type, T: type, comptime name: []const u8, comptime path: [][]const u8) Node {
+pub fn nodeTree(
+    Table: type,
+    OG: type,
+    T: type,
+    comptime name: []const u8,
+    field_info: std.builtin.Type.StructField,
+    comptime path: [][]const u8,
+    comptime field_context: fields.FieldContext,
+    comptime value_index: *usize,
+) Node {
     comptime {
+        if (coercion.canCoerceDelegate(T)) {
+            const value = Node.Value{
+                .field_context = field_context,
+                // TODO: Set Table
+                .Table = Table,
+                .name = name,
+                .type = T,
+                .field_info = field_info,
+                .index = value_index.*,
+            };
+            value_index.* += 1;
+            return .{ .value = value };
+        }
+
         return switch (@typeInfo(T)) {
             .@"struct" => |info| blk: {
                 var nodes: [info.fields.len]Node = undefined;
@@ -38,9 +60,18 @@ pub fn nodeTree(OG: type, T: type, comptime name: []const u8, comptime path: [][
                     var appended_path: [path.len + 1][]const u8 = undefined;
                     for (0..path.len) |idx| appended_path[idx] = path[idx];
                     appended_path[path.len] = field.name;
-                    nodes[index] = nodeTree(OG, field.type, field.name, &appended_path);
+                    nodes[index] = nodeTree(
+                        Table,
+                        OG,
+                        field.type,
+                        field.name,
+                        field_info,
+                        &appended_path,
+                        field_context,
+                        value_index,
+                    );
                 }
-                break :blk .{ .group = .{ .children = &nodes } };
+                break :blk .{ .group = .{ .name = name, .children = &nodes } };
             },
             .enum_literal => blk: {
                 if (path.len == 0) @compileError("oops");
@@ -53,33 +84,99 @@ pub fn nodeTree(OG: type, T: type, comptime name: []const u8, comptime path: [][
                 const condition = @field(value, path[path.len - 1]);
                 break :blk .{ .condition = condition };
             },
-            else => .{ .value = .{ .name = name, .type = T } },
+            else => blk: {
+                const value = Node.Value{
+                    .field_context = field_context,
+                    // TODO: Set Table
+                    .Table = Table,
+                    .name = name,
+                    .type = T,
+                    .field_info = field_info,
+                    .index = value_index.*,
+                };
+                value_index.* += 1;
+                break :blk .{ .value = value };
+            },
         };
     }
 }
 
-fn assignValues(arg: anytype, Tuple: type, tuple: *Tuple, tuple_index: *usize) void {
-    return switch (@typeInfo(@TypeOf(arg))) {
+fn assignValues(
+    arg: anytype,
+    ValuesTuple: type,
+    values_tuple: *ValuesTuple,
+    ErrorsTuple: type,
+    errors_tuple: *ErrorsTuple,
+    value_fields: []const Node.Context.Field,
+    comptime tuple_index: isize,
+) void {
+    if (comptime coercion.canCoerceDelegate(@TypeOf(arg))) {
+        assignValue(arg, ValuesTuple, values_tuple, ErrorsTuple, errors_tuple, value_fields, tuple_index);
+        return;
+    }
+
+    switch (@typeInfo(@TypeOf(arg))) {
         .@"struct" => |info| {
+            // TODO: There must be a better way of tracking current arg index - we can't pass a
+            // comptime pointer to this function without triggering an error (runtime ref to
+            // comptime var).
+            comptime var idx: isize = tuple_index;
             inline for (info.fields) |field| {
-                assignValues(@field(arg, field.name), Tuple, tuple, tuple_index);
+                const T = @TypeOf(@field(arg, field.name));
+                idx += if (comptime coercion.canCoerceDelegate(T)) 1 else switch (@typeInfo(T)) {
+                    .@"struct", .enum_literal => 0,
+                    else => 1,
+                };
+                assignValues(
+                    @field(arg, field.name),
+                    ValuesTuple,
+                    values_tuple,
+                    ErrorsTuple,
+                    errors_tuple,
+                    value_fields,
+                    idx,
+                );
             }
         },
         .enum_literal => {},
         else => {
-            inline for (tuple, 0..) |_, index| {
-                if (index == tuple_index.*) {
-                    const tuple_field_name = std.fmt.comptimePrint("{d}", .{index});
-                    const field_type = @TypeOf(@field(tuple, tuple_field_name));
-                    // Index evaluated at runtime so this check keeps the compiler happy:
-                    if (comptime CoercedComptimeValue(@TypeOf(arg)) == field_type) {
-                        @field(tuple, tuple_field_name) = arg;
-                    } else unreachable;
-                }
-            }
-            tuple_index.* += 1;
+            assignValue(arg, ValuesTuple, values_tuple, ErrorsTuple, errors_tuple, value_fields, tuple_index);
         },
-    };
+    }
+}
+
+fn assignValue(
+    arg: anytype,
+    ValuesTuple: type,
+    values_tuple: *ValuesTuple,
+    ErrorsTuple: type,
+    errors_tuple: *ErrorsTuple,
+    value_fields: []const Node.Context.Field,
+    comptime tuple_index: isize,
+) void {
+    inline for (
+        std.meta.fields(ValuesTuple),
+        value_fields,
+        0..,
+    ) |field, value_field, index| {
+        const tuple_field_name = std.fmt.comptimePrint("{d}", .{value_field.index});
+
+        if (comptime tuple_index == index) {
+            const field_info = comptime fields.fieldInfo(
+                field,
+                value_field.Table,
+                value_field.name,
+                value_field.context,
+            );
+            const coerced: coercion.CoercedValue(value_field.column_type) = coercion.coerce(
+                value_field.Table,
+                field_info,
+                arg,
+            );
+            @field(values_tuple, tuple_field_name) = coerced.value;
+            @field(errors_tuple, tuple_field_name) = coerced.err;
+        }
+    }
 }
 
 const Node = union(enum) {
@@ -87,28 +184,40 @@ const Node = union(enum) {
     pub const Value = struct {
         name: []const u8,
         type: type,
+        Table: type,
+        field_info: std.builtin.Type.StructField,
+        field_context: fields.FieldContext,
+        index: usize,
+
+        pub fn ColumnType(self: Value) type {
+            return fields.ColumnType(self.Table, fields.fieldInfo(
+                self.field_info,
+                self.Table,
+                self.name,
+                self.field_context,
+            ));
+        }
     };
 
     pub const Group = struct {
+        name: []const u8,
         children: []const Node,
     };
 
     pub const Context = struct {
         sql: []const u8,
-        Tuple: type,
+        ValuesTuple: type,
+        ErrorsTuple: type,
         len: usize,
         fields: []const Field,
 
         pub const Field = struct {
             name: []const u8,
+            Table: type,
+            column_type: type,
+            context: fields.FieldContext,
+            index: usize,
         };
-
-        pub fn values(comptime self: Context, args: anytype) self.Tuple {
-            var vals: self.Tuple = undefined;
-            var index: usize = 0;
-            assignValues(args, self.Tuple, &vals, &index);
-            return vals;
-        }
     };
 
     const Counter = struct {
@@ -164,7 +273,7 @@ const Node = union(enum) {
         }
     }
 
-    pub fn context(comptime self: Node) Context {
+    pub fn context(comptime self: Node, Table: type, relations: []const type) Context {
         comptime {
             var counter = Counter{ .count = 0 };
             var value_index: usize = 0;
@@ -174,24 +283,25 @@ const Node = union(enum) {
             var stream = std.io.fixedBufferStream(&buf);
             value_index = 0;
             self.render(stream.writer(), &value_index, 0, null);
-            const T = self.Tuple();
+            const T = self.ValuesTuple();
             return .{
                 .len = std.meta.fields(T).len,
-                .fields = &self.fields(),
+                .fields = &self.value_fields(Table, relations),
                 .sql = stream.getWritten() ++ "",
-                .Tuple = T,
+                .ValuesTuple = T,
+                .ErrorsTuple = self.ErrorsTuple(),
             };
         }
     }
 
-    fn Tuple(comptime self: Node) type {
+    fn ValuesTuple(comptime self: Node) type {
         var types: [self.countValues()]type = undefined;
         var index: usize = 0;
 
         switch (self) {
             .condition => {},
             .value => |value| {
-                types[index.*] = CoercedComptimeValue(value.type);
+                types[index.*] = value.ColumnType();
                 index.* += 1;
             },
             .group => |group| {
@@ -202,18 +312,31 @@ const Node = union(enum) {
         return std.meta.Tuple(&types);
     }
 
-    fn fields(comptime self: Node) [self.countValues()]Context.Field {
+    fn ErrorsTuple(comptime self: Node) type {
+        var types: [self.countValues()]type = undefined;
+        for (0..self.countValues()) |index| {
+            types[index] = ?anyerror;
+        }
+
+        return std.meta.Tuple(&types);
+    }
+
+    fn value_fields(comptime self: Node, Table: type, relations: []const type) [self.countValues()]Context.Field {
         var fields_array: [self.countValues()]Context.Field = undefined;
-        var index: usize = 0;
 
         switch (self) {
             .condition => {},
             .value => |value| {
-                fields_array[index.*] = .{ .name = value.name };
-                index.* += 1;
+                fields_array[value.index] = .{
+                    .Table = Table,
+                    .name = value.name,
+                    .context = value.field_context,
+                    .column_type = value.ColumnType(),
+                    .index = value.index,
+                };
             },
             .group => |group| {
-                appendFields(group, &fields_array, &index);
+                appendFields(group, Table, relations, &fields_array);
             },
         }
 
@@ -255,7 +378,7 @@ const Node = union(enum) {
             switch (child) {
                 .condition => {},
                 .value => |value| {
-                    types[index.*] = CoercedComptimeValue(value.type);
+                    types[index.*] = value.ColumnType();
                     index.* += 1;
                 },
                 .group => |capture| {
@@ -264,37 +387,32 @@ const Node = union(enum) {
             }
         }
     }
+
     fn appendFields(
         comptime group: Group,
+        Table: type,
+        relations: []const type,
         comptime fields_array: []Context.Field,
-        comptime index: *usize,
     ) void {
         for (group.children) |child| {
             switch (child) {
                 .condition => {},
                 .value => |value| {
-                    fields_array[index.*] = .{ .name = value.name };
-                    index.* += 1;
+                    fields_array[value.index] = .{
+                        .Table = Table,
+                        .name = value.name,
+                        .context = value.field_context,
+                        .column_type = value.ColumnType(),
+                        .index = value.index,
+                    };
                 },
                 .group => |capture| {
-                    appendFields(capture, fields_array, index);
+                    appendFields(capture, Table, relations, fields_array);
                 },
             }
         }
     }
 };
-
-fn coerceComptimeValue(value: anytype) CoercedComptimeValue(@TypeOf(value)) {
-    return @as(CoercedComptimeValue(@TypeOf(value)), value);
-}
-
-fn CoercedComptimeValue(T: type) type {
-    return switch (@typeInfo(T)) {
-        .comptime_int => usize,
-        .comptime_float => f64,
-        else => T,
-    };
-}
 
 fn debugNode(comptime node: Node, comptime depth: usize) void {
     const indent = " " ** depth;

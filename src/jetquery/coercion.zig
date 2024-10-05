@@ -6,10 +6,9 @@ const fields = @import("fields.zig");
 
 pub fn coerce(
     Table: type,
-    relations: []const type,
     field_info: fields.FieldInfo,
     value: anytype,
-) CoercedValue(fields.ColumnType(Table, relations, field_info)) {
+) CoercedValue(fields.ColumnType(Table, field_info)) {
     switch (field_info.context) {
         .limit => return switch (@typeInfo(@TypeOf(value))) {
             .int, .comptime_int => .{ .value = value },
@@ -18,17 +17,17 @@ pub fn coerce(
         else => {},
     }
 
-    const T = fields.ColumnType(Table, relations, field_info);
+    const T = fields.ColumnType(Table, field_info);
 
     if (T == jetcommon.types.DateTime) return value.microseconds;
 
     return switch (@typeInfo(@TypeOf(value))) {
         .int, .comptime_int => switch (@typeInfo(T)) {
-            .int => .{ .value = value },
+            .int => .{ .value = @intCast(value) },
             else => coerceDelegate(T, value),
         },
         .float, .comptime_float => switch (@typeInfo(T)) {
-            .float => .{ .value = value },
+            .float => .{ .value = @floatCast(value) },
             else => coerceDelegate(T, value),
         },
         .pointer => |info| switch (@typeInfo(T)) {
@@ -88,15 +87,15 @@ pub fn coerceDelegate(Target: type, value: anytype) CoercedValue(Target) {
     }
 }
 
-fn canCoerceDelegate(T: type) bool {
+pub fn canCoerceDelegate(T: type) bool {
     return switch (@typeInfo(T)) {
-        .@"struct", .@"union" => @hasDecl(T, "toJetQuery") and @typeInfo(@TypeOf(T.toJetQuery)) == .@"fn",
-        .pointer => |info| @hasDecl(info.child, "toJetQuery") and @typeInfo(@TypeOf(T.toJetQuery)) == .@"fn",
+        .@"struct", .@"union" => std.meta.hasFn(T, "toJetQuery"),
+        .pointer => |info| std.meta.hasFn(info.child, "toJetQuery"),
         else => false,
     };
 }
 
-fn CoercedValue(Target: type) type {
+pub fn CoercedValue(Target: type) type {
     return struct {
         value: Target = undefined, // Never used if `err` is present
         err: ?anyerror = null,

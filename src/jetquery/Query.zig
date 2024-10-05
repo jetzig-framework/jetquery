@@ -6,6 +6,7 @@ const jetquery = @import("../jetquery.zig");
 
 const coercion = @import("coercion.zig");
 const sql = @import("sql.zig");
+const Where = @import("Where.zig");
 
 // Number of rows expected to be returned by a query.
 const ResultContext = enum { one, many, none };
@@ -44,7 +45,7 @@ pub fn Query(Schema: type, comptime table_name: jetquery.DeclEnum(Schema)) type 
         /// Query(Schema, .MyTable).select(.{}).where(.{ .foo = "bar" })
         /// ```
         pub fn where(args: anytype) Statement(.select, Schema, Table, .{
-            .field_infos = &jetquery.fields.fieldInfos(@TypeOf(args), .where),
+            .field_infos = &jetquery.fields.fieldInfos(Table, @TypeOf(args), .where),
             .columns = &Table.columns(),
             .default_select = true,
         }) {
@@ -56,7 +57,7 @@ pub fn Query(Schema: type, comptime table_name: jetquery.DeclEnum(Schema)) type 
         /// Query(Schema, .MyTable).update(.{ .foo = "bar", .baz = "qux" }).where(.{ .quux = "corge" });
         /// ```
         pub fn update(args: anytype) Statement(.update, Schema, Table, .{
-            .field_infos = &(jetquery.fields.fieldInfos(@TypeOf(args), .update) ++ timestampsFields(Table, .update)),
+            .field_infos = &(jetquery.fields.fieldInfos(Table, @TypeOf(args), .update) ++ timestampsFields(Table, .update)),
         }) {
             return InitialStatement(Schema, Table).update(args);
         }
@@ -66,7 +67,7 @@ pub fn Query(Schema: type, comptime table_name: jetquery.DeclEnum(Schema)) type 
         /// Query(Schema, .MyTable).insert(.{ .foo = "bar", .baz = "qux" });
         /// ```
         pub fn insert(args: anytype) Statement(.insert, Schema, Table, .{
-            .field_infos = &(jetquery.fields.fieldInfos(@TypeOf(args), .insert) ++ timestampsFields(Table, .insert)),
+            .field_infos = &(jetquery.fields.fieldInfos(Table, @TypeOf(args), .insert) ++ timestampsFields(Table, .insert)),
         }) {
             return InitialStatement(Schema, Table).insert(args);
         }
@@ -99,8 +100,8 @@ pub fn Query(Schema: type, comptime table_name: jetquery.DeclEnum(Schema)) type 
         /// Query(Schema, .MyTable).select(.{}).where(.{ .id = id }).limit(1);
         /// ```
         pub fn find(id: anytype) Statement(.select, Schema, Table, .{
-            .field_infos = &(jetquery.fields.fieldInfos(@TypeOf(.{ .id = id }), .where) ++
-                jetquery.fields.fieldInfos(@TypeOf(.{1}), .limit)),
+            .field_infos = &(jetquery.fields.fieldInfos(Table, @TypeOf(.{ .id = id }), .where) ++
+                jetquery.fields.fieldInfos(Table, @TypeOf(.{1}), .limit)),
             .columns = &Table.columns(),
             .result_context = .one,
         }) {
@@ -116,8 +117,8 @@ pub fn Query(Schema: type, comptime table_name: jetquery.DeclEnum(Schema)) type 
         /// Query(Schema, .MyTable).select(.{}).where(args).limit(1);
         /// ```
         pub fn findBy(args: anytype) Statement(.select, Schema, Table, .{
-            .field_infos = &(jetquery.fields.fieldInfos(@TypeOf(args), .where) ++
-                jetquery.fields.fieldInfos(@TypeOf(.{1}), .limit)),
+            .field_infos = &(jetquery.fields.fieldInfos(Table, @TypeOf(args), .where) ++
+                jetquery.fields.fieldInfos(Table, @TypeOf(.{1}), .limit)),
             .columns = &Table.columns(),
             .result_context = .one,
         }) {
@@ -250,24 +251,17 @@ fn Statement(
                 statement.field_errors[index] = self.field_errors[index];
             }
 
-            const arg_values = jetquery.Where.init(@TypeOf(args)).values(args);
-            const arg_fields = std.meta.fields(@TypeOf(arg_values));
+            const tree = Where.tree(Table, @TypeOf(args), context);
+            const tree_context = tree.context(Table, options.relations);
 
-            inline for (arg_fields, options.field_infos.len.., arg_values) |field, field_index, value| {
-                _ = field;
-                _ = context;
-                // const value = @field(arg_values, std.fmt.comptimePrint("{d}", .{value_index}));
-                // TODO: Move to Where
-                // const coerced = coercion.coerce(
-                //     Table,
-                //     options.relations,
-                //     jetquery.fields.fieldInfo(field, context),
-                //     value,
-                // );
-                // statement.field_errors[field_index] = coerced.err;
+            const clause_values = Where.values(tree_context, args);
+            const arg_values = clause_values.values;
+            const arg_errors = clause_values.errors;
+
+            inline for (options.field_infos.len.., arg_values, arg_errors) |field_index, value, err| {
                 @field(statement.field_values, std.fmt.comptimePrint("{d}", .{field_index})) = value;
 
-                statement.field_errors[field_index] = null;
+                statement.field_errors[field_index] = err;
             }
 
             if (comptime hasTimestamps(Table)) {
@@ -309,7 +303,7 @@ fn Statement(
             Table,
             .{
                 .relations = options.relations,
-                .field_infos = options.field_infos ++ jetquery.fields.fieldInfos(@TypeOf(args), .where),
+                .field_infos = options.field_infos ++ jetquery.fields.fieldInfos(Table, @TypeOf(args), .where),
                 .columns = if (options.default_select) &Table.columns() else options.columns,
                 .order_clauses = options.order_clauses,
                 .distinct = options.distinct,
@@ -325,7 +319,7 @@ fn Statement(
                 else => |tag| tag,
             }, Schema, Table, .{
                 .relations = options.relations,
-                .field_infos = options.field_infos ++ jetquery.fields.fieldInfos(@TypeOf(args), .where),
+                .field_infos = options.field_infos ++ jetquery.fields.fieldInfos(Table, @TypeOf(args), .where),
                 .columns = if (options.default_select) &Table.columns() else options.columns,
                 .order_clauses = options.order_clauses,
                 .distinct = options.distinct,
@@ -339,8 +333,8 @@ fn Statement(
         }
 
         pub fn find(self: Self, id: anytype) Statement(.select, Schema, Table, .{
-            .field_infos = &(jetquery.fields.fieldInfos(@TypeOf(.{ .id = id }), .where) ++
-                jetquery.fields.fieldInfos(@TypeOf(.{1}), .limit)),
+            .field_infos = &(jetquery.fields.fieldInfos(Table, @TypeOf(.{ .id = id }), .where) ++
+                jetquery.fields.fieldInfos(Table, @TypeOf(.{1}), .limit)),
             .columns = if (options.columns.len == 0) &Table.columns() else options.columns,
             .result_context = .one,
         }) {
@@ -351,16 +345,16 @@ fn Statement(
         pub fn findBy(self: Self, args: anytype) Statement(.select, Schema, Table, .{
             .relations = options.relations,
             .field_infos = options.field_infos ++
-                jetquery.fields.fieldInfos(@TypeOf(args), .where) ++
-                jetquery.fields.fieldInfos(@TypeOf(.{1}), .limit),
+                jetquery.fields.fieldInfos(Table, @TypeOf(args), .where) ++
+                jetquery.fields.fieldInfos(Table, @TypeOf(.{1}), .limit),
             .columns = if (options.columns.len == 0) &Table.columns() else options.columns,
             .result_context = .one,
         }) {
             const S = Statement(.select, Schema, Table, .{
                 .relations = options.relations,
                 .field_infos = options.field_infos ++
-                    jetquery.fields.fieldInfos(@TypeOf(args), .where) ++
-                    jetquery.fields.fieldInfos(@TypeOf(.{1}), .limit),
+                    jetquery.fields.fieldInfos(Table, @TypeOf(args), .where) ++
+                    jetquery.fields.fieldInfos(Table, @TypeOf(.{1}), .limit),
                 .columns = if (options.columns.len == 0) &Table.columns() else options.columns,
                 .result_context = .one,
             });
@@ -411,29 +405,29 @@ fn Statement(
             return self.extend(S, .{}, .none);
         }
         pub fn update(self: Self, args: anytype) Statement(.update, Schema, Table, .{
-            .field_infos = &(jetquery.fields.fieldInfos(@TypeOf(args), .update) ++
+            .field_infos = &(jetquery.fields.fieldInfos(Table, @TypeOf(args), .update) ++
                 timestampsFields(Table, .update)),
         }) {
             const S = Statement(.update, Schema, Table, .{
-                .field_infos = &(jetquery.fields.fieldInfos(@TypeOf(args), .update) ++
+                .field_infos = &(jetquery.fields.fieldInfos(Table, @TypeOf(args), .update) ++
                     timestampsFields(Table, .update)),
             });
             return self.extend(S, args, .update);
         }
 
         pub fn insert(self: Self, args: anytype) Statement(.insert, Schema, Table, .{
-            .field_infos = &(jetquery.fields.fieldInfos(@TypeOf(args), .insert) ++
+            .field_infos = &(jetquery.fields.fieldInfos(Table, @TypeOf(args), .insert) ++
                 timestampsFields(Table, .insert)),
         }) {
             const S = Statement(.insert, Schema, Table, .{
-                .field_infos = &(jetquery.fields.fieldInfos(@TypeOf(args), .insert) ++
+                .field_infos = &(jetquery.fields.fieldInfos(Table, @TypeOf(args), .insert) ++
                     timestampsFields(Table, .insert)),
             });
             return self.extend(S, args, .insert);
         }
 
         pub fn delete(self: Self) Statement(.delete, Schema, Table, .{
-            .field_infos = &jetquery.fields.fieldInfos(@TypeOf(.{}), .none),
+            .field_infos = &jetquery.fields.fieldInfos(Table, @TypeOf(.{}), .none),
         }) {
             // TODO: Add support for `DELETE ... USING ...`
             if (comptime options.relations.len != 0) @compileError(
@@ -441,7 +435,7 @@ fn Statement(
                     "This error occurred to prevent accidential deletion of potentially unexpected behaviour.",
             );
             const S = Statement(.delete, Schema, Table, .{
-                .field_infos = &jetquery.fields.fieldInfos(@TypeOf(.{}), .none),
+                .field_infos = &jetquery.fields.fieldInfos(Table, @TypeOf(.{}), .none),
             });
             return self.extend(S, .{}, .none);
         }
@@ -458,14 +452,14 @@ fn Statement(
 
         pub fn limit(self: Self, bound: usize) Statement(query_context, Schema, Table, .{
             .relations = options.relations,
-            .field_infos = options.field_infos ++ jetquery.fields.fieldInfos(@TypeOf(.{bound}), .limit),
+            .field_infos = options.field_infos ++ jetquery.fields.fieldInfos(Table, @TypeOf(.{bound}), .limit),
             .columns = options.columns,
             .order_clauses = options.order_clauses,
             .result_context = options.result_context,
         }) {
             const S = Statement(query_context, Schema, Table, .{
                 .relations = options.relations,
-                .field_infos = options.field_infos ++ jetquery.fields.fieldInfos(@TypeOf(.{bound}), .limit),
+                .field_infos = options.field_infos ++ jetquery.fields.fieldInfos(Table, @TypeOf(.{bound}), .limit),
                 .columns = options.columns,
                 .order_clauses = options.order_clauses,
                 .result_context = options.result_context,
@@ -683,7 +677,7 @@ fn timestampsFields(
                 .default_value = null,
                 .is_comptime = false,
                 .alignment = @alignOf(i64),
-            }, "updated_at", query_context),
+            }, Table, "updated_at", query_context),
         },
         .insert => .{
             jetquery.fields.fieldInfo(.{
@@ -692,14 +686,14 @@ fn timestampsFields(
                 .default_value = null,
                 .is_comptime = false,
                 .alignment = @alignOf(i64),
-            }, "created_at", query_context),
+            }, Table, "created_at", query_context),
             jetquery.fields.fieldInfo(.{
                 .name = "updated_at",
                 .type = i64,
                 .default_value = null,
                 .is_comptime = false,
                 .alignment = @alignOf(i64),
-            }, "updated_at", query_context),
+            }, Table, "updated_at", query_context),
         },
         else => @compileError(
             "Timestamps detection not relevant for `" ++ @tagName(query_context) ++ "` query. (This is a bug).",
