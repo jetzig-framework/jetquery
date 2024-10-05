@@ -189,7 +189,7 @@ fn assignValue(
     }
 }
 
-const Node = union(enum) {
+pub const Node = union(enum) {
     pub const Condition = enum { NOT, AND, OR };
     pub const Value = struct {
         name: []const u8,
@@ -264,6 +264,7 @@ const Node = union(enum) {
             },
             .value => |value| {
                 value_index.* += 1;
+                // TODO: This needs re-thinking.
                 const is_sequence = if (prev) |capture| capture == .value else false;
                 const prefix = if (is_sequence) " AND " else "";
                 writer.print("{s}{s}.{s} = ${}", .{ prefix, value.Table.name, value.name, value_index.* }) catch unreachable;
@@ -283,10 +284,15 @@ const Node = union(enum) {
         }
     }
 
-    pub fn context(comptime self: Node, Table: type, relations: []const type) Context {
+    pub fn context(
+        comptime self: Node,
+        Table: type,
+        relations: []const type,
+        comptime first_index: usize,
+    ) Context {
         comptime {
             var counter = Counter{ .count = 0 };
-            var value_index: usize = 0;
+            var value_index: usize = first_index;
             self.render(&counter, &value_index, 0, null);
 
             var buf: [counter.count]u8 = undefined;

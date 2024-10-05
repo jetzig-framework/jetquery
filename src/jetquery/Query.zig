@@ -48,6 +48,7 @@ pub fn Query(Schema: type, comptime table_name: jetquery.DeclEnum(Schema)) type 
             .field_infos = &jetquery.fields.fieldInfos(Table, &.{}, @TypeOf(args), .where),
             .columns = &Table.columns(),
             .default_select = true,
+            .where_clause = Where.tree(Table, &.{}, @TypeOf(args), .where).context(Table, &.{}, 0),
         }) {
             return InitialStatement(Schema, Table).where(args);
         }
@@ -198,6 +199,7 @@ fn StatementOptions(comptime query_context: sql.QueryContext) type {
         },
         default_select: bool = false,
         distinct: ?[]const jetquery.columns.Column = null,
+        where_clause: ?Where.Node.Context = null,
     };
 }
 
@@ -226,6 +228,7 @@ fn Statement(
             options.columns,
             options.order_clauses,
             options.distinct,
+            options.where_clause,
         ),
 
         pub const Definition = Table.Definition;
@@ -252,9 +255,9 @@ fn Statement(
             }
 
             const tree = Where.tree(Table, options.relations, @TypeOf(args), context);
-            const tree_context = tree.context(Table, options.relations);
-
+            const tree_context = tree.context(Table, options.relations, options.field_infos.len);
             const clause_values = Where.values(tree_context, args);
+
             const arg_values = clause_values.values;
             const arg_errors = clause_values.errors;
 
@@ -309,6 +312,12 @@ fn Statement(
                     @TypeOf(args),
                     .where,
                 ),
+                .where_clause = Where.tree(
+                    Table,
+                    options.relations,
+                    @TypeOf(args),
+                    .where,
+                ).context(Table, options.relations, options.field_infos.len),
                 .columns = if (options.default_select) &Table.columns() else options.columns,
                 .order_clauses = options.order_clauses,
                 .distinct = options.distinct,
@@ -330,6 +339,12 @@ fn Statement(
                     @TypeOf(args),
                     .where,
                 ),
+                .where_clause = Where.tree(
+                    Table,
+                    options.relations,
+                    @TypeOf(args),
+                    .where,
+                ).context(Table, options.relations, options.field_infos.len),
                 .columns = if (options.default_select) &Table.columns() else options.columns,
                 .order_clauses = options.order_clauses,
                 .distinct = options.distinct,

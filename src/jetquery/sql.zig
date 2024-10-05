@@ -45,9 +45,10 @@ pub fn render(
     comptime columns: []const jetquery.columns.Column,
     comptime order_clauses: []const OrderClause,
     comptime distinct: ?[]const jetquery.columns.Column,
+    comptime where_clause: ?jetquery.Where.Node.Context,
 ) []const u8 {
     return switch (query_context) {
-        .select => renderSelect(Table, Adapter, relations, columns, field_infos, order_clauses),
+        .select => renderSelect(Table, Adapter, relations, columns, field_infos, order_clauses, where_clause),
         .update => renderUpdate(Table, Adapter, field_infos),
         .insert => renderInsert(Table, Adapter, field_infos),
         .delete, .delete_all => renderDelete(Table, Adapter, field_infos, query_context),
@@ -63,6 +64,7 @@ fn renderSelect(
     comptime columns: []const jetquery.columns.Column,
     comptime field_infos: []const jetquery.fields.FieldInfo,
     comptime order_clauses: []const OrderClause,
+    comptime where_clause: ?jetquery.Where.Node.Context,
 ) []const u8 {
     comptime {
         const select_columns = renderSelectColumns(Adapter, Table, relations, columns);
@@ -75,7 +77,9 @@ fn renderSelect(
                 select_columns,
                 from,
                 joins,
-                renderWhere(Adapter, field_infos),
+                // TODO: Default SQL ? (1=1)
+                if (where_clause) |clause| " WHERE " ++ clause.sql else "",
+                // renderWhere(Adapter, field_infos),
                 renderOrder(Table, Adapter, order_clauses),
                 renderLimit(Adapter, field_infos),
             },

@@ -18,10 +18,10 @@ pub fn fieldInfos(
     relations: []const type,
     T: type,
     comptime context: FieldContext,
-) [Where.tree(Table, relations, T, context).context(Table, relations).len]FieldInfo {
+) [Where.tree(Table, relations, T, context).context(Table, relations, 0).len]FieldInfo {
     comptime {
         const tree = Where.tree(Table, relations, T, context);
-        const tree_context = tree.context(Table, relations);
+        const tree_context = tree.context(Table, relations, 0);
         var value_fields: [tree_context.len]FieldInfo = undefined;
         for (
             std.meta.fields(tree_context.ValuesTuple),
@@ -50,14 +50,10 @@ pub fn FieldValues(Table: type, relations: []const type, comptime fields: []cons
     for (fields, 0..) |field, index| {
         new_fields[index] = .{
             .name = std.fmt.comptimePrint("{}", .{index}),
-            // TODO: Move to Where
-            // .type = ColumnType(Table, relations, field),
             .type = field.info.type,
             .default_value = null,
             .is_comptime = false,
             .alignment = @alignOf(field.info.type),
-            // TODO: Move to Where
-            // .alignment = @alignOf(ColumnType(Table, relations, field)),
         };
     }
     return @Type(.{
