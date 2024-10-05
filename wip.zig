@@ -46,44 +46,14 @@ pub fn main() !void {
     // };
 
     const WhereClause = struct {
-        context: []const ValueType,
+        Tuple: type,
         sql: []const u8,
 
-        pub fn Tuple(self: @This()) type {
-            comptime {
-                var types: [self.context.len]type = undefined;
-                for (self.context, 0..) |ctx, index| types[index] = ctx.type;
-                return std.meta.Tuple(&types);
-            }
-        }
-
-        pub fn values(self: @This(), args: anytype) self.Tuple() {
-            var vals: self.Tuple() = undefined;
-            inline for (self.context, 0..) |ctx, index| {
-                const name = std.fmt.comptimePrint("{d}", .{index});
-                @field(vals, name) = resolve(
-                    @TypeOf(@field(vals, name)),
-                    args,
-                    ctx.path,
-                );
-            }
+        pub fn values(self: @This(), args: anytype) self.Tuple {
+            var vals: self.Tuple = undefined;
+            var index: usize = 0;
+            assignValues(args, self.Tuple, &vals, &index);
             return vals;
-        }
-
-        fn resolve(T: type, args: anytype, comptime path: []const u8) T {
-            comptime var FT: type = @TypeOf(args);
-            var field: FT = undefined;
-            comptime var index: usize = 0;
-            inline for (path) |char| {
-                const field_name: ?[]const u8 = comptime if (char == 0) path[0..index] else null;
-                if (field_name) |name| {
-                    @compileLog(std.fmt.comptimePrint("field_name: {s}\n", .{name}));
-                    field = @field(field, name);
-                    FT = @TypeOf(field);
-                }
-                index += 1;
-            }
-            return @field(field, path[index..]);
         }
     };
 
@@ -94,33 +64,14 @@ pub fn main() !void {
         var stream = std.io.fixedBufferStream(&buf);
         var index: usize = 0;
         try node.render(stream.writer(), &index, 0, null);
-        break :blk .{ .sql = stream.getWritten() ++ "", .context = &node.values_info() };
+        break :blk .{ .sql = stream.getWritten() ++ "", .Tuple = node.Tuple() };
     };
-    // inline for (clause.context) |ctx| std.debug.print("{any}\n", .{ctx.type});
-    // var vals: clause.context.tuple = undefined;
+
     std.debug.print("**** {s}\n\n", .{clause.sql});
-    std.debug.print("**** {any}\n\n", .{clause.Tuple()});
-    _ = clause.values(where);
-    // std.debug.print("**** {any}\n\n", .{clause.values(where)});
-    // inline for (clause.context) |ctx| {
-    //     std.debug.print("**** {s}\n", .{ctx.path});
-    // }
-    // std.debug.print("**** {any}\n\n", .{WhereClause.values(clause.context, clause.Tuple(), where)});
-    // std.debug.print("{any}\n", .{context.Values});
-
-    // var paths: [count][]const u8 = undefined;
-    //
-    // var tuple: [count]type = undefined;
-    // for (types, 0..) |value_type, value_index| {
-    //     tuple[value_index] = value_type.type;
-    // }
-    // .{ .paths = &paths, .tuple = std.meta.Tuple(&tuple) };
+    std.debug.print("**** {any}\n\n", .{clause.Tuple});
+    const vals = clause.values(where);
+    std.debug.print("**** {any}\n\n", .{vals});
 }
-
-const Context = struct {
-    tuple: type,
-    paths: [][]const u8,
-};
 
 fn parseNodeComptime(OG: type, T: type, comptime name: []const u8, comptime path: [][]const u8) Node {
     comptime {
@@ -147,52 +98,42 @@ fn parseNodeComptime(OG: type, T: type, comptime name: []const u8, comptime path
                 const condition = @field(value, path[path.len - 1]);
                 break :blk .{ .condition = condition };
             },
-            else => .{ .value = .{ .name = name, .type = T, .path = path } },
+            else => .{ .value = .{ .name = name, .type = T } },
         };
     }
 }
 
-const ValueType = struct {
-    type: type,
-    path: []const u8,
-};
+fn assignValues(arg: anytype, Tuple: type, values: *Tuple, values_index: *usize) void {
+    return switch (@typeInfo(@TypeOf(arg))) {
+        .@"struct" => |info| {
+            inline for (info.fields) |field| {
+                assignValues(@field(arg, field.name), Tuple, values, values_index);
+            }
+        },
+        .enum_literal => {},
+        else => {
+            inline for (values, 0..) |_, index| {
+                if (index == values_index.*) {
+                    const is_eql_type = @TypeOf(arg) == @TypeOf(@field(
+                        values,
+                        std.fmt.comptimePrint("{d}", .{index}),
+                    ));
+                    // Index evaluated at runtime so this check keeps the compiler happy:
+                    if (comptime is_eql_type) {
+                        @field(values, std.fmt.comptimePrint("{d}", .{index})) = arg;
+                    }
+                }
+            }
+            values_index.* += 1;
+        },
+    };
+}
 
 const Node = union(enum) {
     pub const Condition = enum { NOT, AND, OR };
     pub const Value = struct {
         name: []const u8,
         type: type,
-        path: [][]const u8,
-
-        fn joinPath(comptime self: Value) [self.pathSize()]u8 {
-            comptime {
-                var buf: [self.pathSize()]u8 = undefined;
-                var cursor: usize = 0;
-                for (self.path[0 .. self.path.len - 1]) |field_name| {
-                    @memcpy(buf[cursor .. cursor + field_name.len], field_name);
-                    std.mem.writeInt(
-                        u8,
-                        buf[cursor + field_name.len .. cursor + field_name.len + 1],
-                        0,
-                        native_endian,
-                    );
-                    cursor += field_name.len + 1;
-                }
-                @memcpy(buf[cursor..], self.path[self.path.len - 1]);
-                return buf;
-            }
-        }
-
-        fn pathSize(comptime self: Value) usize {
-            comptime {
-                var size: usize = 0;
-                for (self.path[0 .. self.path.len - 1]) |field_name| {
-                    size += field_name.len + 1;
-                }
-                size += self.path[self.path.len - 1].len;
-                return size;
-            }
-        }
     };
 
     pub const Group = struct {
@@ -239,14 +180,14 @@ const Node = union(enum) {
         }
     }
 
-    pub fn values_info(comptime self: Node) [self.countValues()]ValueType {
-        var types: [self.countValues()]ValueType = undefined;
+    pub fn Tuple(comptime self: Node) type {
+        var types: [self.countValues()]type = undefined;
         var index: usize = 0;
 
         switch (self) {
             .condition => {},
             .value => |value| {
-                types[index.*] = .{ .type = value.type, .path = &value.joinPath() };
+                types[index.*] = value.type;
                 index.* += 1;
             },
             .group => |group| {
@@ -254,7 +195,7 @@ const Node = union(enum) {
             },
         }
 
-        return types;
+        return std.meta.Tuple(&types);
     }
 
     fn countValues(comptime self: Node) usize {
@@ -287,12 +228,12 @@ const Node = union(enum) {
         }
     }
 
-    fn appendValueTypes(comptime group: Group, comptime types: []ValueType, comptime index: *usize) void {
+    fn appendValueTypes(comptime group: Group, comptime types: []type, comptime index: *usize) void {
         for (group.children) |child| {
             switch (child) {
                 .condition => {},
                 .value => |value| {
-                    types[index.*] = .{ .type = value.type, .path = &value.joinPath() };
+                    types[index.*] = value.type;
                     index.* += 1;
                 },
                 .group => |capture| {
