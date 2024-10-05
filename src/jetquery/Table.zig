@@ -20,6 +20,20 @@ pub fn Table(table_name: []const u8, T: type, options: anytype) type {
             try repo.insert(T, args);
         }
 
+        pub fn Relation(comptime relation_name: []const u8) type {
+            comptime {
+                for (relations) |relation| {
+                    if (std.mem.eql(u8, relation.relation_name, relation_name)) {
+                        return relation;
+                    }
+                }
+                @compileError(std.fmt.comptimePrint(
+                    "Failed matching relation `{s}` on `{s}`",
+                    .{ relation_name, name },
+                ));
+            }
+        }
+
         pub fn columns() [std.meta.fields(Definition).len]jetquery.columns.Column {
             comptime {
                 const fields = std.meta.fields(Definition);

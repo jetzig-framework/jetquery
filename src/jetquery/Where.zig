@@ -22,13 +22,14 @@ pub fn values(
     return .{ .values = vals, .errors = errors };
 }
 
-pub fn tree(Table: type, T: type, comptime field_context: fields.FieldContext) Node {
+pub fn tree(Table: type, relations: []const type, T: type, comptime field_context: fields.FieldContext) Node {
     var index: usize = 0;
-    return nodeTree(Table, T, T, "root", undefined, &.{}, field_context, &index);
+    return nodeTree(Table, relations, T, T, "root", undefined, &.{}, field_context, &index);
 }
 
 pub fn nodeTree(
     Table: type,
+    relations: []const type,
     OG: type,
     T: type,
     comptime name: []const u8,
@@ -41,8 +42,7 @@ pub fn nodeTree(
         if (coercion.canCoerceDelegate(T)) {
             const value = Node.Value{
                 .field_context = field_context,
-                // TODO: Set Table
-                .Table = Table,
+                .Table = findRelation(Table, relations, path),
                 .name = name,
                 .type = T,
                 .field_info = field_info,
@@ -59,9 +59,10 @@ pub fn nodeTree(
                 for (info.fields, 0..) |field, index| {
                     var appended_path: [path.len + 1][]const u8 = undefined;
                     for (0..path.len) |idx| appended_path[idx] = path[idx];
-                    appended_path[path.len] = field.name;
+                    appended_path[appended_path.len - 1] = field.name;
                     nodes[index] = nodeTree(
                         Table,
+                        relations,
                         OG,
                         field.type,
                         field.name,
@@ -74,7 +75,7 @@ pub fn nodeTree(
                 break :blk .{ .group = .{ .name = name, .children = &nodes } };
             },
             .enum_literal => blk: {
-                if (path.len == 0) @compileError("oops");
+                if (path.len == 0) unreachable;
 
                 var t: type = OG;
                 for (path[0 .. path.len - 1]) |c| {
@@ -87,8 +88,7 @@ pub fn nodeTree(
             else => blk: {
                 const value = Node.Value{
                     .field_context = field_context,
-                    // TODO: Set Table
-                    .Table = Table,
+                    .Table = findRelation(Table, relations, path),
                     .name = name,
                     .type = T,
                     .field_info = field_info,
@@ -98,6 +98,16 @@ pub fn nodeTree(
                 break :blk .{ .value = value };
             },
         };
+    }
+}
+
+fn findRelation(Table: type, relations: []const type, comptime path: [][]const u8) type {
+    comptime {
+        if (path.len <= 1) return Table;
+        for (relations) |relation| {
+            if (std.mem.eql(u8, relation.relation_name, path[path.len - 2])) return relation.Source;
+        }
+        return Table;
     }
 }
 
@@ -256,7 +266,7 @@ const Node = union(enum) {
                 value_index.* += 1;
                 const is_sequence = if (prev) |capture| capture == .value else false;
                 const prefix = if (is_sequence) " AND " else "";
-                writer.print("{s}{s} = ${}", .{ prefix, value.name, value_index.* }) catch unreachable;
+                writer.print("{s}{s}.{s} = ${}", .{ prefix, value.Table.name, value.name, value_index.* }) catch unreachable;
             },
             .group => |group| {
                 if (group.children.len > 1) writer.print("(", .{}) catch unreachable;
@@ -328,7 +338,7 @@ const Node = union(enum) {
             .condition => {},
             .value => |value| {
                 fields_array[value.index] = .{
-                    .Table = Table,
+                    .Table = value.Table,
                     .name = value.name,
                     .context = value.field_context,
                     .column_type = value.ColumnType(),
@@ -399,7 +409,7 @@ const Node = union(enum) {
                 .condition => {},
                 .value => |value| {
                     fields_array[value.index] = .{
-                        .Table = Table,
+                        .Table = value.Table,
                         .name = value.name,
                         .context = value.field_context,
                         .column_type = value.ColumnType(),

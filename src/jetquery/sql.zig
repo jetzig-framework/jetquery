@@ -75,7 +75,7 @@ fn renderSelect(
                 select_columns,
                 from,
                 joins,
-                renderWhere(Adapter, Table, field_infos),
+                renderWhere(Adapter, field_infos),
                 renderOrder(Table, Adapter, order_clauses),
                 renderLimit(Adapter, field_infos),
             },
@@ -88,13 +88,13 @@ fn renderUpdate(
     Adapter: type,
     comptime field_infos: []const jetquery.fields.FieldInfo,
 ) []const u8 {
-    var buf: [paramsBufSize(Adapter, Table, field_infos, .update, .assign)]u8 = undefined;
+    var buf: [paramsBufSize(Adapter, field_infos, .update, .assign)]u8 = undefined;
     return std.fmt.comptimePrint(
         "UPDATE {s} SET {s}{s}",
         .{
             Adapter.identifier(Table.name),
-            renderParams(&buf, Adapter, Table, field_infos, .update, .assign),
-            renderWhere(Adapter, Table, field_infos),
+            renderParams(&buf, Adapter, field_infos, .update, .assign),
+            renderWhere(Adapter, field_infos),
         },
     );
 }
@@ -104,14 +104,14 @@ fn renderInsert(
     Adapter: type,
     comptime field_infos: []const jetquery.fields.FieldInfo,
 ) []const u8 {
-    var params_buf: [paramsBufSize(Adapter, Table, field_infos, .insert, .column)]u8 = undefined;
-    var values_buf: [paramsBufSize(Adapter, Table, field_infos, .insert, .value)]u8 = undefined;
+    var params_buf: [paramsBufSize(Adapter, field_infos, .insert, .column)]u8 = undefined;
+    var values_buf: [paramsBufSize(Adapter, field_infos, .insert, .value)]u8 = undefined;
     return std.fmt.comptimePrint(
         "INSERT INTO {s} ({s}) VALUES ({s})",
         .{
             Adapter.identifier(Table.name),
-            renderParams(&params_buf, Adapter, Table, field_infos, .insert, .column),
-            renderParams(&values_buf, Adapter, Table, field_infos, .insert, .value),
+            renderParams(&params_buf, Adapter, field_infos, .insert, .column),
+            renderParams(&values_buf, Adapter, field_infos, .insert, .value),
         },
     );
 }
@@ -127,7 +127,7 @@ fn renderDelete(
         .delete_all => statement,
         .delete => std.fmt.comptimePrint("{s}{s}{s}", .{
             statement,
-            renderWhere(Adapter, Table, field_infos),
+            renderWhere(Adapter, field_infos),
             renderLimit(Adapter, field_infos),
         }),
         else => |tag| @compileError(
@@ -154,7 +154,7 @@ fn renderCount(
                 count_column,
                 from,
                 joins,
-                renderWhere(Adapter, Table, field_infos),
+                renderWhere(Adapter, field_infos),
                 renderLimit(Adapter, field_infos),
             },
         );
@@ -202,13 +202,12 @@ fn renderOrder(
 
 fn renderWhere(
     Adapter: type,
-    Table: type,
     comptime field_infos: []const jetquery.fields.FieldInfo,
 ) []const u8 {
     if (!hasParam(field_infos, .where)) return "";
 
-    var buf: [paramsBufSize(Adapter, Table, field_infos, .where, .assign)]u8 = undefined;
-    const params = renderParams(&buf, Adapter, Table, field_infos, .where, .assign);
+    var buf: [paramsBufSize(Adapter, field_infos, .where, .assign)]u8 = undefined;
+    const params = renderParams(&buf, Adapter, field_infos, .where, .assign);
 
     return std.fmt.comptimePrint(" WHERE {s}", .{params});
 }
@@ -340,9 +339,9 @@ fn renderSelectColumn(
     }
 }
 
+// TODO: Find a nicer way of counting so we don't have to keep this sync'ed with `renderParams`
 fn paramsBufSize(
     Adapter: type,
-    Table: type,
     comptime field_infos: []const jetquery.fields.FieldInfo,
     comptime context: jetquery.fields.FieldContext,
     comptime format: enum { column, value, assign },
@@ -369,7 +368,7 @@ fn paramsBufSize(
             .column => .{
                 switch (context) {
                     .insert => Adapter.identifier(field.name),
-                    else => Adapter.columnSql(Table, field.name),
+                    else => Adapter.columnSql(field.Table, field.name),
                 },
                 if (index < last_param_index) separator else "",
             },
@@ -378,7 +377,7 @@ fn paramsBufSize(
                 if (index < last_param_index) separator else "",
             },
             .assign => .{
-                Adapter.columnSql(Table, field.name),
+                Adapter.columnSql(field.Table, field.name),
                 Adapter.paramSql(index),
                 if (index < last_param_index) separator else "",
             },
@@ -392,7 +391,6 @@ fn paramsBufSize(
 fn renderParams(
     buf: []u8,
     Adapter: type,
-    Table: type,
     comptime field_infos: []const jetquery.fields.FieldInfo,
     comptime context: jetquery.fields.FieldContext,
     comptime format: enum { column, value, assign },
@@ -420,7 +418,7 @@ fn renderParams(
             .column => .{
                 switch (context) {
                     .insert => Adapter.identifier(field.name),
-                    else => Adapter.columnSql(Table, field.name),
+                    else => Adapter.columnSql(field.Table, field.name),
                 },
                 if (index < last_param_index) separator else "",
             },
@@ -429,7 +427,7 @@ fn renderParams(
                 if (index < last_param_index) separator else "",
             },
             .assign => .{
-                Adapter.columnSql(Table, field.name),
+                Adapter.columnSql(field.Table, field.name),
                 Adapter.paramSql(index),
                 if (index < last_param_index) separator else "",
             },

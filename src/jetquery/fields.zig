@@ -15,12 +15,13 @@ pub const FieldInfo = struct {
 
 pub fn fieldInfos(
     Table: type,
+    relations: []const type,
     T: type,
     comptime context: FieldContext,
-) [Where.tree(Table, T, context).context(Table, &.{}).len]FieldInfo {
+) [Where.tree(Table, relations, T, context).context(Table, relations).len]FieldInfo {
     comptime {
-        const tree = Where.tree(Table, T, context);
-        const tree_context = tree.context(Table, &.{});
+        const tree = Where.tree(Table, relations, T, context);
+        const tree_context = tree.context(Table, relations);
         var value_fields: [tree_context.len]FieldInfo = undefined;
         for (
             std.meta.fields(tree_context.ValuesTuple),
