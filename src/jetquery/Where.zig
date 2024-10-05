@@ -1,62 +1,34 @@
 const std = @import("std");
 const native_endian = @import("builtin").cpu.arch.endian();
 
-pub fn main() !void {
-    var hercules_buf: [8]u8 = undefined;
-    const hercules = try std.fmt.bufPrint(&hercules_buf, "{s}", .{"Hercules"});
+const Where = @This();
 
-    const where = .{
-        .NOT,
-        .{ .foo = "bar" },
-        .{ .bar = hercules },
-        .OR,
-        .{
-            .{ .qux = "quux" },
-            .OR,
-            .{ .blah = hercules, .bloop = 128 },
-        },
-        .{
-            .{ .qux = "quux" },
-            .OR,
-            .{ .blah = hercules, .bloop = "blop" },
-            .{ .peep = .{ .boop = true, .bop = "ho" } },
-        },
-        .NOT,
-        .{
-            .{ .qux = "quux" },
-            .OR,
-            .{ .blah = hercules, .bloop = "blop" },
-        },
-    };
+sql: []const u8,
+Tuple: type,
 
-    // const where = .{
-    //     .{ .foo = "bar" },
-    //     .OR,
-    //     .{
-    //         .{ .baz = "qux" },
-    //         .OR,
-    //         .{
-    //             .plox = "plux",
-    //             .boop = "bap",
-    //         },
-    //         .NOT,
-    //         .{ .plax = "plax" },
-    //         .NOT,
-    //         .{ .bap = "bop", .boooop = "baap" },
-    //     },
-    //     .{ .abc = "xyz" },
-    // };
-
-    const node = nodeTree(@TypeOf(where), @TypeOf(where), "root", &.{});
+pub fn init(T: type) Where {
+    const node = nodeTree(T, T, "root", &.{});
     const context = node.context();
 
-    std.debug.print("**** {s}\n\n", .{context.sql});
-    std.debug.print("**** {any}\n\n", .{context.Tuple});
-    const vals = context.values(where);
-    std.debug.print("**** {any}\n\n", .{vals});
+    // std.debug.print("**** {s}\n\n", .{context.sql});
+    // std.debug.print("**** {any}\n\n", .{context.Tuple});
+    // const vals = context.values(args);
+    // std.debug.print("**** {any}\n\n", .{vals});
+    return .{ .sql = context.sql, .Tuple = context.Tuple };
 }
 
-fn nodeTree(OG: type, T: type, comptime name: []const u8, comptime path: [][]const u8) Node {
+pub fn values(comptime self: Where, args: anytype) self.Tuple {
+    var vals: self.Tuple = undefined;
+    var index: usize = 0;
+    assignValues(args, self.Tuple, &vals, &index);
+    return vals;
+}
+
+pub fn tree(T: type) Node {
+    return nodeTree(T, T, "root", &.{});
+}
+
+pub fn nodeTree(OG: type, T: type, comptime name: []const u8, comptime path: [][]const u8) Node {
     comptime {
         return switch (@typeInfo(T)) {
             .@"struct" => |info| blk: {
@@ -86,26 +58,26 @@ fn nodeTree(OG: type, T: type, comptime name: []const u8, comptime path: [][]con
     }
 }
 
-fn assignValues(arg: anytype, Tuple: type, values: *Tuple, values_index: *usize) void {
+fn assignValues(arg: anytype, Tuple: type, tuple: *Tuple, tuple_index: *usize) void {
     return switch (@typeInfo(@TypeOf(arg))) {
         .@"struct" => |info| {
             inline for (info.fields) |field| {
-                assignValues(@field(arg, field.name), Tuple, values, values_index);
+                assignValues(@field(arg, field.name), Tuple, tuple, tuple_index);
             }
         },
         .enum_literal => {},
         else => {
-            inline for (values, 0..) |_, index| {
-                if (index == values_index.*) {
+            inline for (tuple, 0..) |_, index| {
+                if (index == tuple_index.*) {
                     const tuple_field_name = std.fmt.comptimePrint("{d}", .{index});
-                    const field_type = @TypeOf(@field(values, tuple_field_name));
+                    const field_type = @TypeOf(@field(tuple, tuple_field_name));
                     // Index evaluated at runtime so this check keeps the compiler happy:
                     if (comptime CoercedComptimeValue(@TypeOf(arg)) == field_type) {
-                        @field(values, tuple_field_name) = arg;
+                        @field(tuple, tuple_field_name) = arg;
                     } else unreachable;
                 }
             }
-            values_index.* += 1;
+            tuple_index.* += 1;
         },
     };
 }
@@ -124,6 +96,12 @@ const Node = union(enum) {
     pub const Context = struct {
         sql: []const u8,
         Tuple: type,
+        len: usize,
+        fields: []const Field,
+
+        pub const Field = struct {
+            name: []const u8,
+        };
 
         pub fn values(comptime self: Context, args: anytype) self.Tuple {
             var vals: self.Tuple = undefined;
@@ -196,7 +174,13 @@ const Node = union(enum) {
             var stream = std.io.fixedBufferStream(&buf);
             value_index = 0;
             self.render(stream.writer(), &value_index, 0, null);
-            return .{ .sql = stream.getWritten() ++ "", .Tuple = self.Tuple() };
+            const T = self.Tuple();
+            return .{
+                .len = std.meta.fields(T).len,
+                .fields = &self.fields(),
+                .sql = stream.getWritten() ++ "",
+                .Tuple = T,
+            };
         }
     }
 
@@ -216,6 +200,24 @@ const Node = union(enum) {
         }
 
         return std.meta.Tuple(&types);
+    }
+
+    fn fields(comptime self: Node) [self.countValues()]Context.Field {
+        var fields_array: [self.countValues()]Context.Field = undefined;
+        var index: usize = 0;
+
+        switch (self) {
+            .condition => {},
+            .value => |value| {
+                fields_array[index.*] = .{ .name = value.name };
+                index.* += 1;
+            },
+            .group => |group| {
+                appendFields(group, &fields_array, &index);
+            },
+        }
+
+        return fields_array;
     }
 
     fn countValues(comptime self: Node) usize {
@@ -258,6 +260,24 @@ const Node = union(enum) {
                 },
                 .group => |capture| {
                     appendValueTypes(capture, types, index);
+                },
+            }
+        }
+    }
+    fn appendFields(
+        comptime group: Group,
+        comptime fields_array: []Context.Field,
+        comptime index: *usize,
+    ) void {
+        for (group.children) |child| {
+            switch (child) {
+                .condition => {},
+                .value => |value| {
+                    fields_array[index.*] = .{ .name = value.name };
+                    index.* += 1;
+                },
+                .group => |capture| {
+                    appendFields(capture, fields_array, index);
                 },
             }
         }

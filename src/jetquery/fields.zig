@@ -2,37 +2,52 @@ const std = @import("std");
 
 const jetcommon = @import("jetcommon");
 
+const jetquery = @import("../jetquery.zig");
+
 pub const FieldContext = enum { where, update, insert, limit, order, none };
 
 pub const FieldInfo = struct {
     info: std.builtin.Type.StructField,
     name: []const u8,
+    Table: type,
     context: FieldContext,
 };
 
-pub fn fieldInfos(T: type, comptime context: FieldContext) [std.meta.fields(T).len]FieldInfo {
+pub fn fieldInfos(T: type, comptime context: FieldContext) [jetquery.Where.tree(T).context().len]FieldInfo {
     comptime {
-        var value_fields: [std.meta.fields(T).len]FieldInfo = undefined;
-        for (std.meta.fields(T), 0..) |field, index| {
-            value_fields[index] = fieldInfo(field, context);
+        const tree = jetquery.Where.tree(T);
+        const tree_context = tree.context();
+        var value_fields: [tree_context.len]FieldInfo = undefined;
+        for (std.meta.fields(tree_context.Tuple), tree_context.fields, 0..) |tuple_field, value_field, index| {
+            value_fields[index] = fieldInfo(tuple_field, value_field.name, context);
         }
         return value_fields;
     }
 }
 
-pub fn fieldInfo(comptime field: std.builtin.Type.StructField, comptime context: FieldContext) FieldInfo {
-    return .{ .info = field, .context = context, .name = field.name };
+pub fn fieldInfo(
+    comptime field: std.builtin.Type.StructField,
+    comptime name: []const u8,
+    comptime context: FieldContext,
+) FieldInfo {
+    return .{ .info = field, .context = context, .name = name, .Table = undefined };
 }
 
 pub fn FieldValues(Table: type, relations: []const type, comptime fields: []const FieldInfo) type {
+    _ = Table;
+    _ = relations;
     var new_fields: [fields.len]std.builtin.Type.StructField = undefined;
     for (fields, 0..) |field, index| {
         new_fields[index] = .{
             .name = std.fmt.comptimePrint("{}", .{index}),
-            .type = ColumnType(Table, relations, field),
+            // TODO: Move to Where
+            // .type = ColumnType(Table, relations, field),
+            .type = field.info.type,
             .default_value = null,
             .is_comptime = false,
-            .alignment = @alignOf(ColumnType(Table, relations, field)),
+            .alignment = @alignOf(field.info.type),
+            // TODO: Move to Where
+            // .alignment = @alignOf(ColumnType(Table, relations, field)),
         };
     }
     return @Type(.{

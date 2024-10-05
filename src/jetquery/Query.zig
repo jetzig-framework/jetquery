@@ -250,18 +250,24 @@ fn Statement(
                 statement.field_errors[index] = self.field_errors[index];
             }
 
-            const arg_fields = std.meta.fields(@TypeOf(args));
+            const arg_values = jetquery.Where.init(@TypeOf(args)).values(args);
+            const arg_fields = std.meta.fields(@TypeOf(arg_values));
 
-            inline for (arg_fields, options.field_infos.len..) |field, index| {
-                const value = @field(args, field.name);
-                const coerced = coercion.coerce(
-                    Table,
-                    options.relations,
-                    jetquery.fields.fieldInfo(field, context),
-                    value,
-                );
-                @field(statement.field_values, std.fmt.comptimePrint("{}", .{index})) = coerced.value;
-                statement.field_errors[index] = coerced.err;
+            inline for (arg_fields, options.field_infos.len.., arg_values) |field, field_index, value| {
+                _ = field;
+                _ = context;
+                // const value = @field(arg_values, std.fmt.comptimePrint("{d}", .{value_index}));
+                // TODO: Move to Where
+                // const coerced = coercion.coerce(
+                //     Table,
+                //     options.relations,
+                //     jetquery.fields.fieldInfo(field, context),
+                //     value,
+                // );
+                // statement.field_errors[field_index] = coerced.err;
+                @field(statement.field_values, std.fmt.comptimePrint("{d}", .{field_index})) = value;
+
+                statement.field_errors[field_index] = null;
             }
 
             if (comptime hasTimestamps(Table)) {
@@ -677,7 +683,7 @@ fn timestampsFields(
                 .default_value = null,
                 .is_comptime = false,
                 .alignment = @alignOf(i64),
-            }, query_context),
+            }, "updated_at", query_context),
         },
         .insert => .{
             jetquery.fields.fieldInfo(.{
@@ -686,14 +692,14 @@ fn timestampsFields(
                 .default_value = null,
                 .is_comptime = false,
                 .alignment = @alignOf(i64),
-            }, query_context),
+            }, "created_at", query_context),
             jetquery.fields.fieldInfo(.{
                 .name = "updated_at",
                 .type = i64,
                 .default_value = null,
                 .is_comptime = false,
                 .alignment = @alignOf(i64),
-            }, query_context),
+            }, "updated_at", query_context),
         },
         else => @compileError(
             "Timestamps detection not relevant for `" ++ @tagName(query_context) ++ "` query. (This is a bug).",
