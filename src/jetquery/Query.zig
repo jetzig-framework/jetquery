@@ -6,10 +6,13 @@ const jetquery = @import("../jetquery.zig");
 
 const coercion = @import("coercion.zig");
 const sql = @import("sql.zig");
-const Where = @import("Where.zig");
 
 // Number of rows expected to be returned by a query.
 const ResultContext = enum { one, many, none };
+
+fn Adapter() type {
+    return jetquery.adapters.Type(jetquery.config.database.adapter);
+}
 
 /// Create a new query by passing a table definition.
 /// ```zig
@@ -45,10 +48,10 @@ pub fn Query(Schema: type, comptime table_name: jetquery.DeclEnum(Schema)) type 
         /// Query(Schema, .MyTable).select(.{}).where(.{ .foo = "bar" })
         /// ```
         pub fn where(args: anytype) Statement(.select, Schema, Table, .{
-            .field_infos = &jetquery.fields.fieldInfos(Adapter(), Table, &.{}, @TypeOf(args), .where),
+            .field_infos = &jetquery.fields.fieldInfos(Table, &.{}, @TypeOf(args), .where),
             .columns = &Table.columns(),
             .default_select = true,
-            .where_nodes = &.{Where.tree(Table, &.{}, @TypeOf(args), .where)},
+            .where_clauses = &.{sql.Where.tree(Table, &.{}, @TypeOf(args), .where, 0)},
         }) {
             return InitialStatement(Schema, Table).where(args);
         }
@@ -59,8 +62,6 @@ pub fn Query(Schema: type, comptime table_name: jetquery.DeclEnum(Schema)) type 
         /// ```
         pub fn update(args: anytype) Statement(.update, Schema, Table, .{
             .field_infos = &(jetquery.fields.fieldInfos(
-                Adapter(),
-                Adapter(),
                 Table,
                 &.{},
                 @TypeOf(args),
@@ -76,7 +77,6 @@ pub fn Query(Schema: type, comptime table_name: jetquery.DeclEnum(Schema)) type 
         /// ```
         pub fn insert(args: anytype) Statement(.insert, Schema, Table, .{
             .field_infos = &(jetquery.fields.fieldInfos(
-                Adapter(),
                 Table,
                 &.{},
                 @TypeOf(args),
@@ -115,7 +115,6 @@ pub fn Query(Schema: type, comptime table_name: jetquery.DeclEnum(Schema)) type 
         /// ```
         pub fn find(id: anytype) Statement(.select, Schema, Table, .{
             .field_infos = &(jetquery.fields.fieldInfos(
-                Adapter(),
                 Table,
                 &.{},
                 @TypeOf(.{ .id = id }),
@@ -138,13 +137,12 @@ pub fn Query(Schema: type, comptime table_name: jetquery.DeclEnum(Schema)) type 
         /// ```
         pub fn findBy(args: anytype) Statement(.select, Schema, Table, .{
             .field_infos = &(jetquery.fields.fieldInfos(
-                Adapter(),
                 Table,
                 &.{},
                 @TypeOf(args),
                 .where,
             ) ++
-                jetquery.fields.fieldInfos(Adapter(), Table, &.{}, @TypeOf(.{1}), .limit)),
+                jetquery.fields.fieldInfos(Table, &.{}, @TypeOf(.{1}), .limit)),
             .columns = &Table.columns(),
             .result_context = .one,
         }) {
@@ -217,7 +215,7 @@ fn StatementOptions(comptime query_context: sql.QueryContext) type {
         field_infos: []const jetquery.fields.FieldInfo = &.{},
         columns: []const jetquery.columns.Column = &.{},
         order_clauses: []const sql.OrderClause = &.{},
-        where_nodes: []const Where.Node = &.{},
+        where_clauses: []const sql.Where.Tree = &.{},
         result_context: ResultContext = switch (query_context) {
             .select => .many,
             .update, .insert, .delete, .delete_all, .none => .none,
@@ -253,7 +251,7 @@ fn Statement(
             options.columns,
             options.order_clauses,
             options.distinct,
-            options.where_nodes,
+            options.where_clauses,
         ),
 
         pub const Definition = Table.Definition;
@@ -279,9 +277,14 @@ fn Statement(
                 statement.field_errors[index] = self.field_errors[index];
             }
 
-            const tree = Where.tree(Table, options.relations, @TypeOf(args), context);
-            const tree_context = tree.context(Adapter(), Table, options.relations, options.field_infos.len);
-            const clause_values = Where.values(tree_context, args);
+            const tree = sql.Where.tree(
+                Table,
+                options.relations,
+                @TypeOf(args),
+                context,
+                self.field_infos.len,
+            );
+            const clause_values = tree.values(args);
 
             const arg_values = clause_values.values;
             const arg_errors = clause_values.errors;
@@ -331,11 +334,16 @@ fn Statement(
             Table,
             .{
                 .relations = options.relations,
-                .where_nodes = options.where_nodes ++ .{
-                    Where.tree(Table, options.relations, @TypeOf(args), .where),
+                .where_clauses = options.where_clauses ++ .{
+                    sql.Where.tree(
+                        Table,
+                        options.relations,
+                        @TypeOf(args),
+                        .where,
+                        options.field_infos.len,
+                    ),
                 },
                 .field_infos = options.field_infos ++ jetquery.fields.fieldInfos(
-                    Adapter(),
                     Table,
                     options.relations,
                     @TypeOf(args),
@@ -357,17 +365,17 @@ fn Statement(
             }, Schema, Table, .{
                 .relations = options.relations,
                 .field_infos = options.field_infos ++ jetquery.fields.fieldInfos(
-                    Adapter(),
                     Table,
                     options.relations,
                     @TypeOf(args),
                     .where,
                 ),
-                .where_nodes = options.where_nodes ++ .{Where.tree(
+                .where_clauses = options.where_clauses ++ .{sql.Where.tree(
                     Table,
                     options.relations,
                     @TypeOf(args),
                     .where,
+                    options.field_infos.len,
                 )},
                 .columns = if (options.default_select) &Table.columns() else options.columns,
                 .order_clauses = options.order_clauses,
@@ -383,13 +391,12 @@ fn Statement(
 
         pub fn find(self: Self, id: anytype) Statement(.select, Schema, Table, .{
             .field_infos = &(jetquery.fields.fieldInfos(
-                Adapter(),
                 Table,
                 options.relations,
                 @TypeOf(.{ .id = id }),
                 .where,
             ) ++
-                jetquery.fields.fieldInfos(Adapter(), Table, options.relations, @TypeOf(.{1}), .limit)),
+                jetquery.fields.fieldInfos(Table, options.relations, @TypeOf(.{1}), .limit)),
             .columns = if (options.columns.len == 0) &Table.columns() else options.columns,
             .result_context = .one,
         }) {
@@ -400,16 +407,16 @@ fn Statement(
         pub fn findBy(self: Self, args: anytype) Statement(.select, Schema, Table, .{
             .relations = options.relations,
             .field_infos = options.field_infos ++
-                jetquery.fields.fieldInfos(Adapter(), Table, options.relations, @TypeOf(args), .where) ++
-                jetquery.fields.fieldInfos(Adapter(), Table, options.relations, @TypeOf(.{1}), .limit),
+                jetquery.fields.fieldInfos(Table, options.relations, @TypeOf(args), .where) ++
+                jetquery.fields.fieldInfos(Table, options.relations, @TypeOf(.{1}), .limit),
             .columns = if (options.columns.len == 0) &Table.columns() else options.columns,
             .result_context = .one,
         }) {
             const S = Statement(.select, Schema, Table, .{
                 .relations = options.relations,
                 .field_infos = options.field_infos ++
-                    jetquery.fields.fieldInfos(Adapter(), Table, options.relations, @TypeOf(args), .where) ++
-                    jetquery.fields.fieldInfos(Adapter(), Table, options.relations, @TypeOf(.{1}), .limit),
+                    jetquery.fields.fieldInfos(Table, options.relations, @TypeOf(args), .where) ++
+                    jetquery.fields.fieldInfos(Table, options.relations, @TypeOf(.{1}), .limit),
                 .columns = if (options.columns.len == 0) &Table.columns() else options.columns,
                 .result_context = .one,
             });
@@ -460,29 +467,29 @@ fn Statement(
             return self.extend(S, .{}, .none);
         }
         pub fn update(self: Self, args: anytype) Statement(.update, Schema, Table, .{
-            .field_infos = &(jetquery.fields.fieldInfos(Adapter(), Table, &.{}, @TypeOf(args), .update) ++
+            .field_infos = &(jetquery.fields.fieldInfos(Table, &.{}, @TypeOf(args), .update) ++
                 timestampsFields(Table, .update)),
         }) {
             const S = Statement(.update, Schema, Table, .{
-                .field_infos = &(jetquery.fields.fieldInfos(Adapter(), Table, &.{}, @TypeOf(args), .update) ++
+                .field_infos = &(jetquery.fields.fieldInfos(Table, &.{}, @TypeOf(args), .update) ++
                     timestampsFields(Table, .update)),
             });
             return self.extend(S, args, .update);
         }
 
         pub fn insert(self: Self, args: anytype) Statement(.insert, Schema, Table, .{
-            .field_infos = &(jetquery.fields.fieldInfos(Adapter(), Table, &.{}, @TypeOf(args), .insert) ++
+            .field_infos = &(jetquery.fields.fieldInfos(Table, &.{}, @TypeOf(args), .insert) ++
                 timestampsFields(Table, .insert)),
         }) {
             const S = Statement(.insert, Schema, Table, .{
-                .field_infos = &(jetquery.fields.fieldInfos(Adapter(), Table, &.{}, @TypeOf(args), .insert) ++
+                .field_infos = &(jetquery.fields.fieldInfos(Table, &.{}, @TypeOf(args), .insert) ++
                     timestampsFields(Table, .insert)),
             });
             return self.extend(S, args, .insert);
         }
 
         pub fn delete(self: Self) Statement(.delete, Schema, Table, .{
-            .field_infos = &jetquery.fields.fieldInfos(Adapter(), Table, &.{}, @TypeOf(.{}), .none),
+            .field_infos = &jetquery.fields.fieldInfos(Table, &.{}, @TypeOf(.{}), .none),
         }) {
             // TODO: Add support for `DELETE ... USING ...`
             if (comptime options.relations.len != 0) @compileError(
@@ -490,7 +497,7 @@ fn Statement(
                     "This error occurred to prevent accidential deletion of potentially unexpected behaviour.",
             );
             const S = Statement(.delete, Schema, Table, .{
-                .field_infos = &jetquery.fields.fieldInfos(Adapter(), Table, &.{}, @TypeOf(.{}), .none),
+                .field_infos = &jetquery.fields.fieldInfos(Table, &.{}, @TypeOf(.{}), .none),
             });
             return self.extend(S, .{}, .none);
         }
@@ -507,14 +514,14 @@ fn Statement(
 
         pub fn limit(self: Self, bound: usize) Statement(query_context, Schema, Table, .{
             .relations = options.relations,
-            .field_infos = options.field_infos ++ jetquery.fields.fieldInfos(Adapter(), Table, &.{}, @TypeOf(.{bound}), .limit),
+            .field_infos = options.field_infos ++ jetquery.fields.fieldInfos(Table, &.{}, @TypeOf(.{bound}), .limit),
             .columns = options.columns,
             .order_clauses = options.order_clauses,
             .result_context = options.result_context,
         }) {
             const S = Statement(query_context, Schema, Table, .{
                 .relations = options.relations,
-                .field_infos = options.field_infos ++ jetquery.fields.fieldInfos(Adapter(), Table, &.{}, @TypeOf(.{bound}), .limit),
+                .field_infos = options.field_infos ++ jetquery.fields.fieldInfos(Table, &.{}, @TypeOf(.{bound}), .limit),
                 .columns = options.columns,
                 .order_clauses = options.order_clauses,
                 .result_context = options.result_context,
@@ -829,8 +836,4 @@ fn updateTimestamps(
         },
         else => {},
     }
-}
-
-fn Adapter() type {
-    return jetquery.adapters.Type(jetquery.config.database.adapter);
 }

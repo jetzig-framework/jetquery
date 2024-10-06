@@ -2,7 +2,7 @@ const std = @import("std");
 
 const jetcommon = @import("jetcommon");
 
-const Where = @import("Where.zig");
+const Where = @import("sql/Where.zig");
 
 pub const FieldContext = enum { where, update, insert, limit, order, none };
 
@@ -14,21 +14,15 @@ pub const FieldInfo = struct {
 };
 
 pub fn fieldInfos(
-    Adapter: type,
     Table: type,
     relations: []const type,
     T: type,
     comptime context: FieldContext,
-) [Where.tree(Table, relations, T, context).context(Adapter, Table, relations, 0).len]FieldInfo {
+) [Where.tree(Table, relations, T, context, 0).values_count]FieldInfo {
     comptime {
-        const tree = Where.tree(Table, relations, T, context);
-        const tree_context = tree.context(Adapter, Table, relations, 0);
-        var value_fields: [tree_context.len]FieldInfo = undefined;
-        for (
-            std.meta.fields(tree_context.ValuesTuple),
-            tree_context.fields,
-            0..,
-        ) |tuple_field, value_field, index| {
+        const tree = Where.tree(Table, relations, T, context, 0);
+        var value_fields: [tree.values_count]FieldInfo = undefined;
+        for (std.meta.fields(tree.ValuesTuple), tree.values_fields, 0..) |tuple_field, value_field, index| {
             value_fields[index] = fieldInfo(tuple_field, value_field.Table, value_field.name, context);
         }
         return value_fields;

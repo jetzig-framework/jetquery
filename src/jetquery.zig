@@ -17,7 +17,6 @@ pub const Row = @import("jetquery/Row.zig");
 pub const Result = @import("jetquery/Result.zig").Result;
 pub const events = @import("jetquery/events.zig");
 pub const Query = @import("jetquery/Query.zig").Query;
-pub const Where = @import("jetquery/Where.zig");
 pub const Table = @import("jetquery/Table.zig").Table;
 pub const Column = @import("jetquery/Column.zig");
 pub const Value = @import("jetquery/Value.zig").Value;
@@ -600,7 +599,7 @@ test "nested where" {
     });
 
     try std.testing.expectEqualStrings(
-        \\SELECT "humans"."id", "humans"."family_id", "humans"."cat_id", "humans"."name", "cats"."id", "cats"."name", "cats"."paws", "cats"."created_at", "cats"."updated_at", "families"."id", "families"."name" FROM "humans" INNER JOIN "cats" ON "humans"."cat_id" = "cats"."id" INNER JOIN "families" ON "humans"."family_id" = "families"."id" WHERE ("humans"."name" = $2 AND "cats"."name" = $3 AND "families"."name" = $4)
+        \\SELECT "humans"."id", "humans"."family_id", "humans"."cat_id", "humans"."name", "cats"."id", "cats"."name", "cats"."paws", "cats"."created_at", "cats"."updated_at", "families"."id", "families"."name" FROM "humans" INNER JOIN "cats" ON "humans"."cat_id" = "cats"."id" INNER JOIN "families" ON "humans"."family_id" = "families"."id" WHERE ("humans"."name" = $1 AND "cats"."name" = $2 AND "families"."name" = $3)
     ,
         query.sql,
     );
