@@ -54,24 +54,7 @@ pub fn nodeTree(
 
         return switch (@typeInfo(T)) {
             .@"struct" => |info| blk: {
-                var nodes: [info.fields.len]Node = undefined;
-
-                for (info.fields, 0..) |field, index| {
-                    var appended_path: [path.len + 1][]const u8 = undefined;
-                    for (0..path.len) |idx| appended_path[idx] = path[idx];
-                    appended_path[appended_path.len - 1] = field.name;
-                    nodes[index] = nodeTree(
-                        Table,
-                        relations,
-                        OG,
-                        field.type,
-                        field.name,
-                        field_info,
-                        &appended_path,
-                        field_context,
-                        value_index,
-                    );
-                }
+                const nodes = childNodes(Table, relations, OG, field_info, info, path, field_context, value_index);
                 break :blk .{ .group = .{ .name = name, .children = &nodes } };
             },
             .enum_literal => blk: {
@@ -99,6 +82,38 @@ pub fn nodeTree(
             },
         };
     }
+}
+
+fn childNodes(
+    Table: type,
+    relations: []const type,
+    OG: type,
+    comptime field_info: std.builtin.Type.StructField,
+    comptime struct_info: std.builtin.Type.Struct,
+    comptime path: [][]const u8,
+    comptime field_context: fields.FieldContext,
+    comptime value_index: *usize,
+) [struct_info.fields.len]Node {
+    var nodes: [struct_info.fields.len]Node = undefined;
+
+    for (struct_info.fields, 0..) |field, index| {
+        var appended_path: [path.len + 1][]const u8 = undefined;
+        for (0..path.len) |idx| appended_path[idx] = path[idx];
+        appended_path[appended_path.len - 1] = field.name;
+        nodes[index] = nodeTree(
+            Table,
+            relations,
+            OG,
+            field.type,
+            field.name,
+            field_info,
+            &appended_path,
+            field_context,
+            value_index,
+        );
+    }
+
+    return nodes;
 }
 
 fn findRelation(Table: type, relations: []const type, comptime path: [][]const u8) type {
@@ -249,6 +264,7 @@ pub const Node = union(enum) {
 
     pub fn render(
         self: Node,
+        Adapter: type,
         comptime writer: anytype,
         comptime value_index: *usize,
         comptime depth: usize,
@@ -264,19 +280,25 @@ pub const Node = union(enum) {
             },
             .value => |value| {
                 value_index.* += 1;
-                // TODO: This needs re-thinking.
                 const is_sequence = if (prev) |capture| capture == .value else false;
                 const prefix = if (is_sequence) " AND " else "";
-                writer.print("{s}{s}.{s} = ${}", .{ prefix, value.Table.name, value.name, value_index.* }) catch unreachable;
+                writer.print("{s}{s}.{s} = {s}", .{
+                    prefix,
+                    Adapter.identifier(value.Table.name),
+                    Adapter.identifier(value.name),
+                    Adapter.paramSql(value_index.*),
+                }) catch unreachable;
             },
             .group => |group| {
                 if (group.children.len > 1) writer.print("(", .{}) catch unreachable;
                 var prev_child: ?Node = null;
                 for (group.children) |child| {
                     if (prev_child) |capture| {
-                        if (child == .group and capture == .group) writer.print(" AND ", .{}) catch unreachable;
+                        if (child == .group and (capture == .group or capture == .value)) {
+                            writer.print(" AND ", .{}) catch unreachable;
+                        }
                     }
-                    child.render(writer, value_index, depth + 1, prev_child);
+                    child.render(Adapter, writer, value_index, depth + 1, prev_child);
                     prev_child = child;
                 }
                 if (group.children.len > 1) writer.print(")", .{}) catch unreachable;
@@ -286,6 +308,7 @@ pub const Node = union(enum) {
 
     pub fn context(
         comptime self: Node,
+        Adapter: type,
         Table: type,
         relations: []const type,
         comptime first_index: usize,
@@ -293,12 +316,12 @@ pub const Node = union(enum) {
         comptime {
             var counter = Counter{ .count = 0 };
             var value_index: usize = first_index;
-            self.render(&counter, &value_index, 0, null);
+            self.render(Adapter, &counter, &value_index, 0, null);
 
             var buf: [counter.count]u8 = undefined;
             var stream = std.io.fixedBufferStream(&buf);
             value_index = 0;
-            self.render(stream.writer(), &value_index, 0, null);
+            self.render(Adapter, stream.writer(), &value_index, 0, null);
             const T = self.ValuesTuple();
             return .{
                 .len = std.meta.fields(T).len,

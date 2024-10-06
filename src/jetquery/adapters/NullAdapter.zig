@@ -65,3 +65,7 @@ pub fn innerJoinSql(
 
     return "";
 }
+
+pub fn emptyWhereSql() []const u8 {
+    return "";
+}

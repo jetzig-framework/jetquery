@@ -45,26 +45,26 @@ pub fn render(
     comptime columns: []const jetquery.columns.Column,
     comptime order_clauses: []const OrderClause,
     comptime distinct: ?[]const jetquery.columns.Column,
-    comptime where_clause: ?jetquery.Where.Node.Context,
+    comptime where_nodes: []const jetquery.Where.Node,
 ) []const u8 {
     return switch (query_context) {
-        .select => renderSelect(Table, Adapter, relations, columns, field_infos, order_clauses, where_clause),
-        .update => renderUpdate(Table, Adapter, field_infos),
-        .insert => renderInsert(Table, Adapter, field_infos),
-        .delete, .delete_all => renderDelete(Table, Adapter, field_infos, query_context),
-        .count => renderCount(Table, Adapter, relations, field_infos, distinct),
+        .select => renderSelect(Adapter, Table, relations, columns, field_infos, order_clauses, where_nodes),
+        .update => renderUpdate(Adapter, Table, where_nodes, field_infos),
+        .insert => renderInsert(Adapter, Table, relations, Table, Adapter, field_infos),
+        .delete, .delete_all => renderDelete(Adapter, Table, field_infos, query_context),
+        .count => renderCount(Adapter, Table, relations, field_infos, where_nodes, distinct),
         .none => "",
     };
 }
 
 fn renderSelect(
-    Table: type,
     Adapter: type,
+    Table: type,
     relations: []const type,
     comptime columns: []const jetquery.columns.Column,
     comptime field_infos: []const jetquery.fields.FieldInfo,
     comptime order_clauses: []const OrderClause,
-    comptime where_clause: ?jetquery.Where.Node.Context,
+    comptime where_nodes: []const jetquery.Where.Node,
 ) []const u8 {
     comptime {
         const select_columns = renderSelectColumns(Adapter, Table, relations, columns);
@@ -77,8 +77,7 @@ fn renderSelect(
                 select_columns,
                 from,
                 joins,
-                // TODO: Default SQL ? (1=1)
-                if (where_clause) |clause| " WHERE " ++ clause.sql else "",
+                renderWhere(Adapter, Table, relations, where_nodes),
                 // renderWhere(Adapter, field_infos),
                 renderOrder(Table, Adapter, order_clauses),
                 renderLimit(Adapter, field_infos),
@@ -88,8 +87,10 @@ fn renderSelect(
 }
 
 fn renderUpdate(
-    Table: type,
     Adapter: type,
+    Table: type,
+    relations: []const type,
+    where_nodes: []const jetquery.Where.Node,
     comptime field_infos: []const jetquery.fields.FieldInfo,
 ) []const u8 {
     var buf: [paramsBufSize(Adapter, field_infos, .update, .assign)]u8 = undefined;
@@ -98,14 +99,14 @@ fn renderUpdate(
         .{
             Adapter.identifier(Table.name),
             renderParams(&buf, Adapter, field_infos, .update, .assign),
-            renderWhere(Adapter, field_infos),
+            renderWhere(Adapter, Table, relations, where_nodes),
         },
     );
 }
 
 fn renderInsert(
-    Table: type,
     Adapter: type,
+    Table: type,
     comptime field_infos: []const jetquery.fields.FieldInfo,
 ) []const u8 {
     var params_buf: [paramsBufSize(Adapter, field_infos, .insert, .column)]u8 = undefined;
@@ -121,8 +122,8 @@ fn renderInsert(
 }
 
 fn renderDelete(
-    Table: type,
     Adapter: type,
+    Table: type,
     comptime field_infos: []const jetquery.fields.FieldInfo,
     comptime query_context: QueryContext,
 ) []const u8 {
@@ -141,10 +142,11 @@ fn renderDelete(
 }
 
 fn renderCount(
-    Table: type,
     Adapter: type,
+    Table: type,
     comptime relations: []const type,
     comptime field_infos: []const jetquery.fields.FieldInfo,
+    comptime where_nodes: []const jetquery.Where.Node,
     comptime distinct: ?[]const jetquery.columns.Column,
 ) []const u8 {
     comptime {
@@ -158,7 +160,7 @@ fn renderCount(
                 count_column,
                 from,
                 joins,
-                renderWhere(Adapter, field_infos),
+                renderWhere(Adapter, Table, relations, where_nodes),
                 renderLimit(Adapter, field_infos),
             },
         );
@@ -206,14 +208,25 @@ fn renderOrder(
 
 fn renderWhere(
     Adapter: type,
-    comptime field_infos: []const jetquery.fields.FieldInfo,
+    Table: type,
+    relations: []const type,
+    comptime where_nodes: []const jetquery.Where.Node,
 ) []const u8 {
-    if (!hasParam(field_infos, .where)) return "";
+    if (where_nodes.len == 0) return Adapter.emptyWhereSql();
 
-    var buf: [paramsBufSize(Adapter, field_infos, .where, .assign)]u8 = undefined;
-    const params = renderParams(&buf, Adapter, field_infos, .where, .assign);
+    var size: usize = 0;
+    for (where_nodes) |node| {
+        size += node.context(Adapter, Table, relations, 0).sql.len;
+    }
+    var buf: [size]u8 = undefined;
+    var cursor: usize = 0;
+    for (where_nodes) |node| {
+        const sql = node.context(Adapter, Table, relations, 0).sql;
+        @memcpy(buf[cursor .. cursor + sql.len], sql);
+        cursor += sql.len;
+    }
 
-    return std.fmt.comptimePrint(" WHERE {s}", .{params});
+    return std.fmt.comptimePrint(" WHERE {s}", .{&buf});
 }
 
 fn renderJoins(Adapter: type, Table: type, relations: []const type) []const u8 {

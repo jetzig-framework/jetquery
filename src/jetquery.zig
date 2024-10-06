@@ -57,42 +57,42 @@ test {
     std.testing.refAllDecls(@This());
 }
 
-// test "select" {
-//     const Schema = struct {
-//         pub const Cat = Table("cats", struct { name: []const u8, paws: i32 }, .{});
-//     };
-//     const query = Query(Schema, .Cat).select(.{ .name, .paws });
-//
-//     try std.testing.expectEqualStrings(
-//         \\SELECT "cats"."name", "cats"."paws" FROM "cats"
-//     , query.sql);
-// }
-//
-// test "select (all)" {
-//     const Schema = struct {
-//         pub const Cat = Table("cats", struct { name: []const u8, paws: i32 }, .{});
-//     };
-//     const query = Query(Schema, .Cat).select(.{});
-//
-//     try std.testing.expectEqualStrings(
-//         \\SELECT "cats"."name", "cats"."paws" FROM "cats"
-//     , query.sql);
-// }
-//
-// test "select (with `where`)" {
-//     const Schema = struct {
-//         pub const Cat = Table("cats", struct { name: []const u8, paws: i32 }, .{});
-//     };
-//
-//     const paws = 4;
-//     const query = Query(Schema, .Cat)
-//         .select(.{ .name, .paws })
-//         .where(.{ .name = "bar", .paws = paws });
-//
-//     try std.testing.expectEqualStrings(
-//         \\SELECT "cats"."name", "cats"."paws" FROM "cats" WHERE "cats"."name" = $1 AND "cats"."paws" = $2
-//     , query.sql);
-// }
+test "select" {
+    const Schema = struct {
+        pub const Cat = Table("cats", struct { name: []const u8, paws: i32 }, .{});
+    };
+    const query = Query(Schema, .Cat).select(.{ .name, .paws });
+
+    try std.testing.expectEqualStrings(
+        \\SELECT "cats"."name", "cats"."paws" FROM "cats" WHERE (1 = 1)
+    , query.sql);
+}
+
+test "select (all)" {
+    const Schema = struct {
+        pub const Cat = Table("cats", struct { name: []const u8, paws: i32 }, .{});
+    };
+    const query = Query(Schema, .Cat).select(.{});
+
+    try std.testing.expectEqualStrings(
+        \\SELECT "cats"."name", "cats"."paws" FROM "cats" WHERE (1 = 1)
+    , query.sql);
+}
+
+test "select (with `where`)" {
+    const Schema = struct {
+        pub const Cat = Table("cats", struct { name: []const u8, paws: i32 }, .{});
+    };
+
+    const paws = 4;
+    const query = Query(Schema, .Cat)
+        .select(.{ .name, .paws })
+        .where(.{ .name = "bar", .paws = paws });
+
+    try std.testing.expectEqualStrings(
+        \\SELECT "cats"."name", "cats"."paws" FROM "cats" WHERE ("cats"."name" = $1 AND "cats"."paws" = $2)
+    , query.sql);
+}
 //
 // test "where" {
 //     const Schema = struct {
@@ -600,7 +600,7 @@ test "nested where" {
     });
 
     try std.testing.expectEqualStrings(
-        \\SELECT "humans"."id", "humans"."family_id", "humans"."cat_id", "humans"."name", "cats"."id", "cats"."name", "cats"."paws", "cats"."created_at", "cats"."updated_at", "families"."id", "families"."name" FROM "humans" INNER JOIN "cats" ON "humans"."cat_id" = "cats"."id" INNER JOIN "families" ON "humans"."family_id" = "families"."id" WHERE "humans"."name" = $1 AND "cats"."name" = $2 AND "families"."name" = $3
+        \\SELECT "humans"."id", "humans"."family_id", "humans"."cat_id", "humans"."name", "cats"."id", "cats"."name", "cats"."paws", "cats"."created_at", "cats"."updated_at", "families"."id", "families"."name" FROM "humans" INNER JOIN "cats" ON "humans"."cat_id" = "cats"."id" INNER JOIN "families" ON "humans"."family_id" = "families"."id" WHERE ("humans"."name" = $2 AND "cats"."name" = $3 AND "families"."name" = $4)
     ,
         query.sql,
     );

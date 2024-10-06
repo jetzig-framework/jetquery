@@ -272,6 +272,10 @@ pub fn innerJoinSql(
     );
 }
 
+pub fn emptyWhereSql() []const u8 {
+    return "(1 = 1)";
+}
+
 fn initPool(allocator: std.mem.Allocator, options: Options) !*pg.Pool {
     return try pg.Pool.init(allocator, .{
         .size = options.pool_size,

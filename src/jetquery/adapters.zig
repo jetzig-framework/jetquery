@@ -99,6 +99,13 @@ pub const Adapter = union(enum) {
             inline else => |adapter| @TypeOf(adapter).innerJoinSql(Table, JoinTable, name, options),
         };
     }
+
+    /// SQL fragment used as a `WHERE` clause when no clause has been applied by the user.
+    pub fn emptyWhereSQL(self: Adapter) []const u8 {
+        return switch (self) {
+            inline else => |adapter| @TypeOf(adapter).emptyWhereSQL(),
+        };
+    }
 };
 
 pub const JoinOptions = struct {
