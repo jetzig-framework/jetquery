@@ -107,6 +107,12 @@ pub fn execute(self: *Repo, query: anytype) !switch (@TypeOf(query).ResultContex
     };
 }
 
+pub fn save(self: *Repo, value: anytype) !void {
+    // TODO: Store original fields + source model, detect changes, issue UPDATE query.
+    _ = self;
+    _ = value;
+}
+
 /// Free a single result's allocated memory. Use in conjunction with `findBy` and `find` as these
 /// methods simply return structs as defined by the Schema and do not have another way to deinit.
 pub fn free(self: *Repo, value: anytype) void {
@@ -379,4 +385,42 @@ test "timestamps" {
         defer repo.free(cat);
         try std.testing.expect(cat.created_at.microseconds() > now);
     }
+}
+
+test "save" {
+    var repo = try Repo.init(
+        std.testing.allocator,
+        .{
+            .adapter = .{
+                .postgresql = .{
+                    .database = "postgres",
+                    .username = "postgres",
+                    .hostname = "127.0.0.1",
+                    .password = "password",
+                    .port = 5432,
+                },
+            },
+        },
+    );
+    defer repo.deinit();
+
+    const Schema = struct {
+        pub const Cat = jetquery.Table("cats", struct { name: []const u8, paws: i32 }, .{});
+    };
+
+    var drop_table = try repo.adapter.execute(&repo, "drop table if exists cats", &.{});
+    defer drop_table.deinit();
+
+    var create_table = try repo.adapter.execute(&repo, "create table cats (name varchar(255), paws int)", &.{});
+    defer create_table.deinit();
+
+    try jetquery.Query(Schema, .Cat).insert(.{ .name = "Hercules", .paws = 4 }).execute(&repo);
+
+    const query = jetquery.Query(Schema, .Cat)
+        .select(.{ .name, .paws })
+        .findBy(.{ .name = "Hercules" });
+    var cat = try query.execute(&repo) orelse return std.testing.expect(false);
+    defer repo.free(cat);
+    cat.name = "Princes";
+    try repo.save(cat);
 }
