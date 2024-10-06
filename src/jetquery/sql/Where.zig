@@ -42,16 +42,14 @@ pub const Tree = struct {
         }
     };
 
-    pub fn render(comptime self: Tree, Adapter: type, first_index: usize) []const u8 {
+    pub fn render(comptime self: Tree, Adapter: type) []const u8 {
         comptime {
             var counter = Counter{ .count = 0 };
-            var value_index: isize = @as(isize, @intCast(first_index)) - 1;
-            self.root.render(Adapter, &counter, &value_index, 0, null);
+            self.root.render(Adapter, &counter, 0, null);
 
             var buf: [counter.count]u8 = undefined;
             var stream = std.io.fixedBufferStream(&buf);
-            value_index = @as(isize, @intCast(first_index)) - 1;
-            self.root.render(Adapter, stream.writer(), &value_index, 0, null);
+            self.root.render(Adapter, stream.writer(), 0, null);
 
             return stream.getWritten() ++ "";
         }
@@ -60,7 +58,7 @@ pub const Tree = struct {
     pub fn values(comptime self: Tree, args: anytype) ClauseValues(self.ValuesTuple, self.ErrorsTuple) {
         var vals: self.ValuesTuple = undefined;
         var errors: self.ErrorsTuple = undefined;
-        assignValues(args, self.ValuesTuple, &vals, self.ErrorsTuple, &errors, self.values_fields, -1);
+        assignValues(args, self.ValuesTuple, &vals, self.ErrorsTuple, &errors, self.values_fields, 0);
         return .{ .values = vals, .errors = errors };
     }
 
@@ -94,7 +92,202 @@ pub fn tree(
     };
 }
 
-pub fn nodeTree(
+pub const Node = union(enum) {
+    pub const Condition = enum { NOT, AND, OR };
+    pub const Value = struct {
+        name: []const u8,
+        type: type,
+        Table: type,
+        field_info: std.builtin.Type.StructField,
+        field_context: fields.FieldContext,
+        index: usize,
+
+        pub fn ColumnType(self: Value) type {
+            return fields.ColumnType(self.Table, fields.fieldInfo(
+                self.field_info,
+                self.Table,
+                self.name,
+                self.field_context,
+            ));
+        }
+    };
+
+    pub const Group = struct {
+        name: []const u8,
+        children: []const Node,
+    };
+
+    condition: Condition,
+    value: Value,
+    group: Group,
+
+    pub fn render(
+        self: Node,
+        Adapter: type,
+        comptime writer: anytype,
+        comptime depth: usize,
+        comptime prev: ?Node,
+    ) void {
+        switch (self) {
+            .condition => |capture| {
+                const operator = switch (capture) {
+                    .NOT => if (prev == null) "NOT" else "AND NOT",
+                    else => |tag| @tagName(tag),
+                };
+                writer.print(" {s} ", .{operator}) catch unreachable;
+            },
+            .value => |value| {
+                const is_sequence = if (prev) |capture| capture == .value else false;
+                const prefix = if (is_sequence) " AND " else "";
+                writer.print("{s}{s}.{s} = {s}", .{
+                    prefix,
+                    Adapter.identifier(value.Table.name),
+                    Adapter.identifier(value.name),
+                    Adapter.paramSql(value.index),
+                }) catch unreachable;
+            },
+            .group => |group| {
+                if (group.children.len > 1) writer.print("(", .{}) catch unreachable;
+                var prev_child: ?Node = null;
+                for (group.children) |child| {
+                    if (prev_child) |capture| {
+                        if (child == .group and (capture == .group or capture == .value)) {
+                            writer.print(" AND ", .{}) catch unreachable;
+                        }
+                    }
+                    child.render(Adapter, writer, depth + 1, prev_child);
+                    prev_child = child;
+                }
+                if (group.children.len > 1) writer.print(")", .{}) catch unreachable;
+            },
+        }
+    }
+
+    fn ValuesTuple(comptime self: Node) type {
+        var types: [self.countValues()]type = undefined;
+        var index: usize = 0;
+
+        switch (self) {
+            .condition => {},
+            .value => |value| {
+                types[index.*] = value.ColumnType();
+                index.* += 1;
+            },
+            .group => |group| {
+                appendValueTypes(group, &types, &index);
+            },
+        }
+
+        return std.meta.Tuple(&types);
+    }
+
+    fn ErrorsTuple(comptime self: Node) type {
+        var types: [self.countValues()]type = undefined;
+        for (0..self.countValues()) |index| {
+            types[index] = ?anyerror;
+        }
+
+        return std.meta.Tuple(&types);
+    }
+
+    fn values_fields(comptime self: Node, Table: type, relations: []const type) [self.countValues()]Field {
+        var fields_array: [self.countValues()]Field = undefined;
+        var tuple_index: usize = 0;
+
+        switch (self) {
+            .condition => {},
+            .value => |value| {
+                fields_array[value.index] = .{
+                    .Table = value.Table,
+                    .name = value.name,
+                    .context = value.field_context,
+                    .column_type = value.ColumnType(),
+                    .index = tuple_index,
+                };
+                tuple_index += 1;
+            },
+            .group => |group| {
+                appendFields(group, Table, relations, &fields_array, &tuple_index);
+            },
+        }
+
+        return fields_array;
+    }
+
+    fn countValues(comptime self: Node) usize {
+        var count: usize = 0;
+
+        switch (self) {
+            .condition => {},
+            .value => {
+                count += 1;
+            },
+            .group => |group| {
+                countGroupValues(group, &count);
+            },
+        }
+
+        return count;
+    }
+
+    fn countGroupValues(comptime group: Group, comptime count: *usize) void {
+        for (group.children) |child| {
+            switch (child) {
+                .condition => {},
+                .value => {
+                    count.* += 1;
+                },
+                .group => |capture| {
+                    countGroupValues(capture, count);
+                },
+            }
+        }
+    }
+
+    fn appendValueTypes(comptime group: Group, comptime types: []type, comptime index: *usize) void {
+        for (group.children) |child| {
+            switch (child) {
+                .condition => {},
+                .value => |value| {
+                    types[index.*] = value.ColumnType();
+                    index.* += 1;
+                },
+                .group => |capture| {
+                    appendValueTypes(capture, types, index);
+                },
+            }
+        }
+    }
+
+    fn appendFields(
+        comptime group: Group,
+        Table: type,
+        relations: []const type,
+        comptime fields_array: []Field,
+        tuple_index: *usize,
+    ) void {
+        for (group.children) |child| {
+            switch (child) {
+                .condition => {},
+                .value => |value| {
+                    fields_array[tuple_index.*] = .{
+                        .Table = value.Table,
+                        .name = value.name,
+                        .context = value.field_context,
+                        .column_type = value.ColumnType(),
+                        .index = value.index,
+                    };
+                    tuple_index.* += 1;
+                },
+                .group => |capture| {
+                    appendFields(capture, Table, relations, fields_array, tuple_index);
+                },
+            }
+        }
+    }
+};
+
+fn nodeTree(
     Table: type,
     relations: []const type,
     OG: type,
@@ -200,7 +393,7 @@ fn assignValues(
     ErrorsTuple: type,
     errors_tuple: *ErrorsTuple,
     values_fields: []const Field,
-    comptime tuple_index: isize,
+    comptime tuple_index: usize,
 ) void {
     if (comptime coercion.canCoerceDelegate(@TypeOf(arg))) {
         assignValue(arg, ValuesTuple, values_tuple, ErrorsTuple, errors_tuple, values_fields, tuple_index);
@@ -209,16 +402,8 @@ fn assignValues(
 
     switch (@typeInfo(@TypeOf(arg))) {
         .@"struct" => |info| {
-            // TODO: There must be a better way of tracking current arg index - we can't pass a
-            // comptime pointer to this function without triggering an error (runtime ref to
-            // comptime var).
-            comptime var idx: isize = tuple_index;
+            comptime var idx: usize = tuple_index;
             inline for (info.fields) |field| {
-                const T = @TypeOf(@field(arg, field.name));
-                idx += if (comptime coercion.canCoerceDelegate(T)) 1 else switch (@typeInfo(T)) {
-                    .@"struct", .enum_literal => 0,
-                    else => 1,
-                };
                 assignValues(
                     @field(arg, field.name),
                     ValuesTuple,
@@ -228,6 +413,15 @@ fn assignValues(
                     values_fields,
                     idx,
                 );
+
+                // TODO: There must be a better way of tracking current arg index - we can't pass a
+                // comptime pointer to this function without triggering an error (runtime ref to
+                // comptime var).
+                const T = @TypeOf(@field(arg, field.name));
+                idx += if (comptime coercion.canCoerceDelegate(T)) 1 else switch (@typeInfo(T)) {
+                    .@"struct", .enum_literal => 0,
+                    else => 1,
+                };
             }
         },
         .enum_literal => {},
@@ -251,7 +445,7 @@ fn assignValue(
         values_fields,
         0..,
     ) |field, value_field, index| {
-        const tuple_field_name = std.fmt.comptimePrint("{d}", .{value_field.index});
+        const tuple_field_name = std.fmt.comptimePrint("{d}", .{tuple_index});
 
         if (comptime tuple_index == index) {
             const field_info = comptime fields.fieldInfo(
@@ -270,199 +464,6 @@ fn assignValue(
         }
     }
 }
-
-pub const Node = union(enum) {
-    pub const Condition = enum { NOT, AND, OR };
-    pub const Value = struct {
-        name: []const u8,
-        type: type,
-        Table: type,
-        field_info: std.builtin.Type.StructField,
-        field_context: fields.FieldContext,
-        index: usize,
-
-        pub fn ColumnType(self: Value) type {
-            return fields.ColumnType(self.Table, fields.fieldInfo(
-                self.field_info,
-                self.Table,
-                self.name,
-                self.field_context,
-            ));
-        }
-    };
-
-    pub const Group = struct {
-        name: []const u8,
-        children: []const Node,
-    };
-
-    condition: Condition,
-    value: Value,
-    group: Group,
-
-    pub fn render(
-        self: Node,
-        Adapter: type,
-        comptime writer: anytype,
-        comptime value_index: *isize,
-        comptime depth: usize,
-        comptime prev: ?Node,
-    ) void {
-        switch (self) {
-            .condition => |capture| {
-                const operator = switch (capture) {
-                    .NOT => if (prev == null) "NOT" else "AND NOT",
-                    else => |tag| @tagName(tag),
-                };
-                writer.print(" {s} ", .{operator}) catch unreachable;
-            },
-            .value => |value| {
-                value_index.* += 1;
-                const is_sequence = if (prev) |capture| capture == .value else false;
-                const prefix = if (is_sequence) " AND " else "";
-                writer.print("{s}{s}.{s} = {s}", .{
-                    prefix,
-                    Adapter.identifier(value.Table.name),
-                    Adapter.identifier(value.name),
-                    Adapter.paramSql(value_index.*),
-                }) catch unreachable;
-            },
-            .group => |group| {
-                if (group.children.len > 1) writer.print("(", .{}) catch unreachable;
-                var prev_child: ?Node = null;
-                for (group.children) |child| {
-                    if (prev_child) |capture| {
-                        if (child == .group and (capture == .group or capture == .value)) {
-                            writer.print(" AND ", .{}) catch unreachable;
-                        }
-                    }
-                    child.render(Adapter, writer, value_index, depth + 1, prev_child);
-                    prev_child = child;
-                }
-                if (group.children.len > 1) writer.print(")", .{}) catch unreachable;
-            },
-        }
-    }
-
-    fn ValuesTuple(comptime self: Node) type {
-        var types: [self.countValues()]type = undefined;
-        var index: usize = 0;
-
-        switch (self) {
-            .condition => {},
-            .value => |value| {
-                types[index.*] = value.ColumnType();
-                index.* += 1;
-            },
-            .group => |group| {
-                appendValueTypes(group, &types, &index);
-            },
-        }
-
-        return std.meta.Tuple(&types);
-    }
-
-    fn ErrorsTuple(comptime self: Node) type {
-        var types: [self.countValues()]type = undefined;
-        for (0..self.countValues()) |index| {
-            types[index] = ?anyerror;
-        }
-
-        return std.meta.Tuple(&types);
-    }
-
-    fn values_fields(comptime self: Node, Table: type, relations: []const type) [self.countValues()]Field {
-        var fields_array: [self.countValues()]Field = undefined;
-
-        switch (self) {
-            .condition => {},
-            .value => |value| {
-                fields_array[value.index] = .{
-                    .Table = value.Table,
-                    .name = value.name,
-                    .context = value.field_context,
-                    .column_type = value.ColumnType(),
-                    .index = value.index,
-                };
-            },
-            .group => |group| {
-                appendFields(group, Table, relations, &fields_array);
-            },
-        }
-
-        return fields_array;
-    }
-
-    fn countValues(comptime self: Node) usize {
-        var count: usize = 0;
-
-        switch (self) {
-            .condition => {},
-            .value => {
-                count += 1;
-            },
-            .group => |group| {
-                countGroupValues(group, &count);
-            },
-        }
-
-        return count;
-    }
-
-    fn countGroupValues(comptime group: Group, comptime count: *usize) void {
-        for (group.children) |child| {
-            switch (child) {
-                .condition => {},
-                .value => {
-                    count.* += 1;
-                },
-                .group => |capture| {
-                    countGroupValues(capture, count);
-                },
-            }
-        }
-    }
-
-    fn appendValueTypes(comptime group: Group, comptime types: []type, comptime index: *usize) void {
-        for (group.children) |child| {
-            switch (child) {
-                .condition => {},
-                .value => |value| {
-                    types[index.*] = value.ColumnType();
-                    index.* += 1;
-                },
-                .group => |capture| {
-                    appendValueTypes(capture, types, index);
-                },
-            }
-        }
-    }
-
-    fn appendFields(
-        comptime group: Group,
-        Table: type,
-        relations: []const type,
-        comptime fields_array: []Field,
-    ) void {
-        for (group.children) |child| {
-            switch (child) {
-                .condition => {},
-                .value => |value| {
-                    fields_array[value.index] = .{
-                        .Table = value.Table,
-                        .name = value.name,
-                        .context = value.field_context,
-                        .column_type = value.ColumnType(),
-                        .index = value.index,
-                    };
-                },
-                .group => |capture| {
-                    appendFields(capture, Table, relations, fields_array);
-                },
-            }
-        }
-    }
-};
 
 fn debugNode(comptime node: Node, comptime depth: usize) void {
     const indent = " " ** depth;

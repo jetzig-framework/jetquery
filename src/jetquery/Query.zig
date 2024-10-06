@@ -121,6 +121,7 @@ pub fn Query(Schema: type, comptime table_name: jetquery.DeclEnum(Schema)) type 
                 .where,
             ) ++
                 jetquery.fields.fieldInfos(Table, &.{}, @TypeOf(.{1}), .limit)),
+            .where_clauses = &.{sql.Where.tree(Table, &.{}, @TypeOf(.{ .id = id }), .where, 0)},
             .columns = &Table.columns(),
             .result_context = .one,
         }) {
@@ -145,6 +146,7 @@ pub fn Query(Schema: type, comptime table_name: jetquery.DeclEnum(Schema)) type 
                 jetquery.fields.fieldInfos(Table, &.{}, @TypeOf(.{1}), .limit)),
             .columns = &Table.columns(),
             .result_context = .one,
+            .where_clauses = &.{sql.Where.tree(Table, &.{}, @TypeOf(args), .where, 0)},
         }) {
             return InitialStatement(Schema, Table).findBy(args);
         }
@@ -397,6 +399,13 @@ fn Statement(
                 .where,
             ) ++
                 jetquery.fields.fieldInfos(Table, options.relations, @TypeOf(.{1}), .limit)),
+            .where_clauses = &.{sql.Where.tree(
+                Table,
+                &.{},
+                @TypeOf(.{ .id = id }),
+                .where,
+                options.field_infos.len,
+            )},
             .columns = if (options.columns.len == 0) &Table.columns() else options.columns,
             .result_context = .one,
         }) {
@@ -410,6 +419,7 @@ fn Statement(
                 jetquery.fields.fieldInfos(Table, options.relations, @TypeOf(args), .where) ++
                 jetquery.fields.fieldInfos(Table, options.relations, @TypeOf(.{1}), .limit),
             .columns = if (options.columns.len == 0) &Table.columns() else options.columns,
+            .where_clauses = &.{sql.Where.tree(Table, &.{}, @TypeOf(args), .where, options.field_infos.len)},
             .result_context = .one,
         }) {
             const S = Statement(.select, Schema, Table, .{
@@ -418,6 +428,7 @@ fn Statement(
                     jetquery.fields.fieldInfos(Table, options.relations, @TypeOf(args), .where) ++
                     jetquery.fields.fieldInfos(Table, options.relations, @TypeOf(.{1}), .limit),
                 .columns = if (options.columns.len == 0) &Table.columns() else options.columns,
+                .where_clauses = &.{sql.Where.tree(Table, &.{}, @TypeOf(args), .where, options.field_infos.len)},
                 .result_context = .one,
             });
             var statement = self.extend(S, args, .where);
@@ -431,11 +442,13 @@ fn Statement(
             .relations = options.relations,
             .field_infos = options.field_infos,
             .distinct = options.distinct,
+            .where_clauses = options.where_clauses,
         }) {
             const S = Statement(.count, Schema, Table, .{
                 .relations = options.relations,
                 .field_infos = options.field_infos,
                 .distinct = options.distinct,
+                .where_clauses = options.where_clauses,
             });
             return self.extend(S, .{}, .none);
         }
@@ -447,6 +460,7 @@ fn Statement(
             .order_clauses = options.order_clauses,
             .result_context = .many,
             .distinct = &jetquery.columns.translate(Table, options.relations, args),
+            .where_clauses = options.where_clauses,
         }) {
             const S = Statement(.select, Schema, Table, .{
                 .relations = options.relations,
@@ -455,6 +469,7 @@ fn Statement(
                 .order_clauses = options.order_clauses,
                 .result_context = .many,
                 .distinct = &jetquery.columns.translate(Table, options.relations, args),
+                .where_clauses = options.where_clauses,
             });
             if (!options.default_select) @compileError(
                 std.fmt.comptimePrint(
@@ -490,6 +505,7 @@ fn Statement(
 
         pub fn delete(self: Self) Statement(.delete, Schema, Table, .{
             .field_infos = &jetquery.fields.fieldInfos(Table, &.{}, @TypeOf(.{}), .none),
+            .where_clauses = options.where_clauses,
         }) {
             // TODO: Add support for `DELETE ... USING ...`
             if (comptime options.relations.len != 0) @compileError(
@@ -498,6 +514,7 @@ fn Statement(
             );
             const S = Statement(.delete, Schema, Table, .{
                 .field_infos = &jetquery.fields.fieldInfos(Table, &.{}, @TypeOf(.{}), .none),
+                .where_clauses = options.where_clauses,
             });
             return self.extend(S, .{}, .none);
         }
@@ -518,6 +535,7 @@ fn Statement(
             .columns = options.columns,
             .order_clauses = options.order_clauses,
             .result_context = options.result_context,
+            .where_clauses = options.where_clauses,
         }) {
             const S = Statement(query_context, Schema, Table, .{
                 .relations = options.relations,
@@ -525,6 +543,7 @@ fn Statement(
                 .columns = options.columns,
                 .order_clauses = options.order_clauses,
                 .result_context = options.result_context,
+                .where_clauses = options.where_clauses,
             });
             return self.extend(S, .{bound}, .limit);
         }
@@ -535,6 +554,7 @@ fn Statement(
             .columns = options.columns,
             .order_clauses = &translateOrderBy(Table, args),
             .result_context = options.result_context,
+            .where_clauses = options.where_clauses,
         }) {
             const S = Statement(query_context, Schema, Table, .{
                 .relations = options.relations,
@@ -542,6 +562,7 @@ fn Statement(
                 .columns = options.columns,
                 .order_clauses = &translateOrderBy(Table, args),
                 .result_context = options.result_context,
+                .where_clauses = options.where_clauses,
             });
             return self.extend(S, .{}, .order);
         }
@@ -558,6 +579,7 @@ fn Statement(
             .order_clauses = options.order_clauses,
             .result_context = options.result_context,
             .default_select = options.default_select,
+            .where_clauses = options.where_clauses,
         }) {
             const S = Statement(query_context, Schema, Table, .{
                 .relations = options.relations ++
@@ -567,6 +589,7 @@ fn Statement(
                 .order_clauses = options.order_clauses,
                 .result_context = options.result_context,
                 .default_select = options.default_select,
+                .where_clauses = options.where_clauses,
             });
             return self.extend(S, .{}, .none);
         }

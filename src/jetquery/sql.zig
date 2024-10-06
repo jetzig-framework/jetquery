@@ -130,8 +130,7 @@ fn renderDelete(
 ) []const u8 {
     const statement = std.fmt.comptimePrint("DELETE FROM {s}", .{Adapter.identifier(Table.name)});
     return switch (query_context) {
-        .delete_all => statement,
-        .delete => std.fmt.comptimePrint("{s}{s}{s}", .{
+        .delete, .delete_all => std.fmt.comptimePrint("{s}{s}{s}", .{
             statement,
             renderWhere(Adapter, where_clauses),
             renderLimit(Adapter, field_infos),
@@ -210,14 +209,17 @@ fn renderOrder(
 fn renderWhere(Adapter: type, comptime where_clauses: []const Where.Tree) []const u8 {
     if (where_clauses.len == 0) return " WHERE " ++ Adapter.emptyWhereSql();
 
+    const and_operator = " AND ";
     var size: usize = 0;
-    for (where_clauses) |clause| {
-        size += clause.render(Adapter, 0).len;
+    for (where_clauses, 0..) |clause, index| {
+        if ((index) > 0) size += and_operator.len;
+        size += clause.render(Adapter).len;
     }
     var buf: [size]u8 = undefined;
     var cursor: usize = 0;
-    for (where_clauses) |clause| {
-        const sql = clause.render(Adapter, 0);
+    for (where_clauses, 0..) |clause, index| {
+        const operator = if ((index) > 0) and_operator else "";
+        const sql = operator ++ clause.render(Adapter);
         @memcpy(buf[cursor .. cursor + sql.len], sql);
         cursor += sql.len;
     }
