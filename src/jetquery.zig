@@ -604,3 +604,48 @@ test "nested where" {
         query.sql,
     );
 }
+
+test "operator logic" {
+    const Schema = struct {
+        pub const Human = Table(
+            "humans",
+            struct { id: i32, family_id: i32, cat_id: i32, name: []const u8 },
+            .{
+                .relations = .{
+                    .cat = relation.belongsTo(.Cat, .{}),
+                    .family = relation.belongsTo(.Family, .{}),
+                },
+            },
+        );
+
+        pub const Cat = Table(
+            "cats",
+            struct { id: i32, name: []const u8, paws: i32, created_at: i64, updated_at: i64 },
+            .{},
+        );
+
+        pub const Family = Table(
+            "families",
+            struct { id: i32, name: []const u8 },
+            .{},
+        );
+    };
+    const query = Query(Schema, .Human)
+        .include(.cat, .{})
+        .include(.family, .{})
+        .where(.{
+        .{ .name = "Bob" },
+        .OR,
+        .{ .name = "T-Rex" },
+        .OR,
+        .{ .cat = .{ .name = "Hercules" } },
+        .NOT,
+        .{ .family = .{ .name = "Farrell" } },
+    });
+
+    try std.testing.expectEqualStrings(
+        \\SELECT "humans"."id", "humans"."family_id", "humans"."cat_id", "humans"."name", "cats"."id", "cats"."name", "cats"."paws", "cats"."created_at", "cats"."updated_at", "families"."id", "families"."name" FROM "humans" INNER JOIN "cats" ON "humans"."cat_id" = "cats"."id" INNER JOIN "families" ON "humans"."family_id" = "families"."id" WHERE ("humans"."name" = $1 OR "humans"."name" = $2 OR "cats"."name" = $3 AND NOT "families"."name" = $4)
+    ,
+        query.sql,
+    );
+}
