@@ -391,10 +391,17 @@ fn paramsBufSize(
                 Adapter.paramSql(index),
                 if (index < last_param_index) separator else "",
             },
-            .assign => .{
-                Adapter.columnSql(field.Table, field.name),
-                Adapter.paramSql(index),
-                if (index < last_param_index) separator else "",
+            .assign => switch (context) {
+                .update => .{
+                    Adapter.identifier(field.name),
+                    Adapter.paramSql(index),
+                    if (index < last_param_index) separator else "",
+                },
+                else => .{
+                    Adapter.columnSql(field.Table, field.name),
+                    Adapter.paramSql(index),
+                    if (index < last_param_index) separator else "",
+                },
             },
         };
 
@@ -441,10 +448,17 @@ fn renderParams(
                 Adapter.paramSql(index),
                 if (index < last_param_index) separator else "",
             },
-            .assign => .{
-                Adapter.columnSql(field.Table, field.name),
-                Adapter.paramSql(index),
-                if (index < last_param_index) separator else "",
+            .assign => switch (context) {
+                .update => .{
+                    Adapter.identifier(field.name),
+                    Adapter.paramSql(index),
+                    if (index < last_param_index) separator else "",
+                },
+                else => .{
+                    Adapter.columnSql(field.Table, field.name),
+                    Adapter.paramSql(index),
+                    if (index < last_param_index) separator else "",
+                },
             },
         };
 

@@ -25,6 +25,7 @@ pub const DateTime = jetcommon.types.DateTime;
 pub const adapter = std.enums.nameCast(adapters.Name, config.database.adapter);
 pub const timestamp_updated_column_name = "updated_at";
 pub const timestamp_created_column_name = "created_at";
+pub const original_prefix = "__original_";
 
 // Can be switched to `std.meta.DeclEnum` if https://github.com/ziglang/zig/pull/21331 is merged
 // (or fixed otherwise) to prevent overflow on empty struct.
@@ -169,7 +170,7 @@ test "update" {
         .where(.{ .name = "Hercules" });
 
     try std.testing.expectEqualStrings(
-        \\UPDATE "cats" SET "cats"."name" = $1, "cats"."paws" = $2 WHERE "cats"."name" = $3
+        \\UPDATE "cats" SET "name" = $1, "paws" = $2 WHERE "cats"."name" = $3
     ,
         query.sql,
     );
@@ -458,7 +459,7 @@ test "timestamps (update)" {
         .where(.{ .name = "Hercules" });
 
     try std.testing.expectEqualStrings(
-        \\UPDATE "cats" SET "cats"."name" = $1, "cats"."paws" = $2, "cats"."updated_at" = $3 WHERE "cats"."name" = $4
+        \\UPDATE "cats" SET "name" = $1, "paws" = $2, "updated_at" = $3 WHERE "cats"."name" = $4
     ,
         query.sql,
     );

@@ -108,9 +108,95 @@ pub fn execute(self: *Repo, query: anytype) !switch (@TypeOf(query).ResultContex
 }
 
 pub fn save(self: *Repo, value: anytype) !void {
-    // TODO: Store original fields + source model, detect changes, issue UPDATE query.
+    // TODO: Infer primary key instead of assuming `id` - we can set this in the schema as an
+    // option to each table - we already have the table available as `value.__jetquery_model`.
+
+    // XXX: We have to include all (selected) values in the UPDATE because we can't generate a
+    // type for the `update` params (which becomes a tuple passed to pg.zig) at runtime - ideally
+    // we would only include modified values but we would need to generate all possible
+    // combinations of updates in order to do this which is not practical. I don't know if there
+    // is a way around this.
+    if (!self.isModified(value)) return;
+
+    comptime var size: usize = 0;
+    comptime {
+        for (std.meta.fields(@TypeOf(value))) |field| {
+            if (!std.mem.startsWith(u8, field.name, "__") and !std.mem.eql(u8, field.name, "id")) {
+                size += 1;
+            }
+        }
+    }
+    comptime var fields: [size]std.builtin.Type.StructField = undefined;
+    comptime {
+        var index: usize = 0;
+        for (std.meta.fields(@TypeOf(value))) |field| {
+            if (!std.mem.startsWith(u8, field.name, "__") and !std.mem.eql(u8, field.name, "id")) {
+                fields[index] = field;
+                index += 1;
+            }
+        }
+    }
+
+    const Update = @Type(.{
+        .@"struct" = .{
+            .layout = .auto,
+            .fields = &fields,
+            .decls = &.{},
+            .is_tuple = false,
+        },
+    });
+
+    var update: Update = undefined;
+
+    inline for (std.meta.fields(Update)) |field| {
+        @field(update, field.name) = @field(value, field.name);
+    }
+
+    const query = jetquery.Query(value.__jetquery_schema, value.__jetquery_model_name)
+        .update(update)
+        .where(.{ .id = value.id });
+
+    try self.execute(query);
+}
+
+pub const FieldState = struct {
+    name: []const u8,
+    modified: bool,
+};
+
+pub fn isModified(self: Repo, value: anytype) bool {
+    const field_states = self.fieldStates(value);
+    for (field_states) |field_state| {
+        if (field_state.modified) return true;
+    }
+    return false;
+}
+
+pub fn fieldStates(self: Repo, value: anytype) []const FieldState {
     _ = self;
-    _ = value;
+    comptime var size: usize = 0;
+    inline for (std.meta.fields(@TypeOf(value))) |field| {
+        if (comptime std.mem.startsWith(u8, field.name, "__")) size += 1;
+    }
+    var field_state: [size]FieldState = undefined;
+    var index: usize = 0;
+
+    inline for (std.meta.fields(@TypeOf(value))) |field| {
+        if (!comptime std.mem.startsWith(u8, field.name, jetquery.original_prefix)) continue;
+
+        const modified = switch (@typeInfo(field.type)) {
+            .pointer => |info| std.mem.eql(
+                info.child,
+                @field(value, field.name),
+                @field(value, field.name[jetquery.original_prefix.len..]),
+            ),
+            else => @field(value, field.name) == @field(value, field.name[jetquery.original_prefix.len..]),
+        };
+
+        field_state[index] = .{ .name = field.name, .modified = modified };
+        index += 1;
+    }
+    return &field_state;
 }
 
 /// Free a single result's allocated memory. Use in conjunction with `findBy` and `find` as these
@@ -405,22 +491,32 @@ test "save" {
     defer repo.deinit();
 
     const Schema = struct {
-        pub const Cat = jetquery.Table("cats", struct { name: []const u8, paws: i32 }, .{});
+        pub const Cat = jetquery.Table("cats", struct { id: i32, name: []const u8, paws: i32 }, .{});
     };
 
     var drop_table = try repo.adapter.execute(&repo, "drop table if exists cats", &.{});
     defer drop_table.deinit();
 
-    var create_table = try repo.adapter.execute(&repo, "create table cats (name varchar(255), paws int)", &.{});
+    var create_table = try repo.adapter.execute(
+        &repo,
+        "create table cats (id int, name varchar(255), paws int)",
+        &.{},
+    );
     defer create_table.deinit();
 
-    try jetquery.Query(Schema, .Cat).insert(.{ .name = "Hercules", .paws = 4 }).execute(&repo);
+    try jetquery.Query(Schema, .Cat).insert(.{ .id = 1000, .name = "Hercules", .paws = 4 }).execute(&repo);
 
-    const query = jetquery.Query(Schema, .Cat)
-        .select(.{ .name, .paws })
-        .findBy(.{ .name = "Hercules" });
-    var cat = try query.execute(&repo) orelse return std.testing.expect(false);
+    var cat = try jetquery.Query(Schema, .Cat)
+        .findBy(.{ .name = "Hercules" })
+        .execute(&repo) orelse return std.testing.expect(false);
     defer repo.free(cat);
+
     cat.name = "Princes";
     try repo.save(cat);
+
+    const updated_cat = try jetquery.Query(Schema, .Cat)
+        .find(1000)
+        .execute(&repo) orelse return std.testing.expect(false);
+    defer repo.free(updated_cat);
+    try std.testing.expectEqualStrings("Princes", updated_cat.name);
 }

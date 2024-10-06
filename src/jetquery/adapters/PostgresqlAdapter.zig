@@ -39,7 +39,6 @@ pub const Result = struct {
                     @field(result_row, column_info.name) = try resolvedValue(column_info, &row);
                 }
             }
-            result_row.__jetquery_id = self.repo.generateId();
             return result_row;
         } else {
             return null;
