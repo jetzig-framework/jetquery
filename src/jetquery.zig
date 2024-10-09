@@ -565,6 +565,31 @@ test "belongsTo (with specified columns)" {
     );
 }
 
+// test "hasMany" {
+//     const Schema = struct {
+//         pub const Human = Table(
+//             "humans",
+//             struct { id: i32, cat_id: i32, name: []const u8 },
+//             .{ .relations = .{ .cat = relation.belongsTo(.Cat, .{}) } },
+//         );
+//
+//         pub const Cat = Table(
+//             "cats",
+//             struct { id: i32, name: []const u8, paws: i32, created_at: i64, updated_at: i64 },
+//             .{ .relations = .{ .humans = relation.hasMany(.Human, .{}) } },
+//         );
+//     };
+//     const query = Query(Schema, .Cat)
+//         .include(.humans, .{})
+//         .findBy(.{ .name = "Hercules" });
+//
+//     try std.testing.expectEqualStrings(
+//         \\SELECT "humans"."id", "humans"."cat_id", "humans"."name", "cats"."id", "cats"."name", "cats"."paws", "cats"."created_at", "cats"."updated_at" FROM "humans" INNER JOIN "cats" ON "humans"."cat_id" = "cats"."id" WHERE "humans"."name" = $1 LIMIT $2
+//     ,
+//         query.sql,
+//     );
+// }
+
 test "nested where" {
     const Schema = struct {
         pub const Human = Table(

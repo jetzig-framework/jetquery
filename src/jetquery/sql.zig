@@ -235,7 +235,7 @@ fn renderJoins(Adapter: type, Table: type, relations: []const type) []const u8 {
         for (relations) |Relation| {
             buf_len += switch (Relation.relation_type) {
                 .belongs_to => renderInnerJoin(Adapter, Table, Relation).len,
-                .has_many => renderInnerJoin(Adapter, Table, Relation).len,
+                .has_many => "".len,
             };
         }
         var buf: [buf_len]u8 = undefined;
@@ -243,7 +243,7 @@ fn renderJoins(Adapter: type, Table: type, relations: []const type) []const u8 {
         for (relations) |Relation| {
             const sql = switch (Relation.relation_type) {
                 .belongs_to => renderInnerJoin(Adapter, Table, Relation),
-                .has_many => renderInnerJoin(Adapter, Table, Relation),
+                .has_many => "",
             };
             @memcpy(buf[cursor .. cursor + sql.len], sql);
             cursor += sql.len;

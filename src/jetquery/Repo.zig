@@ -88,7 +88,18 @@ pub fn execute(self: *Repo, query: anytype) !switch (@TypeOf(query).ResultContex
 } {
     try query.validateValues();
     try query.validateDelete();
+
     var result = try self.adapter.execute(self, query.sql, query.field_values);
+
+    const extra_queries = extraQueries(@TypeOf(query));
+    inline for (extra_queries) |extra_query| {
+        // TODO: Pass extra_queries to e.g. `result.nextMerge` and merge results.
+        if (try result.next(query)) |row| {
+            const q = extra_query.where(.{ .id = row.id });
+            @compileLog(q.sql ++ "");
+        }
+    }
+
     return switch (@TypeOf(query).ResultContext) {
         .one => blk: {
             if (query.query_context == .count) {
@@ -152,7 +163,7 @@ pub fn save(self: *Repo, value: anytype) !void {
         @field(update, field.name) = @field(value, field.name);
     }
 
-    const query = jetquery.Query(value.__jetquery_schema, value.__jetquery_model_name)
+    const query = jetquery.Query(value.__jetquery_schema, value.__jetquery_model)
         .update(update)
         .where(.{ .id = value.id });
 
@@ -283,6 +294,29 @@ pub fn dropTable(self: *Repo, comptime name: []const u8, options: DropTableOptio
     defer result.deinit();
 }
 
+fn extraQueries(Query: type) []const type {
+    comptime {
+        var size: usize = 0;
+        for (Query.relations) |Relation| {
+            if (Relation.relation_type == .has_many) {
+                size += 1;
+            }
+        }
+
+        var queries: [size]type = undefined;
+        var index: usize = 0;
+
+        for (Query.relations) |Relation| {
+            if (Relation.relation_type == .has_many) {
+                queries[index] = jetquery.Query(Query.info.Schema, Relation.Source);
+                index += 1;
+            }
+        }
+
+        return &queries;
+    }
+}
+
 test "Repo" {
     var repo = try Repo.init(
         std.testing.allocator,
@@ -362,25 +396,25 @@ test "relations" {
     const Schema = struct {
         pub const Cat = jetquery.Table(
             "cats",
-            struct { id: i32, owner_id: i32, name: []const u8, paws: i32 },
-            .{ .relations = .{ .owner = jetquery.relation.belongsTo(.Owner, .{}) } },
+            struct { id: i32, human_id: i32, name: []const u8, paws: i32 },
+            .{ .relations = .{ .human = jetquery.relation.belongsTo(.Human, .{}) } },
         );
 
-        pub const Owner = jetquery.Table(
-            "owners",
+        pub const Human = jetquery.Table(
+            "humans",
             struct { id: i32, name: []const u8 },
             .{ .relations = .{ .cats = jetquery.relation.hasMany(.Cat, .{}) } },
         );
     };
 
     try repo.dropTable("cats", .{ .if_exists = true });
-    try repo.dropTable("owners", .{ .if_exists = true });
+    try repo.dropTable("humans", .{ .if_exists = true });
 
     try repo.createTable(
         "cats",
         &.{
             jetquery.table.column("id", .integer, .{}),
-            jetquery.table.column("owner_id", .integer, .{}),
+            jetquery.table.column("human_id", .integer, .{}),
             jetquery.table.column("name", .string, .{}),
             jetquery.table.column("paws", .integer, .{}),
         },
@@ -388,7 +422,7 @@ test "relations" {
     );
 
     try repo.createTable(
-        "owners",
+        "human",
         &.{
             jetquery.table.column("id", .integer, .{}),
             jetquery.table.column("name", .string, .{}),
@@ -397,24 +431,27 @@ test "relations" {
     );
 
     try jetquery.Query(Schema, .Cat)
-        .insert(.{ .id = 1, .name = "Hercules", .paws = 4, .owner_id = 1 })
+        .insert(.{ .id = 1, .name = "Hercules", .paws = 4, .human_id = 1 })
         .execute(&repo);
-    try jetquery.Query(Schema, .Owner)
+    try jetquery.Query(Schema, .Human)
         .insert(.{ .id = 1, .name = "Bob" })
         .execute(&repo);
 
     const query = jetquery.Query(Schema, .Cat)
-        .include(.owner, .{})
+        .include(.human, .{})
         .findBy(.{ .name = "Hercules" });
 
     if (try query.execute(&repo)) |cat| {
         defer repo.free(cat);
         try std.testing.expectEqualStrings("Hercules", cat.name);
         try std.testing.expectEqual(4, cat.paws);
-        try std.testing.expectEqualStrings("Bob", cat.owner.name);
+        try std.testing.expectEqualStrings("Bob", cat.human.name);
     } else {
         try std.testing.expect(false);
     }
+
+    const q2 = jetquery.Query(Schema, .Human).include(.cats, .{}).findBy(.{ .name = "Bob" });
+    _ = try repo.execute(q2);
 }
 
 test "timestamps" {
