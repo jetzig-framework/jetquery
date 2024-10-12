@@ -243,6 +243,11 @@ fn defaultResultContext(query_context: sql.QueryContext) ResultContext {
     };
 }
 
+pub const AuxiliaryQuery = struct {
+    query: type,
+    relation: type,
+};
+
 fn Statement(
     comptime query_context: sql.QueryContext,
     Schema: type,
@@ -258,7 +263,7 @@ fn Statement(
         comptime field_infos: []const jetquery.fields.FieldInfo = options.field_infos,
         comptime columns: []const jetquery.columns.Column = options.columns,
         comptime order_clauses: []const sql.OrderClause = options.order_clauses,
-
+        comptime auxiliary_queries: []const AuxiliaryQuery = &auxiliaryQueries(),
         comptime sql: []const u8 = jetquery.sql.render(
             Adapter(),
             query_context,
@@ -271,7 +276,10 @@ fn Statement(
             options.where_clauses,
         ),
 
-        pub const info = .{ .Table = Table, .Schema = Schema };
+        pub const info = .{
+            .Table = Table,
+            .Schema = Schema,
+        };
         pub const Definition = Table.Definition;
         pub const ResultContext = options.result_context;
         pub const ResultType = QueryResultType();
@@ -639,6 +647,37 @@ fn Statement(
             if (query_context == .delete and !self.hasWhereClause()) return error.JetQueryUnsafeDelete;
         }
 
+        fn auxiliaryQueries() [auxiliaryQueriesSize()]AuxiliaryQuery {
+            comptime {
+                var queries: [auxiliaryQueriesSize()]AuxiliaryQuery = undefined;
+                var index: usize = 0;
+
+                for (options.relations) |Relation| {
+                    if (Relation.relation_type != .has_many) continue;
+
+                    queries[index] = .{
+                        .query = Query(Schema, Relation.Source),
+                        .relation = Relation,
+                    };
+                    index += 1;
+                }
+
+                return queries;
+            }
+        }
+
+        fn auxiliaryQueriesSize() usize {
+            comptime {
+                var size: usize = 0;
+                for (options.relations) |Relation| {
+                    if (Relation.relation_type != .has_many) continue;
+
+                    size += 1;
+                }
+                return size;
+            }
+        }
+
         fn hasWhereClause(self: Self) bool {
             inline for (self.field_infos) |field| {
                 if (field.context == .where) return true;
@@ -659,6 +698,8 @@ fn Statement(
                 }
                 var start: usize = options.columns.len;
                 for (options.relations) |Relation| {
+                    if (Relation.relation_type != .belongs_to) continue;
+
                     for (Relation.select_columns, start..) |column, index| {
                         column_infos[index] = .{
                             .name = column.name,
@@ -696,10 +737,17 @@ fn Statement(
 
                 var relations_fields: [options.relations.len]std.builtin.Type.StructField = undefined;
                 for (options.relations, 0..) |Relation, relation_index| {
-                    var relation_fields: [Relation.select_columns.len]std.builtin.Type.StructField = undefined;
+                    var relation_fields: [Relation.select_columns.len * 2]std.builtin.Type.StructField = undefined;
                     for (Relation.select_columns, 0..) |column, index| {
                         relation_fields[index] = .{
                             .name = column.name ++ "",
+                            .type = column.type,
+                            .default_value = null,
+                            .is_comptime = false,
+                            .alignment = @alignOf(column.type),
+                        };
+                        relation_fields[index + Relation.select_columns.len] = .{
+                            .name = jetquery.original_prefix ++ column.name,
                             .type = column.type,
                             .default_value = null,
                             .is_comptime = false,
@@ -714,12 +762,21 @@ fn Statement(
                         .is_tuple = false,
                     } });
 
-                    relations_fields[relation_index] = .{
-                        .name = Relation.relation_name,
-                        .type = RT,
-                        .default_value = null,
-                        .is_comptime = false,
-                        .alignment = @alignOf(RT),
+                    relations_fields[relation_index] = switch (Relation.relation_type) {
+                        .belongs_to => .{
+                            .name = Relation.relation_name,
+                            .type = RT,
+                            .default_value = null,
+                            .is_comptime = false,
+                            .alignment = @alignOf(RT),
+                        },
+                        .has_many => .{
+                            .name = Relation.relation_name,
+                            .type = []const RT,
+                            .default_value = null,
+                            .is_comptime = false,
+                            .alignment = @alignOf([]const RT),
+                        },
                     };
                 }
 
@@ -739,6 +796,8 @@ fn Statement(
             comptime {
                 var len: usize = options.columns.len;
                 for (options.relations) |Relation| {
+                    if (Relation.relation_type != .belongs_to) continue;
+
                     len += Relation.select_columns.len;
                 }
                 return len;

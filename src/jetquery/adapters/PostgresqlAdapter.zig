@@ -16,6 +16,7 @@ lazy_connect: bool = false,
 pub const Result = struct {
     result: *pg.Result,
     allocator: std.mem.Allocator,
+    connection: *pg.Conn,
     repo: *jetquery.Repo,
 
     pub fn deinit(self: *Result) void {
@@ -34,9 +35,13 @@ pub const Result = struct {
                     @field(
                         @field(result_row, relation.relation_name),
                         column_info.name,
-                    ) = try resolvedValue(column_info, &row);
+                    ) = try resolvedValue(self.allocator, column_info, &row);
                 } else {
-                    @field(result_row, column_info.name) = try resolvedValue(column_info, &row);
+                    @field(result_row, column_info.name) = try resolvedValue(
+                        self.allocator,
+                        column_info,
+                        &row,
+                    );
                 }
             }
             return result_row;
@@ -65,9 +70,17 @@ pub const Result = struct {
     pub fn first(self: *Result, query: anytype) !?@TypeOf(query).Definition {
         return try self.next(query);
     }
+
+    pub fn execute(self: *Result, query: []const u8, values: anytype) !jetquery.Result {
+        return try connectionExecute(self.allocator, self.connection, self.repo, query, values);
+    }
 };
 
-fn resolvedValue(column_info: sql.ColumnInfo, row: *const pg.Row) !column_info.type {
+fn resolvedValue(
+    allocator: std.mem.Allocator,
+    column_info: sql.ColumnInfo,
+    row: *const pg.Row,
+) !column_info.type {
     return switch (column_info.type) {
         // TODO: pg.Numeric, pg.Cidr
         u8,
@@ -86,11 +99,23 @@ fn resolvedValue(column_info: sql.ColumnInfo, row: *const pg.Row) !column_info.t
         ?bool,
         []const u8,
         ?[]const u8,
-        => |T| row.get(T, column_info.index),
-        jetquery.jetcommon.types.DateTime => |T| try T.fromUnix(row.get(i64, column_info.index), .microseconds),
+        => |T| try maybeDupe(allocator, T, row.get(T, column_info.index)),
+        jetquery.jetcommon.types.DateTime => |T| try T.fromUnix(
+            row.get(i64, column_info.index),
+            .microseconds,
+        ),
         else => |T| @compileError("Unsupported type: " ++ @typeName(T)),
     };
 }
+
+fn maybeDupe(allocator: std.mem.Allocator, T: type, value: T) !T {
+    return switch (T) {
+        []const u8 => try allocator.dupe(u8, value),
+        ?[]const u8 => if (value) |val| try allocator.dupe(u8, val) else null,
+        else => value,
+    };
+}
+
 pub const Options = struct {
     database: []const u8,
     username: []const u8,
@@ -131,34 +156,14 @@ pub fn execute(
     query: []const u8,
     values: anytype,
 ) !jetquery.Result {
-    if (!self.connected and self.lazy_connect) self.pool = try initPool(self.allocator, self.options);
+    if (!self.connected and self.lazy_connect) {
+        self.pool = try initPool(self.allocator, self.options);
+    }
 
-    const options: pg.Conn.QueryOpts = .{ .column_names = true }; // TODO: No longer needed ?
-    var connection = try self.pool.acquire();
+    const connection = try self.pool.acquire();
     errdefer self.pool.release(connection);
 
-    const result = connection.queryOpts(query, values, options) catch |err| {
-        if (connection.err) |connection_error| {
-            try repo.eventCallback(.{
-                .sql = query,
-                .err = .{ .message = connection_error.message },
-                .status = .fail,
-            });
-        } else {
-            try repo.eventCallback(.{ .sql = query, .err = .{ .message = "Unknown error" }, .status = .fail });
-        }
-        return err;
-    };
-
-    try repo.eventCallback(.{ .sql = query });
-
-    return .{
-        .postgresql = .{
-            .allocator = self.allocator,
-            .result = result,
-            .repo = repo,
-        },
-    };
+    return try connectionExecute(repo.allocator, connection, repo, query, values);
 }
 
 /// Output column type as SQL.
@@ -289,4 +294,41 @@ fn initPool(allocator: std.mem.Allocator, options: Options) !*pg.Pool {
             .timeout = options.timeout,
         },
     });
+}
+
+fn connectionExecute(
+    allocator: std.mem.Allocator,
+    connection: *pg.Conn,
+    repo: *jetquery.Repo,
+    query: []const u8,
+    values: anytype,
+) !jetquery.Result {
+    const result = connection.queryOpts(query, values, .{}) catch |err| {
+        if (connection.err) |connection_error| {
+            try repo.eventCallback(.{
+                .sql = query,
+                .err = .{ .message = connection_error.message },
+                .status = .fail,
+            });
+        } else {
+            try repo.eventCallback(.{
+                .sql = query,
+                .err = .{ .message = "Unknown error" },
+                .status = .fail,
+            });
+        }
+
+        return err;
+    };
+
+    try repo.eventCallback(.{ .sql = query });
+
+    return .{
+        .postgresql = .{
+            .allocator = allocator,
+            .result = result,
+            .repo = repo,
+            .connection = connection,
+        },
+    };
 }

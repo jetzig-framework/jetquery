@@ -15,7 +15,15 @@ pub const Event = struct {
 
 pub fn defaultCallback(event: Event) !void {
     if (event.err) |err| {
-        std.debug.print("Error:\n  {s}\nQuery:  {s}\n", .{ err.message, event.sql orelse "" });
+        std.debug.print(
+            \\/
+            \\| Query:
+            \\|   {s}
+            \\| Error:
+            \\|   {s}
+            \\\
+            \\
+        , .{ event.sql orelse "", err.message });
     } else {
         std.debug.print("{s}{s}{s}{s}{s}", .{
             event.message orelse "",

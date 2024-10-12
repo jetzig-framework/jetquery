@@ -91,17 +91,9 @@ pub fn execute(self: *Repo, query: anytype) !switch (@TypeOf(query).ResultContex
 
     var result = try self.adapter.execute(self, query.sql, query.field_values);
 
-    const extra_queries = extraQueries(@TypeOf(query));
-    inline for (extra_queries) |extra_query| {
-        // TODO: Pass extra_queries to e.g. `result.nextMerge` and merge results.
-        if (try result.next(query)) |row| {
-            const q = extra_query.where(.{ .id = row.id });
-            @compileLog(q.sql ++ "");
-        }
-    }
-
     return switch (@TypeOf(query).ResultContext) {
         .one => blk: {
+            // TODO: Create a new ResultContext `.unary` instead of hacking it in here.
             if (query.query_context == .count) {
                 defer result.deinit();
                 return try result.unary(@TypeOf(query).ResultType);
@@ -213,9 +205,38 @@ pub fn fieldStates(self: Repo, value: anytype) []const FieldState {
 /// Free a single result's allocated memory. Use in conjunction with `findBy` and `find` as these
 /// methods simply return structs as defined by the Schema and do not have another way to deinit.
 pub fn free(self: *Repo, value: anytype) void {
-    if (self.result_map.getEntry(value.__jetquery_id)) |entry| {
-        entry.value_ptr.deinit();
-        _ = self.result_map.remove(value.__jetquery_id);
+    if (comptime @hasField(@TypeOf(value), "__jetquery_id")) {
+        if (self.result_map.getEntry(value.__jetquery_id)) |entry| {
+            entry.value_ptr.deinit();
+            _ = self.result_map.remove(value.__jetquery_id);
+        }
+    }
+    inline for (std.meta.fields(@TypeOf(value))) |field| {
+        switch (@typeInfo(field.type)) {
+            .pointer => |info| {
+                switch (info.child) {
+                    u8 => {
+                        // Value may be modified after fetching so we only free the original
+                        // value. If user messes with internals and modifies original values then
+                        // they will run into trouble.
+                        if (comptime std.mem.startsWith(u8, field.name, jetquery.original_prefix)) {
+                            self.allocator.free(@field(value, field.name));
+                        }
+                    },
+                    else => switch (info.size) {
+                        .Slice => {
+                            for (@field(value, field.name)) |item| {
+                                self.free(item);
+                            }
+                            self.allocator.free(@field(value, field.name));
+                        },
+                        else => {},
+                    },
+                }
+            },
+            .@"struct" => self.free(@field(value, field.name)),
+            else => {},
+        }
     }
 }
 
@@ -294,29 +315,6 @@ pub fn dropTable(self: *Repo, comptime name: []const u8, options: DropTableOptio
     defer result.deinit();
 }
 
-fn extraQueries(Query: type) []const type {
-    comptime {
-        var size: usize = 0;
-        for (Query.relations) |Relation| {
-            if (Relation.relation_type == .has_many) {
-                size += 1;
-            }
-        }
-
-        var queries: [size]type = undefined;
-        var index: usize = 0;
-
-        for (Query.relations) |Relation| {
-            if (Relation.relation_type == .has_many) {
-                queries[index] = jetquery.Query(Query.info.Schema, Relation.Source);
-                index += 1;
-            }
-        }
-
-        return &queries;
-    }
-}
-
 test "Repo" {
     var repo = try Repo.init(
         std.testing.allocator,
@@ -354,9 +352,10 @@ test "Repo" {
     var result = try repo.execute(query);
     defer result.deinit();
 
-    while (try result.next(query)) |row| {
-        try std.testing.expectEqualStrings("Hercules", row.name);
-        try std.testing.expectEqual(4, row.paws);
+    while (try result.next(query)) |cat| {
+        defer repo.free(cat);
+        try std.testing.expectEqualStrings("Hercules", cat.name);
+        try std.testing.expectEqual(4, cat.paws);
         break;
     } else {
         try std.testing.expect(false);
@@ -418,16 +417,16 @@ test "relations" {
             jetquery.table.column("name", .string, .{}),
             jetquery.table.column("paws", .integer, .{}),
         },
-        .{},
+        .{ .if_not_exists = true },
     );
 
     try repo.createTable(
-        "human",
+        "humans",
         &.{
             jetquery.table.column("id", .integer, .{}),
             jetquery.table.column("name", .string, .{}),
         },
-        .{},
+        .{ .if_not_exists = true },
     );
 
     try jetquery.Query(Schema, .Cat)
@@ -441,17 +440,20 @@ test "relations" {
         .include(.human, .{})
         .findBy(.{ .name = "Hercules" });
 
-    if (try query.execute(&repo)) |cat| {
-        defer repo.free(cat);
-        try std.testing.expectEqualStrings("Hercules", cat.name);
-        try std.testing.expectEqual(4, cat.paws);
-        try std.testing.expectEqualStrings("Bob", cat.human.name);
-    } else {
-        try std.testing.expect(false);
-    }
+    const cat = try query.execute(&repo) orelse return try std.testing.expect(false);
+    defer repo.free(cat);
 
-    const q2 = jetquery.Query(Schema, .Human).include(.cats, .{}).findBy(.{ .name = "Bob" });
-    _ = try repo.execute(q2);
+    try std.testing.expectEqualStrings("Hercules", cat.name);
+    try std.testing.expectEqual(4, cat.paws);
+    try std.testing.expectEqualStrings("Bob", cat.human.name);
+
+    const human = try jetquery.Query(Schema, .Human)
+        .include(.cats, .{})
+        .findBy(.{ .name = "Bob" })
+        .execute(&repo) orelse return try std.testing.expect(false);
+    defer repo.free(human);
+
+    try std.testing.expectEqualStrings("Hercules", human.cats[0].name);
 }
 
 test "timestamps" {
@@ -541,7 +543,9 @@ test "save" {
     );
     defer create_table.deinit();
 
-    try jetquery.Query(Schema, .Cat).insert(.{ .id = 1000, .name = "Hercules", .paws = 4 }).execute(&repo);
+    try jetquery.Query(Schema, .Cat)
+        .insert(.{ .id = 1000, .name = "Hercules", .paws = 4 })
+        .execute(&repo);
 
     var cat = try jetquery.Query(Schema, .Cat)
         .findBy(.{ .name = "Hercules" })

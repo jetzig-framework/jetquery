@@ -108,6 +108,7 @@ test "migrate" {
     defer result1.deinit();
 
     while (try result1.next(query1)) |row| {
+        defer repo.free(row);
         try std.testing.expectEqualStrings("2024-08-26_13-18-52", row.version);
         break;
     } else {

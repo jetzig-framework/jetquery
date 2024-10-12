@@ -284,6 +284,9 @@ fn renderSelectColumns(
     comptime {
         var total_columns: usize = columns.len;
         for (relations) |Relation| {
+            // has_many relations issue a separate query so we don't select columns here.
+            // Only belongs_to uses an inner join.
+            if (Relation.relation_type != .belongs_to) continue;
             total_columns += Relation.select_columns.len;
         }
 
@@ -294,6 +297,10 @@ fn renderSelectColumns(
 
         var start = columns.len;
         for (relations) |Relation| {
+            // has_many relations issue a separate query so we don't select columns here.
+            // Only belongs_to uses an inner join.
+            if (Relation.relation_type != .belongs_to) continue;
+
             for (Relation.select_columns, start..) |column, index| {
                 columns_buf_len += renderSelectColumn(
                     Adapter,
@@ -322,6 +329,10 @@ fn renderSelectColumns(
 
         start = columns.len;
         for (relations) |Relation| {
+            // has_many relations issue a separate query so we don't select columns here.
+            // Only belongs_to uses an inner join.
+            if (Relation.relation_type != .belongs_to) continue;
+
             for (Relation.select_columns, start..) |column, index| {
                 const column_identifier = renderSelectColumn(
                     Adapter,
