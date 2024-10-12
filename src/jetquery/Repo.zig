@@ -99,7 +99,7 @@ pub fn execute(self: *Repo, query: anytype) !switch (@TypeOf(query).ResultContex
                 return try result.unary(@TypeOf(query).ResultType);
             }
             const row = try result.next(query);
-            if (row) |capture| try self.result_map.put(capture.__jetquery_id, result);
+            if (row) |capture| try self.result_map.put(capture.__jetquery.id, result);
             break :blk row;
         },
         .many => result,
@@ -155,7 +155,7 @@ pub fn save(self: *Repo, value: anytype) !void {
         @field(update, field.name) = @field(value, field.name);
     }
 
-    const query = jetquery.Query(value.__jetquery.schema, value.__jetquery.model)
+    const query = jetquery.Query(value.__jetquery_schema, value.__jetquery_model)
         .update(update)
         .where(.{ .id = value.id });
 
@@ -204,11 +204,13 @@ pub fn fieldStates(self: Repo, value: anytype) []const FieldState {
 /// Free a single result's allocated memory. Use in conjunction with `findBy` and `find` as these
 /// methods simply return structs as defined by the Schema and do not have another way to deinit.
 pub fn free(self: *Repo, value: anytype) void {
-    if (comptime @hasField(@TypeOf(value), "__jetquery_id")) {
-        if (self.result_map.getEntry(value.__jetquery_id)) |entry| {
-            entry.value_ptr.deinit();
-            _ = self.result_map.remove(value.__jetquery_id);
-        }
+    if (!comptime @hasField(@TypeOf(value), "__jetquery")) return;
+
+    // TODO: We can probably just deinit the result instead of storing it in a map now that we
+    // dupe strings.
+    if (self.result_map.getEntry(value.__jetquery.id)) |entry| {
+        entry.value_ptr.deinit();
+        _ = self.result_map.remove(value.__jetquery.id);
     }
 
     // Value may be modified after fetching so we only free the original value. If user messes
@@ -217,21 +219,28 @@ pub fn free(self: *Repo, value: anytype) void {
         switch (@typeInfo(field.type)) {
             .pointer => |info| {
                 switch (info.child) {
-                    u8 => self.allocator.free(@field(value, field.name)),
-                    else => switch (info.size) {
-                        .Slice => {
-                            // TODO: Iterate again to clear out relations
-                            for (@field(value, field.name)) |item| {
-                                self.free(item);
-                            }
-                            self.allocator.free(@field(value, field.name));
-                        },
-                        else => {},
+                    // TODO: Couple this with `maybeDupe` logic to make sure we stay consistent
+                    // in which types need to be freed.
+                    u8 => {
+                        self.allocator.free(@field(value.__jetquery.original_values, field.name));
                     },
+                    else => {},
                 }
             },
-            // TODO: Iterate again to clear out relations
             .@"struct" => self.free(@field(value, field.name)),
+            else => {},
+        }
+    }
+
+    inline for (value.__jetquery_relation_names) |relation_name| {
+        switch (@typeInfo(@TypeOf(@field(value, relation_name)))) {
+            // belongs_to
+            .@"struct" => self.free(@field(value, relation_name)),
+            // has_many
+            .pointer => {
+                for (@field(value, relation_name)) |item| self.free(item);
+                self.allocator.free(@field(value, relation_name));
+            },
             else => {},
         }
     }

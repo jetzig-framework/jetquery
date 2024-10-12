@@ -92,3 +92,18 @@ pub fn structField(comptime name: []const u8, T: type) std.builtin.Type.StructFi
         };
     }
 }
+
+pub fn structFieldComptime(
+    comptime name: []const u8,
+    comptime default: anytype,
+) std.builtin.Type.StructField {
+    comptime {
+        return .{
+            .name = name ++ "",
+            .type = @TypeOf(default),
+            .default_value = &default,
+            .is_comptime = true,
+            .alignment = @alignOf(@TypeOf(default)),
+        };
+    }
+}

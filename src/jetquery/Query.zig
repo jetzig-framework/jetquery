@@ -741,7 +741,7 @@ fn Statement(
 
                     const RelationBaseType = @Type(.{ .@"struct" = .{
                         .layout = .auto,
-                        .fields = &(relation_fields ++ internalFields(&relation_fields)),
+                        .fields = &(relation_fields ++ internalFields(&relation_fields, false)),
                         .decls = &.{},
                         .is_tuple = false,
                     } });
@@ -759,7 +759,9 @@ fn Statement(
                     relations_fields[relation_index] = relation_field;
                 }
 
-                const all_fields = base_fields ++ relations_fields ++ internalFields(&base_fields);
+                const all_fields = base_fields ++
+                    relations_fields ++
+                    internalFields(&base_fields, true);
 
                 return @Type(.{
                     .@"struct" = .{
@@ -786,7 +788,8 @@ fn Statement(
 
         fn internalFields(
             comptime base_fields: []const std.builtin.Type.StructField,
-        ) [1]std.builtin.Type.StructField {
+            comptime with_relations: bool,
+        ) [4]std.builtin.Type.StructField {
             comptime {
                 const Originals = @Type(.{ .@"struct" = .{
                     .layout = .auto,
@@ -795,11 +798,10 @@ fn Statement(
                     .is_tuple = false,
                 } });
 
-                const jetquery_fields: [4]std.builtin.Type.StructField = .{
+                const jetquery_fields: [2]std.builtin.Type.StructField = .{
                     jetquery.fields.structField("id", i128),
-                    jetquery.fields.structField("model", type),
-                    jetquery.fields.structField("schema", type),
                     jetquery.fields.structField("original_values", Originals),
+                    // jetquery.fields.structField("relation_names", [options.relations.len][]const u8),
                 };
 
                 const JQ = @Type(.{ .@"struct" = .{
@@ -809,7 +811,29 @@ fn Statement(
                     .is_tuple = false,
                 } });
 
-                return .{jetquery.fields.structField("__jetquery", JQ)};
+                const len = if (with_relations) options.relations.len else 0;
+                var relation_names: [len][]const u8 = undefined;
+                if (with_relations) {
+                    for (options.relations, 0..) |relation, index| {
+                        relation_names[index] = relation.relation_name;
+                    }
+                }
+
+                const relation_field = std.builtin.Type.StructField{
+                    .name = "__jetquery_relation_names",
+                    .type = [len][]const u8,
+                    .default_value = @ptrCast(&relation_names),
+                    .is_comptime = true,
+                    .alignment = @alignOf([options.relations.len][]const u8),
+                };
+
+                return .{
+                    jetquery.fields.structField("__jetquery", JQ),
+                    // Sadly we can't store these inside the nested value as Zig doesn't figure
+                    // out that the values are available at comptime.
+                    jetquery.fields.structFieldComptime("__jetquery_model", Table),
+                    jetquery.fields.structFieldComptime("__jetquery_schema", Schema),
+                } ++ .{relation_field};
             }
         }
     };

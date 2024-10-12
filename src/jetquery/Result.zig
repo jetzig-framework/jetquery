@@ -36,7 +36,12 @@ pub const Result = union(enum) {
                     while (try aux_result.next(q)) |aux_row| {
                         var adapted_aux_row: aux_type = undefined;
                         inline for (std.meta.fields(aux_type)) |field| {
+                            if (comptime std.mem.startsWith(u8, field.name, "__jetquery")) continue;
                             @field(adapted_aux_row, field.name) = @field(aux_row, field.name);
+                            @field(
+                                adapted_aux_row.__jetquery.original_values,
+                                field.name,
+                            ) = @field(aux_row, field.name);
                         }
                         try aux_rows.append(adapted_aux_row);
                     }
@@ -82,16 +87,13 @@ pub const Result = union(enum) {
         result.__jetquery.id = switch (self.*) {
             inline else => |*adapted_result| adapted_result.repo.generateId(),
         };
-        result.__jetquery.model = Query.info.Table;
-        result.__jetquery.schema = Query.info.Schema;
+        result.__jetquery_model = Query.info.Table;
+        result.__jetquery_schema = Query.info.Schema;
 
-        const T = Query.ResultType;
         const originals = std.meta.fields(@TypeOf(result.__jetquery.original_values));
 
         inline for (originals) |field| {
-            if (@hasField(T, field.name)) { // TODO: Check needed ?
-                @field(result.__jetquery.original_values, field.name) = @field(result, field.name);
-            }
+            @field(result.__jetquery.original_values, field.name) = @field(result, field.name);
         }
 
         inline for (Query.relations) |relation| {
