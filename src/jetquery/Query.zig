@@ -726,61 +726,41 @@ fn Statement(
                 var base_fields: [options.columns.len]std.builtin.Type.StructField = undefined;
 
                 for (options.columns, 0..) |column, index| {
-                    base_fields[index] = .{
-                        .name = column.name ++ "",
-                        .type = column.type,
-                        .default_value = null,
-                        .is_comptime = false,
-                        .alignment = @alignOf(column.type),
-                    };
+                    base_fields[index] = jetquery.fields.structField(column.name, column.type);
                 }
 
                 var relations_fields: [options.relations.len]std.builtin.Type.StructField = undefined;
                 for (options.relations, 0..) |Relation, relation_index| {
-                    var relation_fields: [Relation.select_columns.len * 2]std.builtin.Type.StructField = undefined;
+                    var relation_fields: [Relation.select_columns.len]std.builtin.Type.StructField = undefined;
                     for (Relation.select_columns, 0..) |column, index| {
-                        relation_fields[index] = .{
-                            .name = column.name ++ "",
-                            .type = column.type,
-                            .default_value = null,
-                            .is_comptime = false,
-                            .alignment = @alignOf(column.type),
-                        };
-                        relation_fields[index + Relation.select_columns.len] = .{
-                            .name = jetquery.original_prefix ++ column.name,
-                            .type = column.type,
-                            .default_value = null,
-                            .is_comptime = false,
-                            .alignment = @alignOf(column.type),
-                        };
+                        relation_fields[index] = jetquery.fields.structField(
+                            column.name,
+                            column.type,
+                        );
                     }
 
-                    const RT = @Type(.{ .@"struct" = .{
+                    const RelationBaseType = @Type(.{ .@"struct" = .{
                         .layout = .auto,
-                        .fields = &relation_fields,
+                        .fields = &(relation_fields ++ internalFields(&relation_fields)),
                         .decls = &.{},
                         .is_tuple = false,
                     } });
 
-                    relations_fields[relation_index] = switch (Relation.relation_type) {
-                        .belongs_to => .{
-                            .name = Relation.relation_name,
-                            .type = RT,
-                            .default_value = null,
-                            .is_comptime = false,
-                            .alignment = @alignOf(RT),
-                        },
-                        .has_many => .{
-                            .name = Relation.relation_name,
-                            .type = []const RT,
-                            .default_value = null,
-                            .is_comptime = false,
-                            .alignment = @alignOf([]const RT),
-                        },
+                    const RelationType = switch (Relation.relation_type) {
+                        .belongs_to => RelationBaseType,
+                        .has_many => []const RelationBaseType,
                     };
+
+                    const relation_field = jetquery.fields.structField(
+                        Relation.relation_name,
+                        RelationType,
+                    );
+
+                    relations_fields[relation_index] = relation_field;
                 }
 
                 const all_fields = base_fields ++ relations_fields ++ internalFields(&base_fields);
+
                 return @Type(.{
                     .@"struct" = .{
                         .layout = .auto,
@@ -805,47 +785,32 @@ fn Statement(
         }
 
         fn internalFields(
-            base_fields: []const std.builtin.Type.StructField,
-        ) [base_fields.len + 3]std.builtin.Type.StructField {
-            const jetquery_model_field = std.builtin.Type.StructField{
-                .name = "__jetquery_model",
-                .type = type,
-                .default_value = &Table,
-                .is_comptime = true,
-                .alignment = @alignOf(type),
-            };
+            comptime base_fields: []const std.builtin.Type.StructField,
+        ) [1]std.builtin.Type.StructField {
+            comptime {
+                const Originals = @Type(.{ .@"struct" = .{
+                    .layout = .auto,
+                    .fields = base_fields,
+                    .decls = &.{},
+                    .is_tuple = false,
+                } });
 
-            const jetquery_schema_field = std.builtin.Type.StructField{
-                .name = "__jetquery_schema",
-                .type = type,
-                .default_value = &Schema,
-                .is_comptime = true,
-                .alignment = @alignOf(type),
-            };
-
-            const jetquery_id_field = std.builtin.Type.StructField{
-                .name = "__jetquery_id",
-                .type = i128,
-                .default_value = null,
-                .is_comptime = false,
-                .alignment = @alignOf(i128),
-            };
-
-            var original_value_fields: [base_fields.len]std.builtin.Type.StructField = undefined;
-            for (base_fields, 0..) |field, index| {
-                original_value_fields[index] = .{
-                    .name = jetquery.original_prefix ++ field.name,
-                    .type = field.type,
-                    .default_value = null,
-                    .is_comptime = false,
-                    .alignment = @alignOf(field.type),
+                const jetquery_fields: [4]std.builtin.Type.StructField = .{
+                    jetquery.fields.structField("id", i128),
+                    jetquery.fields.structField("model", type),
+                    jetquery.fields.structField("schema", type),
+                    jetquery.fields.structField("original_values", Originals),
                 };
+
+                const JQ = @Type(.{ .@"struct" = .{
+                    .layout = .auto,
+                    .fields = &jetquery_fields,
+                    .decls = &.{},
+                    .is_tuple = false,
+                } });
+
+                return .{jetquery.fields.structField("__jetquery", JQ)};
             }
-            return original_value_fields ++ .{
-                jetquery_id_field,
-                jetquery_model_field,
-                jetquery_schema_field,
-            };
         }
     };
 }

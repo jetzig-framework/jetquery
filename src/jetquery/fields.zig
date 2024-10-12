@@ -80,3 +80,15 @@ pub fn ColumnType(Table: type, comptime field_info: FieldInfo) type {
         ));
     }
 }
+
+pub fn structField(comptime name: []const u8, T: type) std.builtin.Type.StructField {
+    comptime {
+        return .{
+            .name = name ++ "",
+            .type = T,
+            .default_value = null,
+            .is_comptime = false,
+            .alignment = @alignOf(T),
+        };
+    }
+}

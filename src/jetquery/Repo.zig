@@ -155,7 +155,7 @@ pub fn save(self: *Repo, value: anytype) !void {
         @field(update, field.name) = @field(value, field.name);
     }
 
-    const query = jetquery.Query(value.__jetquery_schema, value.__jetquery_model)
+    const query = jetquery.Query(value.__jetquery.schema, value.__jetquery.model)
         .update(update)
         .where(.{ .id = value.id });
 
@@ -184,16 +184,15 @@ pub fn fieldStates(self: Repo, value: anytype) []const FieldState {
     var field_state: [size]FieldState = undefined;
     var index: usize = 0;
 
-    inline for (std.meta.fields(@TypeOf(value))) |field| {
-        if (!comptime std.mem.startsWith(u8, field.name, jetquery.original_prefix)) continue;
-
+    const originals = value.__jetquery.original_values;
+    inline for (std.meta.fields(@TypeOf(originals))) |field| {
         const modified = switch (@typeInfo(field.type)) {
             .pointer => |info| std.mem.eql(
                 info.child,
+                @field(originals, field.name),
                 @field(value, field.name),
-                @field(value, field.name[jetquery.original_prefix.len..]),
             ),
-            else => @field(value, field.name) == @field(value, field.name[jetquery.original_prefix.len..]),
+            else => @field(originals, field.name) == @field(value, field.name),
         };
 
         field_state[index] = .{ .name = field.name, .modified = modified };
@@ -211,20 +210,17 @@ pub fn free(self: *Repo, value: anytype) void {
             _ = self.result_map.remove(value.__jetquery_id);
         }
     }
-    inline for (std.meta.fields(@TypeOf(value))) |field| {
+
+    // Value may be modified after fetching so we only free the original value. If user messes
+    // with internals and modifies original values then they will run into trouble.
+    inline for (std.meta.fields(@TypeOf(value.__jetquery.original_values))) |field| {
         switch (@typeInfo(field.type)) {
             .pointer => |info| {
                 switch (info.child) {
-                    u8 => {
-                        // Value may be modified after fetching so we only free the original
-                        // value. If user messes with internals and modifies original values then
-                        // they will run into trouble.
-                        if (comptime std.mem.startsWith(u8, field.name, jetquery.original_prefix)) {
-                            self.allocator.free(@field(value, field.name));
-                        }
-                    },
+                    u8 => self.allocator.free(@field(value, field.name)),
                     else => switch (info.size) {
                         .Slice => {
+                            // TODO: Iterate again to clear out relations
                             for (@field(value, field.name)) |item| {
                                 self.free(item);
                             }
@@ -234,6 +230,7 @@ pub fn free(self: *Repo, value: anytype) void {
                     },
                 }
             },
+            // TODO: Iterate again to clear out relations
             .@"struct" => self.free(@field(value, field.name)),
             else => {},
         }

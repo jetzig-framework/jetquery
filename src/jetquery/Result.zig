@@ -79,19 +79,18 @@ pub const Result = union(enum) {
     }
 
     fn extendInternalFields(self: *Result, Query: type, result: *Query.ResultType) void {
-        result.__jetquery_id = switch (self.*) {
+        result.__jetquery.id = switch (self.*) {
             inline else => |*adapted_result| adapted_result.repo.generateId(),
         };
-        result.__jetquery_model = Query.info.Table;
-        result.__jetquery_schema = Query.info.Schema;
+        result.__jetquery.model = Query.info.Table;
+        result.__jetquery.schema = Query.info.Schema;
 
         const T = Query.ResultType;
+        const originals = std.meta.fields(@TypeOf(result.__jetquery.original_values));
 
-        inline for (std.meta.fields(T)) |field| {
-            if (comptime !std.mem.startsWith(u8, field.name, jetquery.original_prefix)) {
-                if (@hasField(T, jetquery.original_prefix ++ field.name)) {
-                    @field(result, jetquery.original_prefix ++ field.name) = @field(result, field.name);
-                }
+        inline for (originals) |field| {
+            if (@hasField(T, field.name)) { // TODO: Check needed ?
+                @field(result.__jetquery.original_values, field.name) = @field(result, field.name);
             }
         }
 
@@ -102,8 +101,8 @@ pub const Result = union(enum) {
                 const relation_field = @field(result, relation.relation_name);
                 const value = @field(relation_field, select_column.name);
                 @field(
-                    @field(result, relation.relation_name),
-                    jetquery.original_prefix ++ select_column.name,
+                    @field(result, relation.relation_name).__jetquery.original_values,
+                    select_column.name,
                 ) = value;
             }
         }
