@@ -8,7 +8,7 @@ pub fn coerce(
     Table: type,
     field_info: fields.FieldInfo,
     value: anytype,
-) CoercedValue(fields.ColumnType(Table, field_info)) {
+) CoercedValue(fields.ColumnType(Table, field_info), @TypeOf(value)) {
     switch (field_info.context) {
         .limit => return switch (@typeInfo(@TypeOf(value))) {
             .int, .comptime_int => .{ .value = value },
@@ -33,7 +33,7 @@ pub fn coerce(
         .pointer => |info| switch (@typeInfo(T)) {
             .int => switch (@typeInfo(info.child)) {
                 .int => switch (info.size) {
-                    .Slice => coerceInt(T, value),
+                    .Slice => .{ .value = value },
                     else => .{ .value = value },
                 },
                 else => if (comptime canCoerceDelegate(info.child))
@@ -75,7 +75,7 @@ pub fn coerce(
 // JetQuery, otherwise a typical Zig compile error will occur. This feature is used by
 // Zmpl for converting Zmpl Values, allowing e.g. request params in Jetzig to be used as
 // JetQuery whereclause/etc. params.
-pub fn coerceDelegate(Target: type, value: anytype) CoercedValue(Target) {
+pub fn coerceDelegate(Target: type, value: anytype) CoercedValue(Target, @TypeOf(value)) {
     const Source = @TypeOf(value);
     if (comptime canCoerceDelegate(Source)) {
         const coerced = value.toJetQuery(Target) catch |err| {
@@ -95,14 +95,22 @@ pub fn canCoerceDelegate(T: type) bool {
     };
 }
 
-pub fn CoercedValue(Target: type) type {
+pub fn CoercedValue(Target: type, Source: type) type {
+    const T = switch (@typeInfo(Source)) {
+        .pointer => |info| if (info.child == Target and info.size == .Slice)
+            []const Target
+        else
+            Target,
+        else => Target,
+    };
+
     return struct {
-        value: Target = undefined, // Never used if `err` is present
+        value: T = undefined, // Never used if `err` is present
         err: ?anyerror = null,
     };
 }
 
-fn coerceInt(T: type, value: []const u8) CoercedValue(T) {
+fn coerceInt(T: type, value: []const u8) CoercedValue(T, @TypeOf(value)) {
     const coerced = std.fmt.parseInt(T, value, 10) catch |err| {
         return .{
             .err = switch (err) {
@@ -113,7 +121,7 @@ fn coerceInt(T: type, value: []const u8) CoercedValue(T) {
     return .{ .value = coerced };
 }
 
-fn coerceFloat(T: type, value: []const u8) CoercedValue(T) {
+fn coerceFloat(T: type, value: []const u8) CoercedValue(T, @TypeOf(value)) {
     const coerced = std.fmt.parseFloat(T, value) catch |err| {
         return .{
             .err = switch (err) {
@@ -124,7 +132,7 @@ fn coerceFloat(T: type, value: []const u8) CoercedValue(T) {
     return .{ .value = coerced };
 }
 
-fn coerceBool(T: type, value: []const u8) CoercedValue(T) {
+fn coerceBool(T: type, value: []const u8) CoercedValue(T, @TypeOf(value)) {
     if (value.len != 1) return .{ .err = error.JetQueryInvalidBooleanString };
 
     const maybe_boolean = switch (value[0]) {

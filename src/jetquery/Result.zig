@@ -80,7 +80,7 @@ pub const Result = union(enum) {
                     const Args = comptime args_blk: {
                         var fields: [1]std.builtin.Type.StructField = .{jetquery.fields.structField(
                             foreign_key,
-                            jetquery.fields.fieldType(
+                            []const jetquery.fields.fieldType(
                                 aux_query.relation.Source.Definition,
                                 foreign_key,
                             ),
@@ -90,7 +90,7 @@ pub const Result = union(enum) {
                     var args: Args = undefined;
                     // TODO: `IN` condition support
                     if (comptime primary_key_present) {
-                        @field(args, foreign_key) = ids[0];
+                        @field(args, foreign_key) = ids;
                     }
 
                     const q = aux_query.query.where(args);

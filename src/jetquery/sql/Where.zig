@@ -103,12 +103,30 @@ pub const Node = union(enum) {
         index: usize,
 
         pub fn ColumnType(self: Value) type {
-            return fields.ColumnType(self.Table, fields.fieldInfo(
+            const T = fields.ColumnType(self.Table, fields.fieldInfo(
                 self.field_info,
                 self.Table,
                 self.name,
                 self.field_context,
             ));
+            return if (self.isArray()) []const T else T;
+        }
+
+        pub fn isArray(self: Value) bool {
+            const T = fields.ColumnType(self.Table, fields.fieldInfo(
+                self.field_info,
+                self.Table,
+                self.name,
+                self.field_context,
+            ));
+
+            return switch (@typeInfo(self.type)) {
+                .pointer => |info| if (info.size == .Slice and info.child == T)
+                    true
+                else
+                    false,
+                else => false,
+            };
         }
     };
 
@@ -143,7 +161,16 @@ pub const Node = union(enum) {
                     prefix,
                     Adapter.identifier(value.Table.name),
                     Adapter.identifier(value.name),
-                    Adapter.paramSql(value.index),
+                    if (value.isArray())
+                        // XXX: This is PostgreSQL-specific - one day we'll need to figure out
+                        // how to generate SQL for unknown (at comptime) array length.
+                        // MySQL has `ANY` but it expects a subquery so maybe we'll need a
+                        // temporary table or something equally horrible.
+                        // SQLite doesn't have `ANY` at all so we may end up having to generate
+                        // some parts of the SQL at runtime. :(
+                        Adapter.anyParamSql(value.index)
+                    else
+                        Adapter.paramSql(value.index),
                 }) catch unreachable;
             },
             .group => |group| {
@@ -454,7 +481,10 @@ fn assignValue(
                 value_field.name,
                 value_field.context,
             );
-            const coerced: coercion.CoercedValue(value_field.column_type) = coercion.coerce(
+            const coerced: coercion.CoercedValue(
+                value_field.column_type,
+                @TypeOf(arg),
+            ) = coercion.coerce(
                 value_field.Table,
                 field_info,
                 arg,

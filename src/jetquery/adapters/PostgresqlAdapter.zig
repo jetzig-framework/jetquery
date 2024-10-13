@@ -213,6 +213,11 @@ pub fn paramSql(comptime index: usize) []const u8 {
     return std.fmt.comptimePrint("${}", .{index + 1});
 }
 
+/// SQL representing an array bind parameter with an `ANY` call, e.g. `ANY ($1)`.
+pub fn anyParamSql(comptime index: usize) []const u8 {
+    return std.fmt.comptimePrint("ANY (${})", .{index + 1});
+}
+
 pub fn orderSql(Table: type, comptime order_clause: sql.OrderClause) []const u8 {
     const direction = switch (order_clause.direction) {
         .ascending => "ASC",

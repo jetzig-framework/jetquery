@@ -485,36 +485,70 @@ test "relations" {
     try std.testing.expectEqual(4, cat.paws);
     try std.testing.expectEqualStrings("Bob", cat.human.name);
 
-    const human = try jetquery.Query(Schema, .Human)
+    const bob = try jetquery.Query(Schema, .Human)
         .include(.cats, .{})
         .findBy(.{ .name = "Bob" })
         .execute(&repo) orelse return try std.testing.expect(false);
-    defer repo.free(human);
+    defer repo.free(bob);
 
-    try std.testing.expectEqualStrings("Hercules", human.cats[0].name);
+    try std.testing.expectEqualStrings("Hercules", bob.cats[0].name);
 
     try repo.insert(Schema.Cat.init(.{
         .id = 2,
         .name = "Princes",
-        .paws = std.crypto.random.int(u2),
-        .human_id = human.id,
+        .paws = std.crypto.random.int(u3),
+        .human_id = bob.id,
     }));
     try repo.insert(Schema.Cat.init(.{
         .id = 3,
         .name = "Heracles",
-        .paws = std.crypto.random.int(u2),
+        .paws = std.crypto.random.int(u3),
         .human_id = 1000,
     }));
 
-    const human2 = try jetquery.Query(Schema, .Human)
+    const bob_with_more_cats = try jetquery.Query(Schema, .Human)
         .include(.cats, .{})
         .findBy(.{ .name = "Bob" })
         .execute(&repo) orelse return try std.testing.expect(false);
-    defer repo.free(human2);
+    defer repo.free(bob_with_more_cats);
 
-    try std.testing.expect(human2.cats.len == 2);
-    try std.testing.expectEqualStrings("Hercules", human2.cats[0].name);
-    try std.testing.expectEqualStrings("Princes", human2.cats[1].name);
+    try std.testing.expect(bob_with_more_cats.cats.len == 2);
+    try std.testing.expectEqualStrings("Hercules", bob_with_more_cats.cats[0].name);
+    try std.testing.expectEqualStrings("Princes", bob_with_more_cats.cats[1].name);
+
+    try jetquery.Query(Schema, .Human)
+        .insert(.{ .id = 1, .name = "Jane" })
+        .execute(&repo);
+    // try repo.insert(Schema.Human.init(.{
+    //     .id = 2,
+    //     .name = "Jane",
+    // }));
+
+    const jane = try jetquery.Query(Schema, .Human)
+        .include(.cats, .{})
+        .findBy(.{ .name = "Jane" })
+        .execute(&repo) orelse return try std.testing.expect(false);
+
+    std.debug.print("{any}\n", .{jane});
+    // try std.testing.expect(jane.cats.len == 0);
+
+    try repo.insert(Schema.Cat.init(.{
+        .human_id = jane.id,
+        .name = "Cindy",
+        .paws = std.crypto.random.int(u3),
+    }));
+
+    try repo.insert(Schema.Cat.init(.{
+        .human_id = jane.id,
+        .name = "Garfield",
+        .paws = std.crypto.random.int(u3),
+    }));
+
+    const humans_query = jetquery.Query(Schema, .Human).include(.cats, .{}).select(.{});
+    const humans = try repo.all(humans_query);
+    defer repo.free(humans);
+
+    try std.testing.expect(humans.len == 2);
 }
 
 test "timestamps" {

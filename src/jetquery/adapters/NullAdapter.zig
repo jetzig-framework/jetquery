@@ -52,6 +52,11 @@ pub fn paramSql(comptime index: usize) []const u8 {
     return "";
 }
 
+pub fn anyParamSql(comptime index: usize) []const u8 {
+    _ = index;
+    return "";
+}
+
 pub fn innerJoinSql(
     Table: type,
     JoinTable: type,

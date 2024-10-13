@@ -70,6 +70,13 @@ pub const Adapter = union(enum) {
         };
     }
 
+    /// SQL representing an array bind parameter with an `ANY` call, e.g. `ANY ($1)`.
+    pub fn anyParamSql(self: Adapter, comptime index: usize) []const u8 {
+        return switch (self) {
+            inline else => |adapter| @TypeOf(adapter).anyParamSql(index),
+        };
+    }
+
     /// SQL representing an `ORDER BY` directive, e.g. `"foo" DESC`
     pub fn orderSql(self: Adapter, Table: type, comptime order_clause: jetquery.OrderClause) []const u8 {
         return switch (self) {
