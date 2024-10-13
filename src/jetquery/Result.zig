@@ -35,7 +35,7 @@ pub const Result = union(enum) {
         return switch (self.*) {
             inline else => |*adapted_result| blk: {
                 var rows = try adapted_result.all(query);
-                const T = comptime t_blk: {
+                const MergedRow = comptime t_blk: {
                     var fields: [query.auxiliary_queries.len]std.builtin.Type.StructField = undefined;
                     for (query.auxiliary_queries, 0..) |aux_query, index| {
                         fields[index] = jetquery.fields.structField(
@@ -58,7 +58,7 @@ pub const Result = union(enum) {
                 var id_map = IdMap(@TypeOf(query), primary_key).init(adapted_result.allocator);
                 defer id_map.deinit();
 
-                var aux_map = std.AutoHashMap(usize, T).init(adapted_result.allocator);
+                var aux_map = std.AutoHashMap(usize, MergedRow).init(adapted_result.allocator);
                 defer aux_map.deinit();
 
                 for (rows, 0..) |row, index| {
@@ -75,8 +75,6 @@ pub const Result = union(enum) {
                 const ids = id_array.items;
 
                 inline for (query.auxiliary_queries) |aux_query| {
-                    // TODO:
-                    // 2. IN for multiple values
                     const foreign_key = comptime aux_query.relation.foreign_key orelse
                         @TypeOf(query).info.Table.defaultForeignKey();
                     const Args = comptime args_blk: {
@@ -97,6 +95,8 @@ pub const Result = union(enum) {
 
                     const q = aux_query.query.where(args);
                     var aux_result = try adapted_result.repo.execute(q);
+                    defer aux_result.deinit();
+
                     const aux_type = AuxType(RT, aux_query.relation);
 
                     while (try aux_result.next(q)) |aux_row| {
@@ -120,14 +120,14 @@ pub const Result = union(enum) {
                             if (maybe_row_index) |row_index| {
                                 const aux_values = try aux_map.getOrPut(row_index);
                                 if (!aux_values.found_existing) {
-                                    var t: T = undefined;
+                                    var merged_row: MergedRow = undefined;
                                     inline for (query.auxiliary_queries) |init_aux_query| {
                                         @field(
-                                            t,
+                                            merged_row,
                                             init_aux_query.relation.relation_name,
                                         ) = std.ArrayList(aux_type).init(adapted_result.allocator);
                                     }
-                                    aux_values.value_ptr.* = t;
+                                    aux_values.value_ptr.* = merged_row;
                                 }
                                 try @field(
                                     aux_values.value_ptr.*,
@@ -138,8 +138,6 @@ pub const Result = union(enum) {
                     }
 
                     try aux_result.drain();
-                    defer aux_result.deinit();
-                    _ = &aux_map;
                 }
 
                 var it = aux_map.iterator();
