@@ -35,7 +35,7 @@ pub const Result = union(enum) {
         return switch (self.*) {
             inline else => |*adapted_result| blk: {
                 var rows = try adapted_result.all(query);
-                // TODO: Infer PK type and name
+                // TODO: Infer PK type
                 const T = comptime t_blk: {
                     var fields: [query.auxiliary_queries.len]std.builtin.Type.StructField = undefined;
                     for (query.auxiliary_queries, 0..) |aux_query, index| {
@@ -48,8 +48,13 @@ pub const Result = union(enum) {
                 };
 
                 var ids_map = std.AutoHashMap(i32, usize).init(adapted_result.allocator);
+                defer ids_map.deinit();
+
                 var ids_array = std.ArrayList(i32).init(adapted_result.allocator);
+                defer ids_array.deinit();
+
                 var aux_map = std.AutoHashMap(usize, T).init(adapted_result.allocator);
+                defer aux_map.deinit();
 
                 const primary_key = @TypeOf(query).info.Table.primary_key;
                 for (rows, 0..) |row, index| {
@@ -63,7 +68,7 @@ pub const Result = union(enum) {
                     rows[index] = adapted_row;
                 }
 
-                const ids = try ids_array.toOwnedSlice();
+                const ids = ids_array.items;
 
                 inline for (query.auxiliary_queries) |aux_query| {
                     // TODO:
@@ -123,7 +128,6 @@ pub const Result = union(enum) {
                         }
                     }
 
-                    // @field(row, aux_query.relation.relation_name) = try aux_rows.toOwnedSlice();
                     try aux_result.drain();
                     defer aux_result.deinit();
                     _ = &aux_map;

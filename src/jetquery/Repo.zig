@@ -97,6 +97,9 @@ pub fn execute(self: *Repo, query: anytype) !switch (@TypeOf(query).ResultContex
             }
             // TODO: Switch this back to `next()` when relation mapping is added there
             const rows = try result.all(query);
+            defer self.allocator.free(rows);
+            // We should only ever get here where `LIMIT 1` is applied
+            std.debug.assert(rows.len <= 1);
             break :blk if (rows.len > 0) rows[0] else null;
         },
         .many => result,
@@ -105,6 +108,13 @@ pub fn execute(self: *Repo, query: anytype) !switch (@TypeOf(query).ResultContex
             break :blk {};
         },
     };
+}
+
+/// Execute a query and return all of its results. Call `repo.free(result)` to free allocated
+/// memory.
+pub fn all(self: *Repo, query: anytype) ![]@TypeOf(query).ResultType {
+    var result = try self.execute(query);
+    return try result.all(query);
 }
 
 pub fn save(self: *Repo, value: anytype) !void {
@@ -203,9 +213,22 @@ pub fn fieldStates(self: Repo, value: anytype) []const FieldState {
     return &field_state;
 }
 
-/// Free a single result's allocated memory. Use in conjunction with `findBy` and `find` as these
-/// methods simply return structs as defined by the Schema and do not have another way to deinit.
+/// Free a result's allocated memory. Supports flexible inputs and can be used in conjunction
+/// with `all()` and `findBy()` etc.:
+/// ```zig
+///
 pub fn free(self: *Repo, value: anytype) void {
+    switch (@typeInfo(@TypeOf(value))) {
+        .pointer => |info| switch (info.size) {
+            .Slice => {
+                for (value) |item| self.free(item);
+                self.allocator.free(value);
+            },
+            else => {},
+        },
+        else => {},
+    }
+
     if (!comptime @hasField(@TypeOf(value), "__jetquery")) return;
 
     // Value may be modified after fetching so we only free the original value. If user messes
@@ -316,11 +339,9 @@ pub fn dropTable(self: *Repo, comptime name: []const u8, options: DropTableOptio
     defer result.deinit();
 }
 
-const test_allocator = std.testing.allocator;
-
 test "Repo" {
     var repo = try Repo.init(
-        test_allocator,
+        std.testing.allocator,
         .{
             .adapter = .{
                 .postgresql = .{
@@ -344,11 +365,15 @@ test "Repo" {
         );
     };
 
-    var drop_table = try repo.adapter.execute(&repo, "drop table if exists cats", &.{});
-    defer drop_table.deinit();
-
-    var create_table = try repo.adapter.execute(&repo, "create table cats (name varchar(255), paws int)", &.{});
-    defer create_table.deinit();
+    try repo.dropTable("cats", .{ .if_exists = true });
+    try repo.createTable(
+        "cats",
+        &.{
+            jetquery.table.column("name", .string, .{}),
+            jetquery.table.column("paws", .integer, .{}),
+        },
+        .{ .if_not_exists = true },
+    );
 
     try jetquery.Query(Schema, .Cat).insert(.{ .name = "Hercules", .paws = 4 }).execute(&repo);
     try jetquery.Query(Schema, .Cat).insert(.{ .name = "Princes", .paws = 4 }).execute(&repo);
@@ -357,10 +382,10 @@ test "Repo" {
         .select(.{ .name, .paws })
         .where(.{ .paws = 4 });
 
-    var result = try repo.execute(query);
+    const cats = try repo.all(query);
+    defer repo.free(cats);
 
-    for (try result.all(query)) |cat| {
-        defer repo.free(cat);
+    for (cats) |cat| {
         try std.testing.expectEqualStrings("Hercules", cat.name);
         try std.testing.expectEqual(4, cat.paws);
         break;
@@ -377,7 +402,7 @@ test "Repo" {
 
 test "Repo.loadConfig" {
     // Loads default config file: `jetquery.config.zig`
-    var repo = try Repo.loadConfig(test_allocator, .{});
+    var repo = try Repo.loadConfig(std.testing.allocator, .{});
     defer repo.deinit();
     try std.testing.expect(repo.adapter == .postgresql);
 }
@@ -387,7 +412,7 @@ test "relations" {
     const allocator = gpa.allocator();
 
     var repo = try Repo.init(
-        // test_allocator,
+        // std.testing.allocator,
         allocator,
         .{
             .adapter = .{
@@ -494,7 +519,7 @@ test "relations" {
 
 test "timestamps" {
     var repo = try Repo.init(
-        test_allocator,
+        std.testing.allocator,
         .{
             .adapter = .{
                 .postgresql = .{
@@ -542,7 +567,11 @@ test "timestamps" {
     std.time.sleep(std.time.ns_per_ms);
 
     try jetquery.Query(Schema, .Cat).insert(.{ .name = "Hercules", .paws = 4 }).execute(&repo);
-    const maybe_cat = try jetquery.Query(Schema, .Cat).findBy(.{ .name = "Hercules" }).execute(&repo);
+
+    const maybe_cat = try jetquery.Query(Schema, .Cat)
+        .findBy(.{ .name = "Hercules" })
+        .execute(&repo);
+
     if (maybe_cat) |cat| {
         defer repo.free(cat);
         try std.testing.expect(cat.created_at.microseconds() > now);
@@ -551,7 +580,7 @@ test "timestamps" {
 
 test "save" {
     var repo = try Repo.init(
-        test_allocator,
+        std.testing.allocator,
         .{
             .adapter = .{
                 .postgresql = .{
@@ -575,15 +604,12 @@ test "save" {
         );
     };
 
-    var drop_table = try repo.adapter.execute(&repo, "drop table if exists cats", &.{});
-    defer drop_table.deinit();
-
-    var create_table = try repo.adapter.execute(
-        &repo,
-        "create table cats (id int, name varchar(255), paws int)",
-        &.{},
-    );
-    defer create_table.deinit();
+    try repo.dropTable("cats", .{ .if_exists = true });
+    try repo.createTable("cats", &.{
+        jetquery.table.column("id", .integer, .{}),
+        jetquery.table.column("name", .string, .{}),
+        jetquery.table.column("paws", .integer, .{}),
+    }, .{ .if_not_exists = true });
 
     try jetquery.Query(Schema, .Cat)
         .insert(.{ .id = 1000, .name = "Hercules", .paws = 4 })

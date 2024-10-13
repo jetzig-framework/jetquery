@@ -65,8 +65,7 @@ fn isMigrated(self: Migrate, migration: Migration) !bool {
         .where(.{ .version = migration.version });
 
     var result = try self.repo.execute(query);
-    // TODO
-    // defer result.deinit();
+    defer result.deinit();
 
     while (try result.next(query)) |_| {
         return true;
