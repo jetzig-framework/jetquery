@@ -35,7 +35,6 @@ pub const Result = union(enum) {
         return switch (self.*) {
             inline else => |*adapted_result| blk: {
                 var rows = try adapted_result.all(query);
-                // TODO: Infer PK type
                 const T = comptime t_blk: {
                     var fields: [query.auxiliary_queries.len]std.builtin.Type.StructField = undefined;
                     for (query.auxiliary_queries, 0..) |aux_query, index| {
@@ -47,28 +46,33 @@ pub const Result = union(enum) {
                     break :t_blk jetquery.fields.structType(&fields);
                 };
 
-                var ids_map = std.AutoHashMap(i32, usize).init(adapted_result.allocator);
-                defer ids_map.deinit();
+                const primary_key = @TypeOf(query).info.Table.primary_key;
+                const primary_key_present = @hasField(
+                    @TypeOf(query).info.Table.Definition,
+                    primary_key,
+                );
 
-                var ids_array = std.ArrayList(i32).init(adapted_result.allocator);
-                defer ids_array.deinit();
+                var id_array = IdArray(@TypeOf(query), primary_key).init(adapted_result.allocator);
+                defer id_array.deinit();
+
+                var id_map = IdMap(@TypeOf(query), primary_key).init(adapted_result.allocator);
+                defer id_map.deinit();
 
                 var aux_map = std.AutoHashMap(usize, T).init(adapted_result.allocator);
                 defer aux_map.deinit();
 
-                const primary_key = @TypeOf(query).info.Table.primary_key;
                 for (rows, 0..) |row, index| {
-                    if (comptime @hasField(@TypeOf(row), primary_key)) {
+                    if (comptime primary_key_present) {
                         const id = @field(row, primary_key);
-                        try ids_map.put(id, index);
-                        try ids_array.append(id);
+                        try id_map.put(id, index);
+                        try id_array.append(id);
                     }
                     var adapted_row = row;
                     self.extendInternalFields(@TypeOf(query), &adapted_row);
                     rows[index] = adapted_row;
                 }
 
-                const ids = ids_array.items;
+                const ids = id_array.items;
 
                 inline for (query.auxiliary_queries) |aux_query| {
                     // TODO:
@@ -86,7 +90,10 @@ pub const Result = union(enum) {
                         break :args_blk jetquery.fields.structType(&fields);
                     };
                     var args: Args = undefined;
-                    @field(args, foreign_key) = ids[0];
+                    // TODO: `IN` condition support
+                    if (comptime primary_key_present) {
+                        @field(args, foreign_key) = ids[0];
+                    }
 
                     const q = aux_query.query.where(args);
                     var aux_result = try adapted_result.repo.execute(q);
@@ -107,24 +114,26 @@ pub const Result = union(enum) {
                             ) = @field(aux_row, field.name);
                         }
 
-                        const maybe_row_index = ids_map.get(@field(aux_row, foreign_key));
+                        if (comptime primary_key_present) {
+                            const maybe_row_index = id_map.get(@field(aux_row, foreign_key));
 
-                        if (maybe_row_index) |row_index| {
-                            const aux_values = try aux_map.getOrPut(row_index);
-                            if (!aux_values.found_existing) {
-                                var t: T = undefined;
-                                inline for (query.auxiliary_queries) |init_aux_query| {
-                                    @field(
-                                        t,
-                                        init_aux_query.relation.relation_name,
-                                    ) = std.ArrayList(aux_type).init(adapted_result.allocator);
+                            if (maybe_row_index) |row_index| {
+                                const aux_values = try aux_map.getOrPut(row_index);
+                                if (!aux_values.found_existing) {
+                                    var t: T = undefined;
+                                    inline for (query.auxiliary_queries) |init_aux_query| {
+                                        @field(
+                                            t,
+                                            init_aux_query.relation.relation_name,
+                                        ) = std.ArrayList(aux_type).init(adapted_result.allocator);
+                                    }
+                                    aux_values.value_ptr.* = t;
                                 }
-                                aux_values.value_ptr.* = t;
+                                try @field(
+                                    aux_values.value_ptr.*,
+                                    aux_query.relation.relation_name,
+                                ).append(adapted_aux_row);
                             }
-                            try @field(
-                                aux_values.value_ptr.*,
-                                aux_query.relation.relation_name,
-                            ).append(adapted_aux_row);
                         }
                     }
 
@@ -194,6 +203,22 @@ pub const Result = union(enum) {
                 ) = value;
             }
         }
+    }
+
+    fn IdMap(Query: type, comptime primary_key: []const u8) type {
+        const PK = if (comptime @hasField(Query.info.Table.Definition, primary_key))
+            jetquery.fields.fieldType(Query.info.Table.Definition, primary_key)
+        else
+            void;
+        return std.AutoHashMap(PK, usize);
+    }
+
+    fn IdArray(Query: type, comptime primary_key: []const u8) type {
+        const PK = if (comptime @hasField(Query.info.Table.Definition, primary_key))
+            jetquery.fields.fieldType(Query.info.Table.Definition, primary_key)
+        else
+            void;
+        return std.ArrayList(PK);
     }
 };
 
