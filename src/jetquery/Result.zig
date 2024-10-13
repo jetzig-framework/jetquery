@@ -19,22 +19,80 @@ pub const Result = union(enum) {
     }
 
     pub fn next(self: *Result, query: anytype) !?@TypeOf(query).ResultType {
-        const RT = @TypeOf(query).ResultType;
-
         return switch (self.*) {
             inline else => |*adapted_result| blk: {
                 var row = try adapted_result.next(query) orelse break :blk null;
 
-                try adapted_result.drain(); // TODO - only drain for `.one`/`.none`
+                self.extendInternalFields(@TypeOf(query), &row);
+                break :blk row;
+            },
+        };
+    }
+
+    pub fn all(self: *Result, query: anytype) ![]@TypeOf(query).ResultType {
+        const RT = @TypeOf(query).ResultType;
+
+        return switch (self.*) {
+            inline else => |*adapted_result| blk: {
+                var rows = try adapted_result.all(query);
+                // TODO: Infer PK type and name
+                const T = comptime t_blk: {
+                    var fields: [query.auxiliary_queries.len]std.builtin.Type.StructField = undefined;
+                    for (query.auxiliary_queries, 0..) |aux_query, index| {
+                        fields[index] = jetquery.fields.structField(
+                            aux_query.relation.relation_name,
+                            std.ArrayList(AuxType(RT, aux_query.relation)),
+                        );
+                    }
+                    break :t_blk jetquery.fields.structType(&fields);
+                };
+
+                var ids_map = std.AutoHashMap(i32, usize).init(adapted_result.allocator);
+                var ids_array = std.ArrayList(i32).init(adapted_result.allocator);
+                var aux_map = std.AutoHashMap(usize, T).init(adapted_result.allocator);
+
+                const primary_key = @TypeOf(query).info.Table.primary_key;
+                for (rows, 0..) |row, index| {
+                    if (comptime @hasField(@TypeOf(row), primary_key)) {
+                        const id = @field(row, primary_key);
+                        try ids_map.put(id, index);
+                        try ids_array.append(id);
+                    }
+                    var adapted_row = row;
+                    self.extendInternalFields(@TypeOf(query), &adapted_row);
+                    rows[index] = adapted_row;
+                }
+
+                const ids = try ids_array.toOwnedSlice();
 
                 inline for (query.auxiliary_queries) |aux_query| {
-                    const q = aux_query.query.where(.{ .id = row.id });
-                    var aux_result = try adapted_result.execute(q.sql, q.field_values);
+                    // TODO:
+                    // 2. IN for multiple values
+                    const foreign_key = comptime aux_query.relation.foreign_key orelse
+                        @TypeOf(query).info.Table.defaultForeignKey();
+                    const Args = comptime args_blk: {
+                        var fields: [1]std.builtin.Type.StructField = .{jetquery.fields.structField(
+                            foreign_key,
+                            jetquery.fields.fieldType(
+                                aux_query.relation.Source.Definition,
+                                foreign_key,
+                            ),
+                        )};
+                        break :args_blk jetquery.fields.structType(&fields);
+                    };
+                    var args: Args = undefined;
+                    @field(args, foreign_key) = ids[0];
+
+                    const q = aux_query.query.where(args);
+                    var aux_result = try adapted_result.repo.execute(q);
                     const aux_type = AuxType(RT, aux_query.relation);
-                    var aux_rows = std.ArrayList(aux_type).init(adapted_result.allocator);
 
                     while (try aux_result.next(q)) |aux_row| {
+                        var extended_aux_row = aux_row;
+                        self.extendInternalFields(@TypeOf(q), &extended_aux_row);
+
                         var adapted_aux_row: aux_type = undefined;
+
                         inline for (std.meta.fields(aux_type)) |field| {
                             if (comptime std.mem.startsWith(u8, field.name, "__jetquery")) continue;
                             @field(adapted_aux_row, field.name) = @field(aux_row, field.name);
@@ -43,22 +101,46 @@ pub const Result = union(enum) {
                                 field.name,
                             ) = @field(aux_row, field.name);
                         }
-                        try aux_rows.append(adapted_aux_row);
+
+                        const maybe_row_index = ids_map.get(@field(aux_row, foreign_key));
+
+                        if (maybe_row_index) |row_index| {
+                            const aux_values = try aux_map.getOrPut(row_index);
+                            if (!aux_values.found_existing) {
+                                var t: T = undefined;
+                                inline for (query.auxiliary_queries) |init_aux_query| {
+                                    @field(
+                                        t,
+                                        init_aux_query.relation.relation_name,
+                                    ) = std.ArrayList(aux_type).init(adapted_result.allocator);
+                                }
+                                aux_values.value_ptr.* = t;
+                            }
+                            try @field(
+                                aux_values.value_ptr.*,
+                                aux_query.relation.relation_name,
+                            ).append(adapted_aux_row);
+                        }
                     }
 
-                    @field(row, aux_query.relation.relation_name) = try aux_rows.toOwnedSlice();
+                    // @field(row, aux_query.relation.relation_name) = try aux_rows.toOwnedSlice();
+                    try aux_result.drain();
                     defer aux_result.deinit();
+                    _ = &aux_map;
                 }
 
-                self.extendInternalFields(@TypeOf(query), &row);
-                break :blk row;
-            },
-        };
-    }
+                var it = aux_map.iterator();
+                while (it.next()) |entry| {
+                    inline for (std.meta.fields(@TypeOf(entry.value_ptr.*))) |field| {
+                        @field(rows[entry.key_ptr.*], field.name) = try @field(
+                            entry.value_ptr.*,
+                            field.name,
+                        ).toOwnedSlice();
+                    }
+                }
 
-    pub fn all(self: *Result, query: anytype) ![]const @TypeOf(query).ResultType {
-        return switch (self.*) {
-            inline else => |*adapted_result| try adapted_result.all(query),
+                break :blk rows;
+            },
         };
     }
 

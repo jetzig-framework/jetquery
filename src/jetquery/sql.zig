@@ -254,18 +254,10 @@ fn renderJoins(Adapter: type, Table: type, relations: []const type) []const u8 {
 }
 
 fn renderInnerJoin(Adapter: type, Table: type, Relation: type) []const u8 {
-    const PrimaryKey = std.meta.FieldEnum(Table.Definition);
-    const ForeignKey = std.meta.FieldEnum(Relation.Source.Definition);
-
-    const primary_key: PrimaryKey = std.enums.nameCast(
-        PrimaryKey,
-        Relation.options.primary_key orelse Relation.relation_name ++ "_id",
-    );
-
-    const foreign_key: ForeignKey = std.enums.nameCast(
-        ForeignKey,
-        Relation.options.foreign_key orelse "id",
-    );
+    const PrimaryKey = std.meta.FieldEnum(Relation.Source.Definition);
+    const ForeignKey = std.meta.FieldEnum(Table.Definition);
+    const primary_key: PrimaryKey = std.enums.nameCast(PrimaryKey, Relation.primary_key);
+    const foreign_key: ForeignKey = std.enums.nameCast(ForeignKey, Relation.foreign_key);
 
     return Adapter.innerJoinSql(
         Table,

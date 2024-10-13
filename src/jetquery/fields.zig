@@ -93,6 +93,18 @@ pub fn structField(comptime name: []const u8, T: type) std.builtin.Type.StructFi
     }
 }
 
+pub fn structFieldDefault(comptime name: []const u8, default: anytype) std.builtin.Type.StructField {
+    comptime {
+        return .{
+            .name = name ++ "",
+            .type = @TypeOf(default),
+            .default_value = &default,
+            .is_comptime = false,
+            .alignment = @alignOf(@TypeOf(default)),
+        };
+    }
+}
+
 pub fn structFieldComptime(
     comptime name: []const u8,
     comptime default: anytype,
@@ -106,4 +118,20 @@ pub fn structFieldComptime(
             .alignment = @alignOf(@TypeOf(default)),
         };
     }
+}
+
+pub fn structType(comptime fields: []const std.builtin.Type.StructField) type {
+    return @Type(.{
+        .@"struct" = .{
+            .layout = .auto,
+            .fields = fields,
+            .decls = &.{},
+            .is_tuple = false,
+        },
+    });
+}
+
+pub fn fieldType(T: type, comptime name: []const u8) type {
+    const tag = std.enums.nameCast(std.meta.FieldEnum(T), name);
+    return std.meta.fieldInfo(T, tag).type;
 }

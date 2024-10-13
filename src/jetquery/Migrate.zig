@@ -15,7 +15,12 @@ pub fn init(repo: *jetquery.Repo) Migrate {
 }
 
 const Schema = struct {
-    pub const Migrations = jetquery.Table("jetquery_migrations", struct { version: []const u8 }, .{});
+    pub const Migrations = jetquery.Table(
+        @This(),
+        "jetquery_migrations",
+        struct { version: []const u8 },
+        .{},
+    );
 };
 
 /// Run migrations. Create `jetquery_migrations` table if it does not exist. Skip migrations
@@ -60,7 +65,8 @@ fn isMigrated(self: Migrate, migration: Migration) !bool {
         .where(.{ .version = migration.version });
 
     var result = try self.repo.execute(query);
-    defer result.deinit();
+    // TODO
+    // defer result.deinit();
 
     while (try result.next(query)) |_| {
         return true;
@@ -116,7 +122,7 @@ test "migrate" {
     }
 
     const TestSchema = struct {
-        pub const Cat = jetquery.Table("cats", struct {
+        pub const Cat = jetquery.Table(@This(), "cats", struct {
             name: []const u8,
             paws: usize,
             created_at: jetcommon.types.DateTime,

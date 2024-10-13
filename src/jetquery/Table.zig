@@ -2,22 +2,46 @@ const std = @import("std");
 
 const jetquery = @import("../jetquery.zig");
 
-const TableOptions = []const type;
-
 /// Abstraction of a database table. Define a schema with:
 /// ```zig
 /// const Schema = struct {
 ///     pub const Cats = Table("cats", struct { name: []const u8, paws: usize }, .{});
 /// };
 /// ```
-pub fn Table(table_name: []const u8, T: type, options: anytype) type {
+pub fn Table(Schema: type, table_name: []const u8, T: type, options: anytype) type {
     return struct {
         pub const Definition = T;
         pub const name = table_name;
-        pub const relations = if (@hasField(@TypeOf(options), "relations")) options.relations else .{};
+        pub const info = .{ .schema = Schema };
 
-        pub fn insert(repo: jetquery.Repo, args: anytype) !void {
-            try repo.insert(T, args);
+        pub const relations = if (@hasField(
+            @TypeOf(options),
+            "relations",
+        )) options.relations else .{};
+
+        pub const primary_key = if (@hasField(
+            @TypeOf(options),
+            "primary_key",
+        )) options.primary_key else "id";
+
+        pub fn insert(repo: *jetquery.Repo, record: anytype) !void {
+            const query = jetquery.Query(
+                Schema,
+                record.__jetquery_model,
+            ).insert(record.__jetquery.args);
+
+            try repo.execute(query);
+        }
+
+        pub fn init(args: anytype) RecordType(@TypeOf(args)) {
+            var record: RecordType(@TypeOf(args)) = undefined;
+
+            record.__jetquery = .{ .args = args };
+
+            inline for (std.meta.fields(@TypeOf(args))) |field| {
+                @field(record, field.name) = @field(args, field.name);
+            }
+            return record;
         }
 
         pub fn Relation(comptime relation_name: []const u8) type {
@@ -57,6 +81,52 @@ pub fn Table(table_name: []const u8, T: type, options: anytype) type {
                     "No column named `{s}` defined in Schema for `{s}'",
                     .{ column_name, table_name },
                 ));
+            }
+        }
+
+        fn RecordType(Args: type) type {
+            comptime {
+                const fields = std.meta.fields(T);
+                var struct_fields: [fields.len + 3]std.builtin.Type.StructField = undefined;
+
+                for (fields, 0..) |field, index| {
+                    struct_fields[index] = jetquery.fields.structField(field.name, field.type);
+                }
+
+                struct_fields[fields.len] = jetquery.fields.structFieldComptime(
+                    "__jetquery_model",
+                    @This(),
+                );
+
+                struct_fields[fields.len + 1] = jetquery.fields.structFieldComptime(
+                    "__jetquery_schema",
+                    Schema,
+                );
+
+                const args_field = jetquery.fields.structField("args", Args);
+                const JetQuery = jetquery.fields.structType(&.{args_field});
+
+                struct_fields[fields.len + 2] = jetquery.fields.structField(
+                    "__jetquery",
+                    JetQuery,
+                );
+
+                return jetquery.fields.structType(&struct_fields);
+            }
+        }
+
+        pub fn defaultForeignKey() []const u8 {
+            comptime {
+                for (@typeInfo(Schema).@"struct".decls) |decl| {
+                    const table = @field(Schema, decl.name);
+
+                    if (std.mem.eql(u8, table.name, @This().name)) {
+                        var buf: [decl.name.len]u8 = undefined;
+                        return std.ascii.lowerString(&buf, decl.name) ++ "_id";
+                    }
+                }
+
+                @compileError("Failed matching `" ++ @typeName(@This()) ++ "` in schema.");
             }
         }
     };

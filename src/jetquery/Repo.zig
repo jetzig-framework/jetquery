@@ -4,7 +4,6 @@ const jetquery = @import("../jetquery.zig");
 
 allocator: std.mem.Allocator,
 adapter: jetquery.adapters.Adapter,
-result_map: std.AutoHashMap(i128, jetquery.Result),
 result_id: std.atomic.Value(i128) = std.atomic.Value(i128).init(0),
 eventCallback: *const fn (event: jetquery.events.Event) anyerror!void = jetquery.events.defaultCallback,
 
@@ -23,7 +22,6 @@ const InitOptions = struct {
 pub fn init(allocator: std.mem.Allocator, options: InitOptions) !Repo {
     return .{
         .allocator = allocator,
-        .result_map = std.AutoHashMap(i128, jetquery.Result).init(allocator),
         .adapter = switch (options.adapter) {
             .postgresql => |adapter_options| .{
                 .postgresql = try jetquery.adapters.PostgresqlAdapter.init(
@@ -77,7 +75,6 @@ pub fn deinit(self: *Repo) void {
     switch (self.adapter) {
         inline else => |*adapter| adapter.deinit(),
     }
-    self.result_map.deinit();
 }
 
 /// Execute the given query and return results.
@@ -98,9 +95,9 @@ pub fn execute(self: *Repo, query: anytype) !switch (@TypeOf(query).ResultContex
                 defer result.deinit();
                 return try result.unary(@TypeOf(query).ResultType);
             }
-            const row = try result.next(query);
-            if (row) |capture| try self.result_map.put(capture.__jetquery.id, result);
-            break :blk row;
+            // TODO: Switch this back to `next()` when relation mapping is added there
+            const rows = try result.all(query);
+            break :blk if (rows.len > 0) rows[0] else null;
         },
         .many => result,
         .none => blk: {
@@ -119,6 +116,7 @@ pub fn save(self: *Repo, value: anytype) !void {
     // we would only include modified values but we would need to generate all possible
     // combinations of updates in order to do this which is not practical. I don't know if there
     // is a way around this.
+    // TODO: We can use pg.zig's dynamic statement binding to solve this.
     if (!self.isModified(value)) return;
 
     comptime var size: usize = 0;
@@ -160,6 +158,10 @@ pub fn save(self: *Repo, value: anytype) !void {
         .where(.{ .id = value.id });
 
     try self.execute(query);
+}
+
+pub fn insert(self: *Repo, value: anytype) !void {
+    try value.__jetquery_model.insert(self, value);
 }
 
 pub const FieldState = struct {
@@ -205,13 +207,6 @@ pub fn fieldStates(self: Repo, value: anytype) []const FieldState {
 /// methods simply return structs as defined by the Schema and do not have another way to deinit.
 pub fn free(self: *Repo, value: anytype) void {
     if (!comptime @hasField(@TypeOf(value), "__jetquery")) return;
-
-    // TODO: We can probably just deinit the result instead of storing it in a map now that we
-    // dupe strings.
-    if (self.result_map.getEntry(value.__jetquery.id)) |entry| {
-        entry.value_ptr.deinit();
-        _ = self.result_map.remove(value.__jetquery.id);
-    }
 
     // Value may be modified after fetching so we only free the original value. If user messes
     // with internals and modifies original values then they will run into trouble.
@@ -321,9 +316,11 @@ pub fn dropTable(self: *Repo, comptime name: []const u8, options: DropTableOptio
     defer result.deinit();
 }
 
+const test_allocator = std.testing.allocator;
+
 test "Repo" {
     var repo = try Repo.init(
-        std.testing.allocator,
+        test_allocator,
         .{
             .adapter = .{
                 .postgresql = .{
@@ -339,7 +336,12 @@ test "Repo" {
     defer repo.deinit();
 
     const Schema = struct {
-        pub const Cat = jetquery.Table("cats", struct { name: []const u8, paws: i32 }, .{});
+        pub const Cat = jetquery.Table(
+            @This(),
+            "cats",
+            struct { name: []const u8, paws: i32 },
+            .{},
+        );
     };
 
     var drop_table = try repo.adapter.execute(&repo, "drop table if exists cats", &.{});
@@ -356,9 +358,8 @@ test "Repo" {
         .where(.{ .paws = 4 });
 
     var result = try repo.execute(query);
-    defer result.deinit();
 
-    while (try result.next(query)) |cat| {
+    for (try result.all(query)) |cat| {
         defer repo.free(cat);
         try std.testing.expectEqualStrings("Hercules", cat.name);
         try std.testing.expectEqual(4, cat.paws);
@@ -376,14 +377,18 @@ test "Repo" {
 
 test "Repo.loadConfig" {
     // Loads default config file: `jetquery.config.zig`
-    var repo = try Repo.loadConfig(std.testing.allocator, .{});
+    var repo = try Repo.loadConfig(test_allocator, .{});
     defer repo.deinit();
     try std.testing.expect(repo.adapter == .postgresql);
 }
 
 test "relations" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const allocator = gpa.allocator();
+
     var repo = try Repo.init(
-        std.testing.allocator,
+        // test_allocator,
+        allocator,
         .{
             .adapter = .{
                 .postgresql = .{
@@ -400,12 +405,14 @@ test "relations" {
 
     const Schema = struct {
         pub const Cat = jetquery.Table(
+            @This(),
             "cats",
             struct { id: i32, human_id: i32, name: []const u8, paws: i32 },
             .{ .relations = .{ .human = jetquery.relation.belongsTo(.Human, .{}) } },
         );
 
         pub const Human = jetquery.Table(
+            @This(),
             "humans",
             struct { id: i32, name: []const u8 },
             .{ .relations = .{ .cats = jetquery.relation.hasMany(.Cat, .{}) } },
@@ -460,11 +467,34 @@ test "relations" {
     defer repo.free(human);
 
     try std.testing.expectEqualStrings("Hercules", human.cats[0].name);
+
+    try repo.insert(Schema.Cat.init(.{
+        .id = 2,
+        .name = "Princes",
+        .paws = std.crypto.random.int(u2),
+        .human_id = human.id,
+    }));
+    try repo.insert(Schema.Cat.init(.{
+        .id = 3,
+        .name = "Heracles",
+        .paws = std.crypto.random.int(u2),
+        .human_id = 1000,
+    }));
+
+    const human2 = try jetquery.Query(Schema, .Human)
+        .include(.cats, .{})
+        .findBy(.{ .name = "Bob" })
+        .execute(&repo) orelse return try std.testing.expect(false);
+    defer repo.free(human2);
+
+    try std.testing.expect(human2.cats.len == 2);
+    try std.testing.expectEqualStrings("Hercules", human2.cats[0].name);
+    try std.testing.expectEqualStrings("Princes", human2.cats[1].name);
 }
 
 test "timestamps" {
     var repo = try Repo.init(
-        std.testing.allocator,
+        test_allocator,
         .{
             .adapter = .{
                 .postgresql = .{
@@ -481,6 +511,7 @@ test "timestamps" {
 
     const Schema = struct {
         pub const Cat = jetquery.Table(
+            @This(),
             "cats",
             struct {
                 id: i32,
@@ -520,7 +551,7 @@ test "timestamps" {
 
 test "save" {
     var repo = try Repo.init(
-        std.testing.allocator,
+        test_allocator,
         .{
             .adapter = .{
                 .postgresql = .{
@@ -536,7 +567,12 @@ test "save" {
     defer repo.deinit();
 
     const Schema = struct {
-        pub const Cat = jetquery.Table("cats", struct { id: i32, name: []const u8, paws: i32 }, .{});
+        pub const Cat = jetquery.Table(
+            @This(),
+            "cats",
+            struct { id: i32, name: []const u8, paws: i32 },
+            .{},
+        );
     };
 
     var drop_table = try repo.adapter.execute(&repo, "drop table if exists cats", &.{});

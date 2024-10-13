@@ -21,6 +21,7 @@ pub const Result = struct {
 
     pub fn deinit(self: *Result) void {
         self.result.deinit();
+        self.connection.release();
     }
 
     pub fn drain(self: *Result) !void {
@@ -61,9 +62,12 @@ pub const Result = struct {
         return row.get(T, 0);
     }
 
-    pub fn all(self: *Result, query: anytype) ![]const @TypeOf(query).ResultType {
+    pub fn all(self: *Result, query: anytype) ![]@TypeOf(query).ResultType {
+        defer self.deinit();
+
         var array = std.ArrayList(@TypeOf(query).ResultType).init(self.allocator);
         while (try self.next(query)) |row| try array.append(row);
+        try self.drain();
         return try array.toOwnedSlice();
     }
 
@@ -269,9 +273,9 @@ pub fn innerJoinSql(
         .{
             JoinTable.name,
             Table.name,
-            primary_key,
-            JoinTable.name,
             foreign_key,
+            JoinTable.name,
+            primary_key,
         },
     );
 }

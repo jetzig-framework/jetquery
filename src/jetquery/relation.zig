@@ -36,6 +36,11 @@ pub fn Relation(
             pub const options = relation.options;
             pub const relation_name = @tagName(name);
             pub const select_columns = jetquery.columns.translate(Source, &.{}, columns);
+            pub const primary_key = options.primary_key orelse "id";
+            pub const foreign_key = options.foreign_key orelse switch (relation_type) {
+                .belongs_to => relation_name ++ "_id",
+                .has_many => null, // We have to infer this from the source table later.
+            };
         };
     }
 }

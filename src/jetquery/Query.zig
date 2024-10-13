@@ -31,6 +31,10 @@ pub fn Query(Schema: type, comptime table: anytype) type {
         table: Table,
 
         pub const Definition = Table.Definition;
+        pub const info = .{
+            .Table = Table,
+            .Schema = Schema,
+        };
 
         /// Create a `SELECT` query with the specified `columns`, e.g.:
         /// ```zig
@@ -197,6 +201,10 @@ pub fn Query(Schema: type, comptime table: anytype) type {
             },
         ) {
             return InitialStatement(Schema, Table).distinct(columns);
+        }
+
+        pub fn init() Statement(.none, Schema, Table, .{ .default_select = true }) {
+            return InitialStatement(Schema, Table);
         }
     };
 }
@@ -666,7 +674,7 @@ fn Statement(
             }
         }
 
-        fn auxiliaryQueriesSize() usize {
+        pub fn auxiliaryQueriesSize() usize {
             comptime {
                 var size: usize = 0;
                 for (options.relations) |Relation| {
