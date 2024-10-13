@@ -408,12 +408,8 @@ test "Repo.loadConfig" {
 }
 
 test "relations" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-
     var repo = try Repo.init(
-        // std.testing.allocator,
-        allocator,
+        std.testing.allocator,
         .{
             .adapter = .{
                 .postgresql = .{
@@ -516,39 +512,46 @@ test "relations" {
     try std.testing.expectEqualStrings("Hercules", bob_with_more_cats.cats[0].name);
     try std.testing.expectEqualStrings("Princes", bob_with_more_cats.cats[1].name);
 
-    try jetquery.Query(Schema, .Human)
-        .insert(.{ .id = 1, .name = "Jane" })
-        .execute(&repo);
-    // try repo.insert(Schema.Human.init(.{
-    //     .id = 2,
-    //     .name = "Jane",
-    // }));
+    try repo.insert(Schema.Human.init(.{
+        .id = 2,
+        .name = "Jane",
+    }));
 
     const jane = try jetquery.Query(Schema, .Human)
         .include(.cats, .{})
         .findBy(.{ .name = "Jane" })
         .execute(&repo) orelse return try std.testing.expect(false);
+    defer repo.free(jane);
 
-    std.debug.print("{any}\n", .{jane});
-    // try std.testing.expect(jane.cats.len == 0);
+    try std.testing.expect(jane.cats.len == 0);
 
     try repo.insert(Schema.Cat.init(.{
+        .id = 4,
         .human_id = jane.id,
         .name = "Cindy",
         .paws = std.crypto.random.int(u3),
     }));
 
     try repo.insert(Schema.Cat.init(.{
+        .id = 5,
         .human_id = jane.id,
         .name = "Garfield",
         .paws = std.crypto.random.int(u3),
     }));
 
-    const humans_query = jetquery.Query(Schema, .Human).include(.cats, .{}).select(.{});
-    const humans = try repo.all(humans_query);
+    const humans = try jetquery.Query(Schema, .Human).include(.cats, .{}).all(&repo);
     defer repo.free(humans);
 
     try std.testing.expect(humans.len == 2);
+    // XXX: Currently depending on Postgres returning rows in insertion/ID order.
+    // TODO: Apply a default order by to all queries to ensure determinism.
+    try std.testing.expectEqualStrings("Bob", humans[0].name);
+    try std.testing.expectEqualStrings("Jane", humans[1].name);
+    try std.testing.expectEqualStrings("Hercules", humans[0].cats[0].name);
+    try std.testing.expectEqualStrings("Princes", humans[0].cats[1].name);
+    try std.testing.expectEqualStrings("Jane", humans[1].name);
+    try std.testing.expectEqualStrings("Cindy", humans[1].cats[0].name);
+    try std.testing.expectEqualStrings("Garfield", humans[1].cats[1].name);
 }
 
 test "timestamps" {

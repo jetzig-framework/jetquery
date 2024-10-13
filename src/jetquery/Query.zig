@@ -172,11 +172,12 @@ pub fn Query(Schema: type, comptime table: anytype) type {
         pub fn include(
             comptime name: jetquery.relation.RelationsEnum(Table),
             comptime select_columns: anytype,
-        ) Statement(.none, Schema, Table, .{
+        ) Statement(.select, Schema, Table, .{
             .relations = &.{
                 jetquery.relation.Relation(Schema, Table, name, select_columns),
             },
             .default_select = true,
+            .columns = &Table.columns(),
         }) {
             return InitialStatement(Schema, Table).include(name, select_columns);
         }
@@ -610,23 +611,41 @@ fn Statement(
             self: Self,
             comptime name: jetquery.relation.RelationsEnum(Table),
             comptime select_columns: anytype,
-        ) Statement(query_context, Schema, Table, .{
+        ) Statement(switch (query_context) {
+            .none => .select,
+            else => |tag| tag,
+        }, Schema, Table, .{
             .relations = options.relations ++
                 .{jetquery.relation.Relation(Schema, Table, name, select_columns)},
             .field_infos = options.field_infos,
-            .columns = options.columns,
+            .columns = switch (query_context) {
+                .none => &Table.columns(),
+                else => options.columns,
+            },
             .order_clauses = options.order_clauses,
-            .result_context = options.result_context,
+            .result_context = switch (options.result_context) {
+                .none => .many,
+                else => |tag| tag,
+            },
             .default_select = options.default_select,
             .where_clauses = options.where_clauses,
         }) {
-            const S = Statement(query_context, Schema, Table, .{
+            const S = Statement(switch (query_context) {
+                .none => .select,
+                else => |tag| tag,
+            }, Schema, Table, .{
                 .relations = options.relations ++
                     .{jetquery.relation.Relation(Schema, Table, name, select_columns)},
                 .field_infos = options.field_infos,
-                .columns = options.columns,
+                .columns = switch (query_context) {
+                    .none => &Table.columns(),
+                    else => options.columns,
+                },
                 .order_clauses = options.order_clauses,
-                .result_context = options.result_context,
+                .result_context = switch (options.result_context) {
+                    .none => .many,
+                    else => |tag| tag,
+                },
                 .default_select = options.default_select,
                 .where_clauses = options.where_clauses,
             });
@@ -639,6 +658,10 @@ fn Statement(
             .none => void,
         } {
             return try repo.execute(self);
+        }
+
+        pub fn all(self: Self, repo: *jetquery.Repo) ![]ResultType {
+            return try repo.all(self);
         }
 
         pub fn values(self: Self) jetquery.fields.FieldValues(Table, options.relations, options.field_infos) {

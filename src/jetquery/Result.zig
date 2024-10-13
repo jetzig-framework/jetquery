@@ -30,6 +30,7 @@ pub const Result = union(enum) {
     }
 
     pub fn all(self: *Result, query: anytype) ![]@TypeOf(query).ResultType {
+        // TODO: Clean up the spaghetti
         const RT = @TypeOf(query).ResultType;
 
         return switch (self.*) {
@@ -69,6 +70,17 @@ pub const Result = union(enum) {
                     }
                     var adapted_row = row;
                     self.extendInternalFields(@TypeOf(query), &adapted_row);
+
+                    var merged_row: MergedRow = undefined;
+                    inline for (query.auxiliary_queries) |init_aux_query| {
+                        const aux_type = AuxType(RT, init_aux_query.relation);
+                        @field(
+                            merged_row,
+                            init_aux_query.relation.relation_name,
+                        ) = std.ArrayList(aux_type).init(adapted_result.allocator);
+                    }
+                    const aux_values = try aux_map.getOrPut(index);
+                    aux_values.value_ptr.* = merged_row;
                     rows[index] = adapted_row;
                 }
 
@@ -88,7 +100,7 @@ pub const Result = union(enum) {
                         break :args_blk jetquery.fields.structType(&fields);
                     };
                     var args: Args = undefined;
-                    // TODO: `IN` condition support
+
                     if (comptime primary_key_present) {
                         @field(args, foreign_key) = ids;
                     }
@@ -118,17 +130,9 @@ pub const Result = union(enum) {
                             const maybe_row_index = id_map.get(@field(aux_row, foreign_key));
 
                             if (maybe_row_index) |row_index| {
-                                const aux_values = try aux_map.getOrPut(row_index);
-                                if (!aux_values.found_existing) {
-                                    var merged_row: MergedRow = undefined;
-                                    inline for (query.auxiliary_queries) |init_aux_query| {
-                                        @field(
-                                            merged_row,
-                                            init_aux_query.relation.relation_name,
-                                        ) = std.ArrayList(aux_type).init(adapted_result.allocator);
-                                    }
-                                    aux_values.value_ptr.* = merged_row;
-                                }
+                                // We pre-fill the map with an empty `MergedRow` so this is
+                                // guaranteed to exist (or we have a bug).
+                                const aux_values = aux_map.getEntry(row_index).?;
                                 try @field(
                                     aux_values.value_ptr.*,
                                     aux_query.relation.relation_name,
