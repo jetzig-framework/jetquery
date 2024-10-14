@@ -128,6 +128,10 @@ pub const Node = union(enum) {
                 else => false,
             };
         }
+
+        pub fn isNull(self: Value) bool {
+            return (self.type == @TypeOf(null));
+        }
     };
 
     pub const Group = struct {
@@ -157,21 +161,29 @@ pub const Node = union(enum) {
             .value => |value| {
                 const is_sequence = if (prev) |capture| capture == .value else false;
                 const prefix = if (is_sequence) " AND " else "";
-                writer.print("{s}{s}.{s} = {s}", .{
-                    prefix,
-                    Adapter.identifier(value.Table.name),
-                    Adapter.identifier(value.name),
-                    if (value.isArray())
-                        // XXX: This is PostgreSQL-specific - one day we'll need to figure out
-                        // how to generate SQL for unknown (at comptime) array length.
-                        // MySQL has `ANY` but it expects a subquery so maybe we'll need a
-                        // temporary table or something equally horrible.
-                        // SQLite doesn't have `ANY` at all so we may end up having to generate
-                        // some parts of the SQL at runtime. :(
-                        Adapter.anyParamSql(value.index)
-                    else
-                        Adapter.paramSql(value.index),
-                }) catch unreachable;
+                if (value.type == @TypeOf(null)) {
+                    writer.print("{s}{s}.{s} IS NULL", .{
+                        prefix,
+                        Adapter.identifier(value.Table.name),
+                        Adapter.identifier(value.name),
+                    }) catch unreachable;
+                } else {
+                    writer.print("{s}{s}.{s} = {s}", .{
+                        prefix,
+                        Adapter.identifier(value.Table.name),
+                        Adapter.identifier(value.name),
+                        if (value.isArray())
+                            // XXX: This is PostgreSQL-specific - one day we'll need to figure
+                            // out how to generate SQL for unknown (at comptime) array length.
+                            // MySQL has `ANY` but it expects a subquery so maybe we'll need a
+                            // temporary table or something equally horrible. SQLite doesn't have
+                            // `ANY` at all so we may end up having to generate some parts of the
+                            // SQL at runtime. :(
+                            Adapter.anyParamSql(value.index)
+                        else
+                            Adapter.paramSql(value.index),
+                    }) catch unreachable;
+                }
             },
             .group => |group| {
                 if (group.children.len > 1) writer.print("(", .{}) catch unreachable;
@@ -197,8 +209,10 @@ pub const Node = union(enum) {
         switch (self) {
             .condition => {},
             .value => |value| {
-                types[index.*] = value.ColumnType();
-                index.* += 1;
+                if (!value.isNull()) {
+                    types[index.*] = value.ColumnType();
+                    index.* += 1;
+                }
             },
             .group => |group| {
                 appendValueTypes(group, &types, &index);
@@ -224,14 +238,16 @@ pub const Node = union(enum) {
         switch (self) {
             .condition => {},
             .value => |value| {
-                fields_array[value.index] = .{
-                    .Table = value.Table,
-                    .name = value.name,
-                    .context = value.field_context,
-                    .column_type = value.ColumnType(),
-                    .index = tuple_index,
-                };
-                tuple_index += 1;
+                if (!value.isNull()) {
+                    fields_array[value.index] = .{
+                        .Table = value.Table,
+                        .name = value.name,
+                        .context = value.field_context,
+                        .column_type = value.ColumnType(),
+                        .index = tuple_index,
+                    };
+                    tuple_index += 1;
+                }
             },
             .group => |group| {
                 appendFields(group, Table, relations, &fields_array, &tuple_index);
@@ -246,8 +262,8 @@ pub const Node = union(enum) {
 
         switch (self) {
             .condition => {},
-            .value => {
-                count += 1;
+            .value => |value| {
+                if (!value.isNull()) count += 1;
             },
             .group => |group| {
                 countGroupValues(group, &count);
@@ -261,8 +277,8 @@ pub const Node = union(enum) {
         for (group.children) |child| {
             switch (child) {
                 .condition => {},
-                .value => {
-                    count.* += 1;
+                .value => |value| {
+                    if (!value.isNull()) count.* += 1;
                 },
                 .group => |capture| {
                     countGroupValues(capture, count);
@@ -276,8 +292,10 @@ pub const Node = union(enum) {
             switch (child) {
                 .condition => {},
                 .value => |value| {
-                    types[index.*] = value.ColumnType();
-                    index.* += 1;
+                    if (!value.isNull()) {
+                        types[index.*] = value.ColumnType();
+                        index.* += 1;
+                    }
                 },
                 .group => |capture| {
                     appendValueTypes(capture, types, index);
@@ -297,14 +315,16 @@ pub const Node = union(enum) {
             switch (child) {
                 .condition => {},
                 .value => |value| {
-                    fields_array[tuple_index.*] = .{
-                        .Table = value.Table,
-                        .name = value.name,
-                        .context = value.field_context,
-                        .column_type = value.ColumnType(),
-                        .index = value.index,
-                    };
-                    tuple_index.* += 1;
+                    if (!value.isNull()) {
+                        fields_array[tuple_index.*] = .{
+                            .Table = value.Table,
+                            .name = value.name,
+                            .context = value.field_context,
+                            .column_type = value.ColumnType(),
+                            .index = value.index,
+                        };
+                        tuple_index.* += 1;
+                    }
                 },
                 .group => |capture| {
                     appendFields(capture, Table, relations, fields_array, tuple_index);
@@ -354,6 +374,17 @@ fn nodeTree(
                 const value: t = undefined;
                 const condition = @field(value, path[path.len - 1]);
                 break :blk .{ .condition = condition };
+            },
+            .null => .{
+                .value = .{
+                    .field_context = field_context,
+                    .Table = findRelation(Table, relations, path),
+                    .name = name,
+                    .type = T,
+                    .field_info = field_info,
+                    // We write `IS NULL` directly into the SQL without a bind param
+                    .index = undefined,
+                },
             },
             else => blk: {
                 const value = Node.Value{
@@ -452,6 +483,7 @@ fn assignValues(
             }
         },
         .enum_literal => {},
+        .null => {},
         else => {
             assignValue(arg, ValuesTuple, values_tuple, ErrorsTuple, errors_tuple, values_fields, tuple_index);
         },

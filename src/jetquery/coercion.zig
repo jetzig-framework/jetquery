@@ -22,6 +22,7 @@ pub fn coerce(
     if (T == jetcommon.types.DateTime) return value.microseconds;
 
     return switch (@typeInfo(@TypeOf(value))) {
+        .null => .{ .value = null },
         .int, .comptime_int => switch (@typeInfo(T)) {
             .int => .{ .value = @intCast(value) },
             else => coerceDelegate(T, value),
@@ -97,6 +98,7 @@ pub fn canCoerceDelegate(T: type) bool {
 
 pub fn CoercedValue(Target: type, Source: type) type {
     const T = switch (@typeInfo(Source)) {
+        .null => @TypeOf(null),
         .pointer => |info| if (info.child == Target and info.size == .Slice)
             []const Target
         else

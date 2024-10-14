@@ -702,3 +702,40 @@ test "operator logic" {
         query.sql,
     );
 }
+
+test "array in whereclause" {
+    const Schema = struct {
+        pub const Human = Table(
+            @This(),
+            "humans",
+            struct { name: []const u8 },
+            .{},
+        );
+    };
+    var array = std.ArrayList([]const u8).init(std.testing.allocator);
+    defer array.deinit();
+
+    try array.append("Bob");
+    try array.append("Jane");
+
+    const query = Query(Schema, .Human).where(.{ .name = array.items });
+    try std.testing.expectEqualStrings(
+        \\SELECT "humans"."name" FROM "humans" WHERE "humans"."name" = ANY ($1)
+    , query.sql);
+}
+
+test "null in whereclause" {
+    const Schema = struct {
+        pub const Human = Table(
+            @This(),
+            "humans",
+            struct { name: []const u8 },
+            .{},
+        );
+    };
+
+    const query = Query(Schema, .Human).where(.{ .{ .name = null }, .OR, .{ .name = "baz" } });
+    try std.testing.expectEqualStrings(
+        \\SELECT "humans"."name" FROM "humans" WHERE ("humans"."name" IS NULL OR "humans"."name" = $1)
+    , query.sql);
+}
