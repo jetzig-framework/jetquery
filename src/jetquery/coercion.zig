@@ -43,14 +43,20 @@ pub fn coerce(
                     coerceInt(T, value),
             },
             .float => switch (@typeInfo(info.child)) {
-                .float => .{ .value = value },
+                .float => switch (info.size) {
+                    .Slice => .{ .value = value },
+                    else => .{ .value = value },
+                },
                 else => if (comptime canCoerceDelegate(info.child))
                     coerceDelegate(T, value.*)
                 else
                     coerceFloat(T, value),
             },
             .bool => switch (@typeInfo(info.child)) {
-                .bool => .{ .value = value },
+                .bool => switch (info.size) {
+                    .Slice => .{ .value = value },
+                    else => .{ .value = value },
+                },
                 else => if (comptime canCoerceDelegate(info.child))
                     coerceDelegate(T, value.*)
                 else
@@ -59,7 +65,7 @@ pub fn coerce(
             .pointer => if (comptime canCoerceDelegate(info.child))
                 coerceDelegate(T, value.*)
             else
-                .{ .value = value }, // TODO
+                .{ .value = value }, // Let Zig compiler figure it out
             else => if (comptime canCoerceDelegate(info.child))
                 coerceDelegate(T, value.*)
             else
