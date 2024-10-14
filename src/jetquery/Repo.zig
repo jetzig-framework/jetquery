@@ -83,10 +83,25 @@ pub fn execute(self: *Repo, query: anytype) !switch (@TypeOf(query).ResultContex
     .many => jetquery.Result,
     .none => void,
 } {
+    const caller_info = try jetquery.debug.getCallerInfo(@returnAddress());
+    defer if (caller_info) |info| info.deinit();
+
+    return try self.executeInternal(query, caller_info);
+}
+
+pub fn executeInternal(
+    self: *Repo,
+    query: anytype,
+    caller_info: ?jetquery.debug.CallerInfo,
+) !switch (@TypeOf(query).ResultContext) {
+    .one => ?@TypeOf(query).ResultType,
+    .many => jetquery.Result,
+    .none => void,
+} {
     try query.validateValues();
     try query.validateDelete();
 
-    var result = try self.adapter.execute(self, query.sql, query.field_values);
+    var result = try self.adapter.execute(self, query.sql, query.field_values, caller_info);
 
     return switch (@TypeOf(query).ResultContext) {
         .one => blk: {
@@ -113,7 +128,10 @@ pub fn execute(self: *Repo, query: anytype) !switch (@TypeOf(query).ResultContex
 /// Execute a query and return all of its results. Call `repo.free(result)` to free allocated
 /// memory.
 pub fn all(self: *Repo, query: anytype) ![]@TypeOf(query).ResultType {
-    var result = try self.execute(query);
+    var result = try self.executeInternal(
+        query,
+        try jetquery.debug.getCallerInfo(@returnAddress()),
+    );
     return try result.all(query);
 }
 
@@ -167,11 +185,16 @@ pub fn save(self: *Repo, value: anytype) !void {
         .update(update)
         .where(.{ .id = value.id });
 
-    try self.execute(query);
+    try self.executeInternal(query, try jetquery.debug.getCallerInfo(@returnAddress()));
 }
 
 pub fn insert(self: *Repo, value: anytype) !void {
-    try value.__jetquery_model.insert(self, value);
+    const query = jetquery.Query(
+        value.__jetquery_schema,
+        value.__jetquery_model,
+    ).insert(value.__jetquery.args);
+
+    try self.executeInternal(query, try jetquery.debug.getCallerInfo(@returnAddress()));
 }
 
 pub const FieldState = struct {
@@ -315,7 +338,12 @@ pub fn createTable(
     }
 
     try writer.print(")", .{});
-    var result = try self.adapter.execute(self, buf.items, &.{});
+    var result = try self.adapter.execute(
+        self,
+        buf.items,
+        &.{},
+        try jetquery.debug.getCallerInfo(@returnAddress()),
+    );
     try result.drain();
     defer result.deinit();
 }
@@ -334,7 +362,12 @@ pub fn dropTable(self: *Repo, comptime name: []const u8, options: DropTableOptio
         \\DROP TABLE{s} "{s}"
     , .{ if (options.if_exists) " IF EXISTS" else "", name });
 
-    var result = try self.adapter.execute(self, buf.items, &.{});
+    var result = try self.adapter.execute(
+        self,
+        buf.items,
+        &.{},
+        try jetquery.debug.getCallerInfo(@returnAddress()),
+    );
     try result.drain();
     defer result.deinit();
 }

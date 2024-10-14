@@ -18,6 +18,7 @@ pub const Result = struct {
     allocator: std.mem.Allocator,
     connection: *pg.Conn,
     repo: *jetquery.Repo,
+    caller_info: ?jetquery.debug.CallerInfo,
 
     pub fn deinit(self: *Result) void {
         self.result.deinit();
@@ -75,8 +76,19 @@ pub const Result = struct {
         return try self.next(query);
     }
 
-    pub fn execute(self: *Result, query: []const u8, values: anytype) !jetquery.Result {
-        return try connectionExecute(self.allocator, self.connection, self.repo, query, values);
+    pub fn execute(
+        self: *Result,
+        query: []const u8,
+        values: anytype,
+    ) !jetquery.Result {
+        return try connectionExecute(
+            self.allocator,
+            self.connection,
+            self.repo,
+            query,
+            values,
+            self.caller_info,
+        );
     }
 };
 
@@ -159,6 +171,7 @@ pub fn execute(
     repo: *jetquery.Repo,
     query: []const u8,
     values: anytype,
+    caller_info: ?jetquery.debug.CallerInfo,
 ) !jetquery.Result {
     if (!self.connected and self.lazy_connect) {
         self.pool = try initPool(self.allocator, self.options);
@@ -167,7 +180,7 @@ pub fn execute(
     const connection = try self.pool.acquire();
     errdefer self.pool.release(connection);
 
-    return try connectionExecute(repo.allocator, connection, repo, query, values);
+    return try connectionExecute(repo.allocator, connection, repo, query, values, caller_info);
 }
 
 /// Output column type as SQL.
@@ -311,6 +324,7 @@ fn connectionExecute(
     repo: *jetquery.Repo,
     query: []const u8,
     values: anytype,
+    caller_info: ?jetquery.debug.CallerInfo,
 ) !jetquery.Result {
     const result = connection.queryOpts(query, values, .{}) catch |err| {
         if (connection.err) |connection_error| {
@@ -318,19 +332,21 @@ fn connectionExecute(
                 .sql = query,
                 .err = .{ .message = connection_error.message },
                 .status = .fail,
+                .caller_info = caller_info,
             });
         } else {
             try repo.eventCallback(.{
                 .sql = query,
                 .err = .{ .message = "Unknown error" },
                 .status = .fail,
+                .caller_info = caller_info,
             });
         }
 
         return err;
     };
 
-    try repo.eventCallback(.{ .sql = query });
+    try repo.eventCallback(.{ .sql = query, .caller_info = caller_info });
 
     return .{
         .postgresql = .{
@@ -338,6 +354,7 @@ fn connectionExecute(
             .result = result,
             .repo = repo,
             .connection = connection,
+            .caller_info = caller_info,
         },
     };
 }

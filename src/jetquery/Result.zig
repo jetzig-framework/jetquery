@@ -106,7 +106,10 @@ pub const Result = union(enum) {
                     }
 
                     const q = aux_query.query.where(args);
-                    var aux_result = try adapted_result.repo.execute(q);
+                    var aux_result = try adapted_result.repo.executeInternal(
+                        q,
+                        adapted_result.caller_info,
+                    );
                     defer aux_result.deinit();
 
                     const aux_type = AuxType(RT, aux_query.relation);

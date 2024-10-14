@@ -5,11 +5,12 @@ const NullAdapter = @This();
 
 pub const Options = struct {};
 
-pub fn execute(self: *const NullAdapter, repo: *const jetquery.Repo, sql: []const u8, values: anytype) !jetquery.Result {
+pub fn execute(self: *const NullAdapter, repo: *const jetquery.Repo, sql: []const u8, values: anytype, caller_info: ?jetquery.debug.CallerInfo) !jetquery.Result {
     _ = self;
     _ = repo;
     _ = sql;
     _ = values;
+    _ = caller_info;
     return error.JetQueryNullAdapterError;
 }
 

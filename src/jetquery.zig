@@ -21,6 +21,7 @@ pub const Table = @import("jetquery/Table.zig").Table;
 pub const Column = @import("jetquery/Column.zig");
 pub const Value = @import("jetquery/Value.zig").Value;
 pub const DateTime = jetcommon.types.DateTime;
+pub const debug = @import("jetquery/debug.zig");
 
 pub const adapter = std.enums.nameCast(adapters.Name, config.database.adapter);
 pub const timestamp_updated_column_name = "updated_at";
@@ -703,7 +704,7 @@ test "operator logic" {
     );
 }
 
-test "array in whereclause" {
+test "slice of []const u8 in whereclause" {
     const Schema = struct {
         pub const Human = Table(
             @This(),
@@ -721,6 +722,69 @@ test "array in whereclause" {
     const query = Query(Schema, .Human).where(.{ .name = array.items });
     try std.testing.expectEqualStrings(
         \\SELECT "humans"."name" FROM "humans" WHERE "humans"."name" = ANY ($1)
+    , query.sql);
+}
+
+test "slice of int in whereclause" {
+    const Schema = struct {
+        pub const Human = Table(
+            @This(),
+            "humans",
+            struct { cats: u128 },
+            .{},
+        );
+    };
+    var array = std.ArrayList(u128).init(std.testing.allocator);
+    defer array.deinit();
+
+    try array.append(2);
+    try array.append(1231231238128381283);
+
+    const query = Query(Schema, .Human).where(.{ .cats = array.items });
+    try std.testing.expectEqualStrings(
+        \\SELECT "humans"."cats" FROM "humans" WHERE "humans"."cats" = ANY ($1)
+    , query.sql);
+}
+
+test "slice of float in whereclause" {
+    const Schema = struct {
+        pub const Human = Table(
+            @This(),
+            "humans",
+            struct { favorite_number: f64 },
+            .{},
+        );
+    };
+    var array = std.ArrayList(f64).init(std.testing.allocator);
+    defer array.deinit();
+
+    try array.append(3.1415926535897932);
+    try array.append(2.7182818284590452);
+
+    const query = Query(Schema, .Human).where(.{ .favorite_number = array.items });
+    try std.testing.expectEqualStrings(
+        \\SELECT "humans"."favorite_number" FROM "humans" WHERE "humans"."favorite_number" = ANY ($1)
+    , query.sql);
+}
+
+test "slice of bool in whereclause" {
+    const Schema = struct {
+        pub const Human = Table(
+            @This(),
+            "humans",
+            struct { has_cats: bool },
+            .{},
+        );
+    };
+    var array = std.ArrayList(bool).init(std.testing.allocator);
+    defer array.deinit();
+
+    try array.append(true);
+    try array.append(false);
+
+    const query = Query(Schema, .Human).where(.{ .has_cats = array.items });
+    try std.testing.expectEqualStrings(
+        \\SELECT "humans"."has_cats" FROM "humans" WHERE "humans"."has_cats" = ANY ($1)
     , query.sql);
 }
 

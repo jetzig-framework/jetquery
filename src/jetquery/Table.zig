@@ -24,15 +24,6 @@ pub fn Table(Schema: type, table_name: []const u8, T: type, options: anytype) ty
             "primary_key",
         )) options.primary_key else "id";
 
-        pub fn insert(repo: *jetquery.Repo, record: anytype) !void {
-            const query = jetquery.Query(
-                Schema,
-                record.__jetquery_model,
-            ).insert(record.__jetquery.args);
-
-            try repo.execute(query);
-        }
-
         pub fn init(args: anytype) RecordType(@TypeOf(args)) {
             var record: RecordType(@TypeOf(args)) = undefined;
 

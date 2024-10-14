@@ -22,9 +22,10 @@ pub const Adapter = union(enum) {
         repo: *jetquery.Repo,
         sql: []const u8,
         values: anytype,
+        caller_info: ?jetquery.debug.CallerInfo,
     ) !jetquery.Result {
         return switch (self.*) {
-            inline else => |*adapter| try adapter.execute(repo, sql, values),
+            inline else => |*adapter| try adapter.execute(repo, sql, values, caller_info),
         };
     }
 

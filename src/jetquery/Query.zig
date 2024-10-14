@@ -657,11 +657,16 @@ fn Statement(
             .many => jetquery.Result,
             .none => void,
         } {
-            return try repo.execute(self);
+            const caller_info = try jetquery.debug.getCallerInfo(@returnAddress());
+            return try repo.executeInternal(self, caller_info);
         }
 
         pub fn all(self: Self, repo: *jetquery.Repo) ![]ResultType {
-            return try repo.all(self);
+            var result = try repo.executeInternal(
+                self,
+                try jetquery.debug.getCallerInfo(@returnAddress()),
+            );
+            return try result.all(self);
         }
 
         pub fn values(self: Self) jetquery.fields.FieldValues(Table, options.relations, options.field_infos) {
