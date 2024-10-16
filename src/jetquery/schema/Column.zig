@@ -1,6 +1,5 @@
 /// A database column.
 pub const Column = @This();
-// TODO: Rename this/move to migrations section.
 
 name: []const u8,
 type: Type,
