@@ -2,7 +2,11 @@ const std = @import("std");
 
 const jetquery = @import("../jetquery.zig");
 
+/// An event triggered by executing a query. When creating a `Repo`, use the option
+/// `eventCallback` to specify a function that will receive an `Event` for each query execution.
+/// Otherwise, `defaultCallback` will be invoked instead.
 pub const Event = struct {
+    // TODO: Make this a union for failed/successful queries etc.
     const Error = struct {
         message: []const u8,
     };
@@ -14,6 +18,7 @@ pub const Event = struct {
     status: enum { success, fail } = .success,
     err: ?Error = null,
     caller_info: ?jetquery.debug.CallerInfo = null,
+    duration: ?i64 = null,
 };
 
 pub fn defaultCallback(event: Event) !void {
@@ -40,10 +45,16 @@ pub fn defaultCallback(event: Event) !void {
             \\
         , .{ event.sql orelse "", err.message });
     } else {
-        std.debug.print("{s}{s}{s}{s}", .{
+        var buf: [32]u8 = undefined;
+        const formatted_duration = if (event.duration) |duration|
+            try std.fmt.bufPrint(&buf, " [{}]", .{std.fmt.fmtDurationSigned(duration)})
+        else
+            "";
+        std.debug.print("{s}{s}{s}{s}{s}", .{
             event.message orelse "",
             if (event.message) |_| "\n" else "",
             event.sql orelse "",
+            formatted_duration,
             if (event.sql) |_| "\n" else "",
         });
     }

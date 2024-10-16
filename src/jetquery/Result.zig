@@ -210,6 +210,12 @@ pub const Result = union(enum) {
         }
     }
 
+    pub inline fn duration(self: Result) i64 {
+        return switch (self) {
+            inline else => |adapted_result| adapted_result.duration,
+        };
+    }
+
     fn IdMap(Query: type, comptime primary_key: []const u8) type {
         const PK = if (comptime @hasField(Query.info.Table.Definition, primary_key))
             jetquery.fields.fieldType(Query.info.Table.Definition, primary_key)

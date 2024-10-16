@@ -31,6 +31,7 @@ pub const Result = struct {
     connection: *pg.Conn,
     repo: *jetquery.Repo,
     caller_info: ?jetquery.debug.CallerInfo,
+    duration: i64,
 
     pub fn deinit(self: *Result) void {
         self.result.deinit();
@@ -351,6 +352,8 @@ fn connectionExecute(
     values: anytype,
     caller_info: ?jetquery.debug.CallerInfo,
 ) !jetquery.Result {
+    const start_time = std.time.milliTimestamp();
+
     const result = connection.queryOpts(query, values, .{}) catch |err| {
         if (connection.err) |connection_error| {
             try repo.eventCallback(.{
@@ -371,7 +374,9 @@ fn connectionExecute(
         return err;
     };
 
-    try repo.eventCallback(.{ .sql = query, .caller_info = caller_info });
+    const duration = std.time.milliTimestamp() - start_time;
+
+    try repo.eventCallback(.{ .sql = query, .caller_info = caller_info, .duration = duration });
 
     return .{
         .postgresql = .{
@@ -380,6 +385,7 @@ fn connectionExecute(
             .repo = repo,
             .connection = connection,
             .caller_info = caller_info,
+            .duration = duration,
         },
     };
 }
