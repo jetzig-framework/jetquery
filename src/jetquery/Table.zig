@@ -5,7 +5,7 @@ const jetquery = @import("../jetquery.zig");
 /// Abstraction of a database table. Define a schema with:
 /// ```zig
 /// const Schema = struct {
-///     pub const Cats = Table("cats", struct { name: []const u8, paws: usize }, .{});
+///     pub const Cat = Table("cats", struct { name: []const u8, paws: usize }, .{});
 /// };
 /// ```
 pub fn Table(Schema: type, table_name: []const u8, T: type, options: anytype) type {
