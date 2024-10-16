@@ -1,9 +1,17 @@
 const std = @import("std");
 
+const sql = @import("sql.zig");
+
 pub const Column = struct {
     name: []const u8,
     type: type,
     table: type,
+    function: ?sql.FunctionContext = null,
+    alias: ?[]const u8 = null,
+
+    pub fn ResultType(comptime self: Column, Adapter: type) type {
+        return if (self.function) |function| Adapter.Aggregate(function) else self.type;
+    }
 };
 
 pub fn translate(
@@ -18,9 +26,18 @@ pub fn translate(
         var index: usize = 0;
 
         for (args) |arg| {
+            if (@TypeOf(arg) == sql.Function) {
+                var column = primaryColumn(Table, arg.column_name);
+                column.function = arg.context;
+                column.alias = @tagName(arg.context) ++ "_" ++ column.name;
+                fields[index] = column;
+                index += 1;
+                continue;
+            }
+
             switch (@typeInfo(@TypeOf(arg))) {
                 .enum_literal, .@"enum" => {
-                    fields[index] = primaryColumn(Table, arg);
+                    fields[index] = primaryColumn(Table, @tagName(arg));
                     index += 1;
                 },
                 .@"struct" => {
@@ -52,18 +69,27 @@ fn sizeOf(
 
         var size: usize = 0;
         for (args) |arg| {
+            if (@TypeOf(arg) == sql.Function) {
+                _ = primaryColumn(Table, arg.column_name);
+                size += 1;
+                continue;
+            }
+
             switch (@typeInfo(@TypeOf(arg))) {
                 .enum_literal, .@"enum" => {
+                    _ = primaryColumn(Table, @tagName(arg));
+                    size += 1;
+                },
+                .pointer => {
                     _ = primaryColumn(Table, arg);
                     size += 1;
                 },
-
                 .@"struct" => {
                     size += nestedColumns(Table, relations, arg, undefined, true);
                 },
                 else => |tag| {
                     @compileError(
-                        "Expected [enum, enum_literal, struct] column arguments, found: `" ++ @tagName(tag) ++ "`",
+                        "Expected [enum, enum_literal, []const u8, struct] column arguments, found: `" ++ @tagName(tag) ++ "`",
                     );
                 },
             }
@@ -74,19 +100,19 @@ fn sizeOf(
 
 fn primaryColumn(
     Table: type,
-    arg: anytype,
+    comptime name: []const u8,
 ) Column {
     comptime {
         for (Table.columns()) |column| {
-            if (std.mem.eql(u8, column.name, @tagName(arg))) return .{
+            if (std.mem.eql(u8, column.name, name)) return .{
                 .table = Table,
-                .name = @tagName(arg),
+                .name = name,
                 .type = column.type,
             };
         }
         @compileError(std.fmt.comptimePrint(
             "Failed matching column `{s}` in Schema for `{s}`.",
-            .{ @tagName(arg), Table.name },
+            .{ name, Table.name },
         ));
     }
 }

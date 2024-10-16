@@ -38,6 +38,24 @@ pub const ColumnInfo = struct {
     relation: ?type,
 };
 
+pub const FunctionContext = enum { min, max, count };
+pub const Function = struct {
+    context: FunctionContext,
+    column_name: []const u8,
+};
+
+pub fn max(comptime column: anytype) Function {
+    return .{ .context = .max, .column_name = @tagName(column) };
+}
+
+pub fn min(comptime column: anytype) Function {
+    return .{ .context = .min, .column_name = @tagName(column) };
+}
+
+pub fn count(comptime column: anytype) Function {
+    return .{ .context = .count, .column_name = @tagName(column) };
+}
+
 pub fn render(
     Adapter: type,
     query_context: QueryContext,
@@ -48,9 +66,10 @@ pub fn render(
     comptime order_clauses: []const OrderClause,
     comptime distinct: ?[]const jetquery.columns.Column,
     comptime where_clauses: []const Where.Tree,
+    comptime group_by: ?[]const jetquery.columns.Column,
 ) []const u8 {
     return switch (query_context) {
-        .select => renderSelect(Adapter, Table, relations, columns, field_infos, order_clauses, where_clauses),
+        .select => renderSelect(Adapter, Table, relations, columns, field_infos, order_clauses, where_clauses, group_by),
         .update => renderUpdate(Adapter, Table, where_clauses, field_infos),
         .insert => renderInsert(Adapter, Table, field_infos),
         .delete, .delete_all => renderDelete(Adapter, Table, field_infos, where_clauses, query_context),
@@ -67,6 +86,7 @@ fn renderSelect(
     comptime field_infos: []const jetquery.fields.FieldInfo,
     comptime order_clauses: []const OrderClause,
     comptime where_clauses: []const Where.Tree,
+    comptime group_by: ?[]const jetquery.columns.Column,
 ) []const u8 {
     comptime {
         const select_columns = renderSelectColumns(Adapter, Table, relations, columns);
@@ -74,12 +94,13 @@ fn renderSelect(
         const joins = renderJoins(Adapter, Table, relations);
 
         return std.fmt.comptimePrint(
-            "SELECT{s}{s}{s}{s}{s}{s}",
+            "SELECT{s}{s}{s}{s}{s}{s}{s}",
             .{
                 select_columns,
                 from,
                 joins,
                 renderWhere(Adapter, where_clauses),
+                renderGroupBy(Adapter, group_by),
                 renderOrder(Table, Adapter, order_clauses),
                 renderLimit(Adapter, field_infos),
             },
@@ -206,6 +227,30 @@ fn renderOrder(
     );
 }
 
+fn renderGroupBy(Adapter: type, comptime maybe_group_by: ?[]const jetquery.columns.Column) []const u8 {
+    const group_by = maybe_group_by orelse return "";
+
+    var size: usize = 0;
+
+    for (group_by, 0..) |column, index| {
+        const separator = if (index + 1 < group_by.len) ", " else "";
+        const column_sql = Adapter.columnSql(column.table, column) ++ separator;
+        size += column_sql.len;
+    }
+
+    var buf: [size]u8 = undefined;
+    var cursor: usize = 0;
+
+    for (group_by, 0..) |column, index| {
+        const separator = if (index + 1 < group_by.len) ", " else "";
+        const column_sql = Adapter.columnSql(column.table, column) ++ separator;
+        @memcpy(buf[cursor .. cursor + column_sql.len], column_sql);
+        cursor += column_sql.len;
+    }
+
+    return std.fmt.comptimePrint(" GROUP BY {s}", .{buf});
+}
+
 fn renderWhere(Adapter: type, comptime where_clauses: []const Where.Tree) []const u8 {
     if (where_clauses.len == 0) return " WHERE " ++ Adapter.emptyWhereSql();
 
@@ -284,7 +329,7 @@ fn renderSelectColumns(
 
         var columns_buf_len: usize = 0;
         for (columns, 0..) |column, index| {
-            columns_buf_len += renderSelectColumn(Adapter, Table, column.name, index, total_columns).len;
+            columns_buf_len += renderSelectColumn(Adapter, Table, column, index, total_columns).len;
         }
 
         var start = columns.len;
@@ -297,7 +342,7 @@ fn renderSelectColumns(
                 columns_buf_len += renderSelectColumn(
                     Adapter,
                     Relation.Source,
-                    column.name,
+                    column,
                     index,
                     total_columns,
                 ).len;
@@ -311,7 +356,7 @@ fn renderSelectColumns(
             const column_identifier = renderSelectColumn(
                 Adapter,
                 Table,
-                column.name,
+                column,
                 index,
                 total_columns,
             );
@@ -329,7 +374,7 @@ fn renderSelectColumns(
                 const column_identifier = renderSelectColumn(
                     Adapter,
                     Relation.Source,
-                    column.name,
+                    column,
                     index,
                     total_columns,
                 );
@@ -345,14 +390,14 @@ fn renderSelectColumns(
 fn renderSelectColumn(
     Adapter: type,
     Table: type,
-    comptime name: []const u8,
+    comptime column: jetquery.columns.Column,
     comptime index: usize,
     comptime total: usize,
 ) []const u8 {
     comptime {
         return std.fmt.comptimePrint(
             " {s}{s}",
-            .{ Adapter.columnSql(Table, name), if (index + 1 < total) "," else "" },
+            .{ Adapter.columnSql(Table, column), if (index + 1 < total) "," else "" },
         );
     }
 }
@@ -386,7 +431,7 @@ fn paramsBufSize(
             .column => .{
                 switch (context) {
                     .insert => Adapter.identifier(field.name),
-                    else => Adapter.columnSql(field.Table, field.name),
+                    else => Adapter.columnSql(field.Table, field),
                 },
                 if (index < last_param_index) separator else "",
             },
@@ -401,7 +446,7 @@ fn paramsBufSize(
                     if (index < last_param_index) separator else "",
                 },
                 else => .{
-                    Adapter.columnSql(field.Table, field.name),
+                    Adapter.columnSql(field.Table, field),
                     Adapter.paramSql(index),
                     if (index < last_param_index) separator else "",
                 },
@@ -443,7 +488,7 @@ fn renderParams(
             .column => .{
                 switch (context) {
                     .insert => Adapter.identifier(field.name),
-                    else => Adapter.columnSql(field.Table, field.name),
+                    else => Adapter.columnSql(field.Table, field),
                 },
                 if (index < last_param_index) separator else "",
             },
@@ -458,7 +503,7 @@ fn renderParams(
                     if (index < last_param_index) separator else "",
                 },
                 else => .{
-                    Adapter.columnSql(field.Table, field.name),
+                    Adapter.columnSql(field.Table, field),
                     Adapter.paramSql(index),
                     if (index < last_param_index) separator else "",
                 },

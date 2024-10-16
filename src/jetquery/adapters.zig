@@ -44,9 +44,13 @@ pub const Adapter = union(enum) {
     }
 
     /// Quote a column bound to a table suitable for the active adapter.
-    pub fn columnSql(self: Adapter, Table: type, comptime name: []const u8) []const u8 {
+    pub fn columnSql(
+        self: Adapter,
+        Table: type,
+        comptime column: jetquery.columns.Column,
+    ) []const u8 {
         return switch (self) {
-            inline else => |adapter| @TypeOf(adapter).columnSql(Table, name),
+            inline else => |adapter| @TypeOf(adapter).columnSql(Table, column),
         };
     }
 
@@ -112,6 +116,13 @@ pub const Adapter = union(enum) {
     pub fn emptyWhereSQL(self: Adapter) []const u8 {
         return switch (self) {
             inline else => |adapter| @TypeOf(adapter).emptyWhereSQL(),
+        };
+    }
+
+    /// Resolve an appropriate type for a given aggregate function (e.g. COUNT, MIN, MAX, etc.).
+    pub fn Aggregate(self: Adapter, context: jetquery.sql.FunctionContext) type {
+        return switch (self) {
+            inline else => |adapter| @TypeOf(adapter).Aggregate(context),
         };
     }
 };

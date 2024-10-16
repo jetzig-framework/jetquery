@@ -803,3 +803,73 @@ test "null in whereclause" {
         \\SELECT "humans"."name" FROM "humans" WHERE ("humans"."name" IS NULL OR "humans"."name" = $1)
     , query.sql);
 }
+
+test "groupBy" {
+    const Schema = struct {
+        pub const Cat = Table(
+            @This(),
+            "cats",
+            struct { name: []const u8 },
+            .{},
+        );
+    };
+
+    const query = Query(Schema, .Cat).groupBy(.{.name});
+    try std.testing.expectEqualStrings(
+        \\SELECT FROM "cats" WHERE (1 = 1) GROUP BY "cats"."name"
+    , query.sql);
+}
+
+test "aggregate max()" {
+    const Schema = struct {
+        pub const Cat = Table(
+            @This(),
+            "cats",
+            struct { name: []const u8, paws: usize },
+            .{},
+        );
+    };
+
+    const query = Query(Schema, .Cat)
+        .select(.{ .name, sql.max(.paws) })
+        .groupBy(.{.name});
+    try std.testing.expectEqualStrings(
+        \\SELECT "cats"."name", MAX("cats"."paws") FROM "cats" WHERE (1 = 1) GROUP BY "cats"."name"
+    , query.sql);
+}
+
+test "aggregate min()" {
+    const Schema = struct {
+        pub const Cat = Table(
+            @This(),
+            "cats",
+            struct { name: []const u8, paws: usize },
+            .{},
+        );
+    };
+
+    const query = Query(Schema, .Cat)
+        .select(.{ .name, sql.min(.paws) })
+        .groupBy(.{.name});
+    try std.testing.expectEqualStrings(
+        \\SELECT "cats"."name", MIN("cats"."paws") FROM "cats" WHERE (1 = 1) GROUP BY "cats"."name"
+    , query.sql);
+}
+
+test "aggregate count()" {
+    const Schema = struct {
+        pub const Cat = Table(
+            @This(),
+            "cats",
+            struct { name: []const u8, paws: usize },
+            .{},
+        );
+    };
+
+    const query = Query(Schema, .Cat)
+        .select(.{ .name, sql.count(.paws) })
+        .groupBy(.{.name});
+    try std.testing.expectEqualStrings(
+        \\SELECT "cats"."name", COUNT("cats"."paws") FROM "cats" WHERE (1 = 1) GROUP BY "cats"."name"
+    , query.sql);
+}

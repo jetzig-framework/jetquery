@@ -24,14 +24,19 @@ pub fn columnTypeSql(self: NullAdapter, column_type: jetquery.Column.Type) []con
     return "";
 }
 
+pub fn Aggregate(context: jetquery.sql.FunctionContext) type {
+    _ = context;
+    return usize;
+}
+
 pub fn identifier(comptime name: []const u8) []const u8 {
     _ = name;
     return "";
 }
 
-pub fn columnSql(Table: type, comptime name: []const u8) []const u8 {
+pub fn columnSql(Table: type, comptime column: jetquery.columnsColumn) []const u8 {
     _ = Table;
-    _ = name;
+    _ = column;
     return "";
 }
 

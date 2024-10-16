@@ -207,6 +207,13 @@ pub fn Query(Schema: type, comptime table: anytype) type {
         pub fn init() Statement(.none, Schema, Table, .{ .default_select = true }) {
             return InitialStatement(Schema, Table);
         }
+
+        pub fn groupBy(comptime columns: anytype) Statement(.select, Schema, Table, .{
+            .result_context = .many,
+            .group_by = &jetquery.columns.translate(Table, &.{}, columns),
+        }) {
+            return InitialStatement(Schema, Table).groupBy(columns);
+        }
     };
 }
 
@@ -241,6 +248,7 @@ fn StatementOptions(comptime query_context: sql.QueryContext) type {
         result_context: ResultContext = defaultResultContext(query_context),
         default_select: bool = false,
         distinct: ?[]const jetquery.columns.Column = null,
+        group_by: ?[]const jetquery.columns.Column = null,
     };
 }
 
@@ -283,6 +291,7 @@ fn Statement(
             options.order_clauses,
             options.distinct,
             options.where_clauses,
+            options.group_by,
         ),
 
         pub const info = .{
@@ -346,6 +355,7 @@ fn Statement(
             .field_infos = options.field_infos,
             .columns = &jetquery.columns.translate(Table, options.relations, select_columns),
             .order_clauses = options.order_clauses,
+            .group_by = options.group_by,
             .distinct = options.distinct,
             .result_context = if (options.default_select) .many else options.result_context,
         }) {
@@ -354,6 +364,7 @@ fn Statement(
                 .field_infos = options.field_infos,
                 .columns = &jetquery.columns.translate(Table, options.relations, select_columns),
                 .order_clauses = options.order_clauses,
+                .group_by = options.group_by,
                 .distinct = options.distinct,
                 .result_context = if (options.default_select) .many else options.result_context,
             });
@@ -387,6 +398,7 @@ fn Statement(
                 ),
                 .columns = if (options.default_select) &Table.columns() else options.columns,
                 .order_clauses = options.order_clauses,
+                .group_by = options.group_by,
                 .distinct = options.distinct,
                 .result_context = switch (options.result_context) {
                     .none => switch (query_context) {
@@ -418,6 +430,7 @@ fn Statement(
                 )},
                 .columns = if (options.default_select) &Table.columns() else options.columns,
                 .order_clauses = options.order_clauses,
+                .group_by = options.group_by,
                 .distinct = options.distinct,
                 .result_context = switch (options.result_context) {
                     .none => switch (query_context) {
@@ -460,6 +473,7 @@ fn Statement(
                 jetquery.fields.fieldInfos(Table, options.relations, @TypeOf(.{1}), .limit),
             .columns = if (options.columns.len == 0) &Table.columns() else options.columns,
             .where_clauses = &.{sql.Where.tree(Table, &.{}, @TypeOf(args), .where, options.field_infos.len)},
+            .group_by = options.group_by,
             .result_context = .one,
         }) {
             const S = Statement(.select, Schema, Table, .{
@@ -469,6 +483,7 @@ fn Statement(
                     jetquery.fields.fieldInfos(Table, options.relations, @TypeOf(.{1}), .limit),
                 .columns = if (options.columns.len == 0) &Table.columns() else options.columns,
                 .where_clauses = &.{sql.Where.tree(Table, &.{}, @TypeOf(args), .where, options.field_infos.len)},
+                .group_by = options.group_by,
                 .result_context = .one,
             });
             var statement = self.extend(S, args, .where);
@@ -483,12 +498,14 @@ fn Statement(
             .field_infos = options.field_infos,
             .distinct = options.distinct,
             .where_clauses = options.where_clauses,
+            .group_by = options.group_by,
         }) {
             const S = Statement(.count, Schema, Table, .{
                 .relations = options.relations,
                 .field_infos = options.field_infos,
                 .distinct = options.distinct,
                 .where_clauses = options.where_clauses,
+                .group_by = options.group_by,
             });
             return self.extend(S, .{}, .none);
         }
@@ -501,6 +518,7 @@ fn Statement(
             .result_context = .many,
             .distinct = &jetquery.columns.translate(Table, options.relations, args),
             .where_clauses = options.where_clauses,
+            .group_by = options.group_by,
         }) {
             const S = Statement(.select, Schema, Table, .{
                 .relations = options.relations,
@@ -510,6 +528,7 @@ fn Statement(
                 .result_context = .many,
                 .distinct = &jetquery.columns.translate(Table, options.relations, args),
                 .where_clauses = options.where_clauses,
+                .group_by = options.group_by,
             });
             if (!options.default_select) @compileError(
                 std.fmt.comptimePrint(
@@ -576,6 +595,7 @@ fn Statement(
             .order_clauses = options.order_clauses,
             .result_context = options.result_context,
             .where_clauses = options.where_clauses,
+            .group_by = options.group_by,
         }) {
             const S = Statement(query_context, Schema, Table, .{
                 .relations = options.relations,
@@ -584,6 +604,7 @@ fn Statement(
                 .order_clauses = options.order_clauses,
                 .result_context = options.result_context,
                 .where_clauses = options.where_clauses,
+                .group_by = options.group_by,
             });
             return self.extend(S, .{bound}, .limit);
         }
@@ -595,6 +616,7 @@ fn Statement(
             .order_clauses = &translateOrderBy(Table, args),
             .result_context = options.result_context,
             .where_clauses = options.where_clauses,
+            .group_by = options.group_by,
         }) {
             const S = Statement(query_context, Schema, Table, .{
                 .relations = options.relations,
@@ -603,8 +625,30 @@ fn Statement(
                 .order_clauses = &translateOrderBy(Table, args),
                 .result_context = options.result_context,
                 .where_clauses = options.where_clauses,
+                .group_by = options.group_by,
             });
             return self.extend(S, .{}, .order);
+        }
+
+        pub fn groupBy(self: Self, comptime columns: anytype) Statement(.select, Schema, Table, .{
+            .relations = options.relations,
+            .field_infos = options.field_infos,
+            .columns = options.columns,
+            .order_clauses = options.order_clauses,
+            .result_context = .many,
+            .where_clauses = options.where_clauses,
+            .group_by = &jetquery.columns.translate(Table, options.relations, columns),
+        }) {
+            const S = Statement(.select, Schema, Table, .{
+                .relations = options.relations,
+                .field_infos = options.field_infos,
+                .columns = options.columns,
+                .order_clauses = options.order_clauses,
+                .group_by = &jetquery.columns.translate(Table, options.relations, columns),
+                .result_context = .many,
+                .where_clauses = options.where_clauses,
+            });
+            return self.extend(S, .{}, .none);
         }
 
         pub fn include(
@@ -726,8 +770,8 @@ fn Statement(
                 var column_infos: [totalColumnLen()]sql.ColumnInfo = undefined;
                 for (options.columns, 0..) |column, index| {
                     column_infos[index] = .{
-                        .name = column.name,
-                        .type = column.type,
+                        .name = column.alias orelse column.name,
+                        .type = column.ResultType(Adapter()),
                         .index = index,
                         .relation = null,
                     };
@@ -738,8 +782,8 @@ fn Statement(
 
                     for (Relation.select_columns, start..) |column, index| {
                         column_infos[index] = .{
-                            .name = column.name,
-                            .type = column.type,
+                            .name = column.alias orelse column.name,
+                            .type = column.ResultType(Adapter()),
                             .index = index,
                             .relation = Relation,
                         };
@@ -754,15 +798,17 @@ fn Statement(
         pub fn QueryResultType() type {
             comptime {
                 switch (query_context) {
-                    // TODO: Is there a more sensible type to use here ?
-                    .count => return i64,
+                    .count => return Adapter().Aggregate(.count),
                     else => {},
                 }
 
                 var base_fields: [options.columns.len]std.builtin.Type.StructField = undefined;
 
                 for (options.columns, 0..) |column, index| {
-                    base_fields[index] = jetquery.fields.structField(column.name, column.type);
+                    base_fields[index] = jetquery.fields.structField(
+                        column.alias orelse column.name,
+                        column.ResultType(Adapter()),
+                    );
                 }
 
                 var relations_fields: [options.relations.len]std.builtin.Type.StructField = undefined;
@@ -770,8 +816,8 @@ fn Statement(
                     var relation_fields: [Relation.select_columns.len]std.builtin.Type.StructField = undefined;
                     for (Relation.select_columns, 0..) |column, index| {
                         relation_fields[index] = jetquery.fields.structField(
-                            column.name,
-                            column.type,
+                            column.alias orelse column.name,
+                            column.ResultType(Adapter()),
                         );
                     }
 
@@ -881,12 +927,23 @@ fn translateOrderBy(
 ) [std.meta.fields(@TypeOf(args)).len]sql.OrderClause {
     comptime {
         var clauses: [std.meta.fields(@TypeOf(args)).len]sql.OrderClause = undefined;
+        const is_tuple = @typeInfo(@TypeOf(args)).@"struct".is_tuple;
+        const fields = std.meta.fields(@TypeOf(args));
 
-        for (std.meta.fields(@TypeOf(args)), 0..) |field, index| {
-            clauses[index] = .{
-                .column = Table.column(field.name),
-                .direction = std.enums.nameCast(sql.OrderDirection, @tagName(@field(args, field.name))),
-            };
+        for (fields, if (is_tuple) args else fields, 0..) |field, arg, index| {
+            clauses[index] = if (is_tuple)
+                .{
+                    .column = Table.column(@tagName(arg)),
+                    .direction = .ascending,
+                }
+            else
+                .{
+                    .column = Table.column(field.name),
+                    .direction = std.enums.nameCast(
+                        sql.OrderDirection,
+                        @tagName(@field(args, field.name)),
+                    ),
+                };
         }
         return clauses;
     }

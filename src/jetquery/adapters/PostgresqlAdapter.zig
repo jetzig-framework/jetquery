@@ -13,6 +13,18 @@ options: Options,
 connected: bool,
 lazy_connect: bool = false,
 
+pub const Count = i64;
+pub const Max = i32;
+pub const Min = i32;
+
+pub fn Aggregate(context: jetquery.sql.FunctionContext) type {
+    return switch (context) {
+        .min => Min,
+        .max => Max,
+        .count => Count,
+    };
+}
+
 pub const Result = struct {
     result: *pg.Result,
     allocator: std.mem.Allocator,
@@ -205,10 +217,23 @@ pub fn identifier(comptime name: []const u8) []const u8 {
 }
 
 /// SQL fragment used to represent a column bound to a table, e.g. `"foo"."bar"`
-pub fn columnSql(Table: type, comptime name: []const u8) []const u8 {
-    return std.fmt.comptimePrint(
-        \\"{s}"."{s}"
-    , .{ Table.name, name });
+pub fn columnSql(Table: type, comptime column: jetquery.columns.Column) []const u8 {
+    return if (column.function) |function|
+        std.fmt.comptimePrint(
+            \\{s}("{s}"."{s}")
+        , .{
+            switch (function) {
+                .min => "MIN",
+                .max => "MAX",
+                .count => "COUNT",
+            },
+            Table.name,
+            column.name,
+        })
+    else
+        std.fmt.comptimePrint(
+            \\"{s}"."{s}"
+        , .{ Table.name, column.name });
 }
 
 /// SQL fragment used to indicate a primary key.
@@ -239,7 +264,7 @@ pub fn orderSql(Table: type, comptime order_clause: sql.OrderClause) []const u8 
 
     return std.fmt.comptimePrint(
         "{s} {s}",
-        .{ columnSql(Table, order_clause.column.name), direction },
+        .{ columnSql(Table, order_clause.column), direction },
     );
 }
 
