@@ -352,7 +352,7 @@ fn connectionExecute(
     values: anytype,
     caller_info: ?jetquery.debug.CallerInfo,
 ) !jetquery.Result {
-    const start_time = std.time.milliTimestamp();
+    const start_time = std.time.nanoTimestamp();
 
     const result = connection.queryOpts(query, values, .{}) catch |err| {
         if (connection.err) |connection_error| {
@@ -374,7 +374,7 @@ fn connectionExecute(
         return err;
     };
 
-    const duration = std.time.milliTimestamp() - start_time;
+    const duration: i64 = @intCast(std.time.nanoTimestamp() - start_time);
 
     try repo.eventCallback(.{ .sql = query, .caller_info = caller_info, .duration = duration });
 
