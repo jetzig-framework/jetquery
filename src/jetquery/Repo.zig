@@ -752,3 +752,57 @@ test "aggregate max()" {
     try std.testing.expectEqualStrings(cats[1].name, "Princes");
     try std.testing.expect(cats[1].max_paws == 100);
 }
+
+test "aggregate count() with HAVING" {
+    var repo = try Repo.init(
+        std.testing.allocator,
+        .{
+            .adapter = .{
+                .postgresql = .{
+                    .database = "postgres",
+                    .username = "postgres",
+                    .hostname = "127.0.0.1",
+                    .password = "password",
+                    .port = 5432,
+                },
+            },
+        },
+    );
+    defer repo.deinit();
+
+    try repo.dropTable("cats", .{ .if_exists = true });
+    try repo.createTable("cats", &.{
+        jetquery.table.column("name", .string, .{}),
+        jetquery.table.column("paws", .integer, .{}),
+    }, .{ .if_not_exists = true });
+
+    const Schema = struct {
+        pub const Cat = jetquery.Table(
+            @This(),
+            "cats",
+            struct { name: []const u8, paws: usize },
+            .{},
+        );
+    };
+    try repo.insert(Schema.Cat.init(.{ .name = "Hercules", .paws = 2 }));
+    try repo.insert(Schema.Cat.init(.{ .name = "Hercules", .paws = 8 }));
+    try repo.insert(Schema.Cat.init(.{ .name = "Hercules", .paws = 4 }));
+    try repo.insert(Schema.Cat.init(.{ .name = "Princes", .paws = 100 }));
+    try repo.insert(Schema.Cat.init(.{ .name = "Princes", .paws = 5 }));
+    try repo.insert(Schema.Cat.init(.{ .name = "Princes", .paws = 2 }));
+
+    const sql = jetquery.sql;
+
+    const cats = try jetquery.Query(Schema, .Cat)
+        .select(.{ .name, sql.max(.paws) })
+        .groupBy(.{.name})
+        .having(.{ sql.count(.name), .eq, 3 })
+        .orderBy(.{.name})
+        .all(&repo);
+    defer repo.free(cats);
+
+    try std.testing.expectEqualStrings(cats[0].name, "Hercules");
+    try std.testing.expect(cats[0].max_paws == 8);
+    try std.testing.expectEqualStrings(cats[1].name, "Princes");
+    try std.testing.expect(cats[1].max_paws == 100);
+}

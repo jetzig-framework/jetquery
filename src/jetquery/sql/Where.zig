@@ -2,6 +2,7 @@ const std = @import("std");
 
 const fields = @import("../fields.zig");
 const coercion = @import("../coercion.zig");
+const columns = @import("../columns.zig");
 
 const Where = @This();
 
@@ -139,9 +140,25 @@ pub const Node = union(enum) {
         children: []const Node,
     };
 
+    pub const Triplet = struct {
+        lhs: columns.Column,
+        operator: Operator,
+        rhs: Value,
+
+        pub const Operator = enum {
+            eq,
+            neq,
+            lt,
+            lte,
+            gt,
+            gte,
+        };
+    };
+
     condition: Condition,
     value: Value,
     group: Group,
+    triplet: Triplet,
 
     pub fn render(
         self: Node,
@@ -199,6 +216,8 @@ pub const Node = union(enum) {
                 }
                 if (group.children.len > 1) writer.print(")", .{}) catch unreachable;
             },
+            // TODO
+            .triplet => {},
         }
     }
 
@@ -217,6 +236,8 @@ pub const Node = union(enum) {
             .group => |group| {
                 appendValueTypes(group, &types, &index);
             },
+            // TODO
+            .triplet => {},
         }
 
         return std.meta.Tuple(&types);
@@ -252,6 +273,8 @@ pub const Node = union(enum) {
             .group => |group| {
                 appendFields(group, Table, relations, &fields_array, &tuple_index);
             },
+            // TODO
+            .triplet => {},
         }
 
         return fields_array;
@@ -268,6 +291,8 @@ pub const Node = union(enum) {
             .group => |group| {
                 countGroupValues(group, &count);
             },
+            // TODO
+            .triplet => {},
         }
 
         return count;
@@ -283,6 +308,8 @@ pub const Node = union(enum) {
                 .group => |capture| {
                     countGroupValues(capture, count);
                 },
+                // TODO
+                .triplet => {},
             }
         }
     }
@@ -300,6 +327,8 @@ pub const Node = union(enum) {
                 .group => |capture| {
                     appendValueTypes(capture, types, index);
                 },
+                // Todo
+                .triplet => {},
             }
         }
     }
@@ -329,6 +358,8 @@ pub const Node = union(enum) {
                 .group => |capture| {
                     appendFields(capture, Table, relations, fields_array, tuple_index);
                 },
+                // TODO
+                .triplet => {},
             }
         }
     }
@@ -361,6 +392,9 @@ fn nodeTree(
 
         return switch (@typeInfo(T)) {
             .@"struct" => |info| blk: {
+                if (isTriplet(T)) {
+                    break :blk .{ .triplet = triplet(Table, relations, T, value_index) };
+                }
                 const nodes = childNodes(Table, relations, OG, field_info, info, path, field_context, value_index);
                 break :blk .{ .group = .{ .name = name, .children = &nodes } };
             },
@@ -527,6 +561,34 @@ fn assignValue(
     }
 }
 
+// A triplet with an operator, e.g.:
+// ```zig
+// .{ .foo, .eql, .bar }
+// .{ sql.max(.foo), .lt, .bar }
+fn isTriplet(T: type) bool {
+    const struct_fields = std.meta.fields(T);
+
+    if (struct_fields.len != 3) return false;
+    if (@typeInfo(struct_fields[1].type) != .enum_literal) return false;
+
+    const t: T = undefined;
+    return @hasField(Node.Triplet.Operator, @tagName(t[1]));
+}
+
+fn triplet(Table: type, relations: []const type, T: type, value_index: *usize) Node.Triplet {
+    _ = Table;
+    _ = relations;
+    const arg: T = undefined;
+
+    const t = Node.Triplet{
+        .lhs = undefined,
+        .rhs = undefined,
+        .operator = std.enums.nameCast(Node.Triplet.Operator, arg[1]),
+    };
+    value_index.* += 1;
+    return t;
+}
+
 fn debugNode(comptime node: Node, comptime depth: usize) void {
     const indent = " " ** depth;
     switch (node) {
@@ -541,6 +603,8 @@ fn debugNode(comptime node: Node, comptime depth: usize) void {
                 debugNode(child, depth + 1);
             }
         },
+        // TODO
+        .triplet => {},
     }
 }
 

@@ -540,7 +540,7 @@ fn lastParamIndex(
     if (maybe_index) |index|
         return index
     else
-        @compileError("No param matched for `" ++ @tagName(context) ++ "`");
+        @compileError("No param matched for `" ++ @tagName(context) ++ "` query.");
 }
 
 fn hasParam(

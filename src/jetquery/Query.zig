@@ -249,6 +249,7 @@ fn StatementOptions(comptime query_context: sql.QueryContext) type {
         default_select: bool = false,
         distinct: ?[]const jetquery.columns.Column = null,
         group_by: ?[]const jetquery.columns.Column = null,
+        having_clauses: []const sql.Where.Tree = &.{},
     };
 }
 
@@ -647,6 +648,29 @@ fn Statement(
                 .group_by = &jetquery.columns.translate(Table, options.relations, columns),
                 .result_context = .many,
                 .where_clauses = options.where_clauses,
+            });
+            return self.extend(S, .{}, .none);
+        }
+
+        pub fn having(self: Self, args: anytype) Statement(.select, Schema, Table, .{
+            .relations = options.relations,
+            .field_infos = options.field_infos,
+            .columns = options.columns,
+            .order_clauses = options.order_clauses,
+            .result_context = .many,
+            .where_clauses = options.where_clauses,
+            .group_by = options.group_by,
+            .having_clauses = &.{sql.Where.tree(Table, &.{}, @TypeOf(args), .where, 0)},
+        }) {
+            const S = Statement(.select, Schema, Table, .{
+                .relations = options.relations,
+                .field_infos = options.field_infos,
+                .columns = options.columns,
+                .order_clauses = options.order_clauses,
+                .result_context = .many,
+                .where_clauses = options.where_clauses,
+                .group_by = options.group_by,
+                .having_clauses = &.{sql.Where.tree(Table, &.{}, @TypeOf(args), .where, 0)},
             });
             return self.extend(S, .{}, .none);
         }
