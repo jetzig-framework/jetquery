@@ -26,15 +26,6 @@ pub fn translate(
         var index: usize = 0;
 
         for (args) |arg| {
-            if (@TypeOf(arg) == sql.Function) {
-                var column = primaryColumn(Table, arg.column_name);
-                column.function = arg.context;
-                column.alias = @tagName(arg.context) ++ "_" ++ column.name;
-                fields[index] = column;
-                index += 1;
-                continue;
-            }
-
             switch (@typeInfo(@TypeOf(arg))) {
                 .enum_literal, .@"enum" => {
                     fields[index] = primaryColumn(Table, @tagName(arg));
@@ -46,6 +37,18 @@ pub fn translate(
                     const nested = nestedColumns(Table, relations, arg, &buf, false);
                     @memcpy(fields[index .. index + count], nested);
                     index += count;
+                },
+                .type => {
+                    if (@hasField(arg, "__jetquery_function")) {
+                        const function = (arg{}).__jetquery_function;
+                        var column = primaryColumn(Table, function.column_name);
+                        column.function = function.context;
+                        column.alias = @tagName(function.context) ++ "_" ++ column.name;
+                        fields[index] = column;
+                        index += 1;
+                    } else {
+                        @compileError("Unexpected type in columns: `" ++ @typeName(arg) ++ "`");
+                    }
                 },
                 else => |tag| {
                     @compileError(
@@ -86,6 +89,15 @@ fn sizeOf(
                 },
                 .@"struct" => {
                     size += nestedColumns(Table, relations, arg, undefined, true);
+                },
+                .type => {
+                    if (@hasField(arg, "__jetquery_function")) {
+                        size += 1;
+                    } else {
+                        @compileError(
+                            "Unsupported type in column arguments: `" ++ @typeName(arg) ++ "`",
+                        );
+                    }
                 },
                 else => |tag| {
                     @compileError(

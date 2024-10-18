@@ -3,6 +3,7 @@ const std = @import("std");
 const fields = @import("../fields.zig");
 const coercion = @import("../coercion.zig");
 const columns = @import("../columns.zig");
+const sql = @import("../sql.zig");
 
 const Where = @This();
 
@@ -141,9 +142,9 @@ pub const Node = union(enum) {
     };
 
     pub const Triplet = struct {
-        lhs: columns.Column,
+        lhs: Operand,
         operator: Operator,
-        rhs: Value,
+        rhs: Operand,
 
         pub const Operator = enum {
             eq,
@@ -152,6 +153,11 @@ pub const Node = union(enum) {
             lte,
             gt,
             gte,
+        };
+
+        pub const Operand = union(enum) {
+            value: Node.Value,
+            column: columns.Column,
         };
     };
 
@@ -217,7 +223,36 @@ pub const Node = union(enum) {
                 if (group.children.len > 1) writer.print(")", .{}) catch unreachable;
             },
             // TODO
-            .triplet => {},
+            .triplet => |triplet| {
+                switch (triplet.lhs) {
+                    .value => |value| {
+                        writer.print("{s}", .{Adapter.paramSql(value.index)}) catch unreachable;
+                    },
+                    .column => |column| {
+                        writer.print("{s}", .{Adapter.columnSql(column.table, column)}) catch unreachable;
+                    },
+                }
+
+                const operator = switch (triplet.operator) {
+                    .eq => "=",
+                    .neq => "<>",
+                    .lt => "<",
+                    .lte => "<=",
+                    .gt => ">",
+                    .gte => ">=",
+                };
+
+                writer.print(" {s} ", .{operator}) catch unreachable;
+
+                switch (triplet.rhs) {
+                    .value => |value| {
+                        writer.print("{s}", .{Adapter.paramSql(value.index)}) catch unreachable;
+                    },
+                    .column => |column| {
+                        writer.print("{s}", .{Adapter.columnSql(column.table, column)}) catch unreachable;
+                    },
+                }
+            },
         }
     }
 
@@ -229,15 +264,34 @@ pub const Node = union(enum) {
             .condition => {},
             .value => |value| {
                 if (!value.isNull()) {
-                    types[index.*] = value.ColumnType();
-                    index.* += 1;
+                    types[index] = value.ColumnType();
+                    index += 1;
                 }
             },
             .group => |group| {
                 appendValueTypes(group, &types, &index);
             },
             // TODO
-            .triplet => {},
+            .triplet => |triplet| {
+                switch (triplet.lhs) {
+                    .value => |value| {
+                        if (!value.isNull()) {
+                            types[index] = value.type;
+                            index += 1;
+                        }
+                    },
+                    .column => {},
+                }
+                switch (triplet.rhs) {
+                    .value => |value| {
+                        if (!value.isNull()) {
+                            types[index] = value.type;
+                            index += 1;
+                        }
+                    },
+                    .column => {},
+                }
+            },
         }
 
         return std.meta.Tuple(&types);
@@ -274,7 +328,38 @@ pub const Node = union(enum) {
                 appendFields(group, Table, relations, &fields_array, &tuple_index);
             },
             // TODO
-            .triplet => {},
+            .triplet => |triplet| {
+                switch (triplet.lhs) {
+                    .value => |value| {
+                        if (!value.isNull()) {
+                            fields_array[value.index] = .{
+                                .Table = value.Table,
+                                .name = value.name,
+                                .context = value.field_context,
+                                .column_type = value.ColumnType(),
+                                .index = tuple_index,
+                            };
+                            tuple_index += 1;
+                        }
+                    },
+                    .column => {},
+                }
+                switch (triplet.rhs) {
+                    .value => |value| {
+                        if (!value.isNull()) {
+                            fields_array[value.index] = .{
+                                .Table = value.Table,
+                                .name = value.name,
+                                .context = value.field_context,
+                                .column_type = value.ColumnType(),
+                                .index = tuple_index,
+                            };
+                            tuple_index += 1;
+                        }
+                    },
+                    .column => {},
+                }
+            },
         }
 
         return fields_array;
@@ -292,7 +377,20 @@ pub const Node = union(enum) {
                 countGroupValues(group, &count);
             },
             // TODO
-            .triplet => {},
+            .triplet => |triplet| {
+                switch (triplet.lhs) {
+                    .value => |value| {
+                        if (!value.isNull()) count += 1;
+                    },
+                    .column => {},
+                }
+                switch (triplet.rhs) {
+                    .value => |value| {
+                        if (!value.isNull()) count += 1;
+                    },
+                    .column => {},
+                }
+            },
         }
 
         return count;
@@ -309,7 +407,20 @@ pub const Node = union(enum) {
                     countGroupValues(capture, count);
                 },
                 // TODO
-                .triplet => {},
+                .triplet => |triplet| {
+                    switch (triplet.lhs) {
+                        .value => |value| {
+                            if (!value.isNull()) count.* += 1;
+                        },
+                        .column => {},
+                    }
+                    switch (triplet.rhs) {
+                        .value => |value| {
+                            if (!value.isNull()) count.* += 1;
+                        },
+                        .column => {},
+                    }
+                },
             }
         }
     }
@@ -327,8 +438,27 @@ pub const Node = union(enum) {
                 .group => |capture| {
                     appendValueTypes(capture, types, index);
                 },
-                // Todo
-                .triplet => {},
+                // TODO
+                .triplet => |triplet| {
+                    switch (triplet.lhs) {
+                        .value => |value| {
+                            if (!value.isNull()) {
+                                types[index.*] = value.type;
+                                index.* += 1;
+                            }
+                        },
+                        .column => {},
+                    }
+                    switch (triplet.rhs) {
+                        .value => |value| {
+                            if (!value.isNull()) {
+                                types[index.*] = value.type;
+                                index.* += 1;
+                            }
+                        },
+                        .column => {},
+                    }
+                },
             }
         }
     }
@@ -359,7 +489,38 @@ pub const Node = union(enum) {
                     appendFields(capture, Table, relations, fields_array, tuple_index);
                 },
                 // TODO
-                .triplet => {},
+                .triplet => |triplet| {
+                    switch (triplet.lhs) {
+                        .value => |value| {
+                            if (!value.isNull()) {
+                                fields_array[value.index] = .{
+                                    .Table = value.Table,
+                                    .name = value.name,
+                                    .context = value.field_context,
+                                    .column_type = value.type,
+                                    .index = tuple_index.*,
+                                };
+                                tuple_index.* += 1;
+                            }
+                        },
+                        .column => {},
+                    }
+                    switch (triplet.rhs) {
+                        .value => |value| {
+                            if (!value.isNull()) {
+                                fields_array[value.index] = .{
+                                    .Table = value.Table,
+                                    .name = value.name,
+                                    .context = value.field_context,
+                                    .column_type = value.type,
+                                    .index = tuple_index.*,
+                                };
+                                tuple_index.* += 1;
+                            }
+                        },
+                        .column => {},
+                    }
+                },
             }
         }
     }
@@ -393,7 +554,16 @@ fn nodeTree(
         return switch (@typeInfo(T)) {
             .@"struct" => |info| blk: {
                 if (isTriplet(T)) {
-                    break :blk .{ .triplet = triplet(Table, relations, T, value_index) };
+                    break :blk .{ .triplet = makeTriplet(
+                        Table,
+                        relations,
+                        T,
+                        field_context,
+                        field_info,
+                        name,
+                        path,
+                        value_index,
+                    ) };
                 }
                 const nodes = childNodes(Table, relations, OG, field_info, info, path, field_context, value_index);
                 break :blk .{ .group = .{ .name = name, .children = &nodes } };
@@ -575,15 +745,72 @@ fn isTriplet(T: type) bool {
     return @hasField(Node.Triplet.Operator, @tagName(t[1]));
 }
 
-fn triplet(Table: type, relations: []const type, T: type, value_index: *usize) Node.Triplet {
-    _ = Table;
-    _ = relations;
+fn makeTriplet(
+    Table: type,
+    relations: []const type,
+    T: type,
+    field_context: fields.FieldContext,
+    field_info: std.builtin.Type.StructField,
+    name: []const u8,
+    path: [][]const u8,
+    value_index: *usize,
+) Node.Triplet {
     const arg: T = undefined;
 
     const t = Node.Triplet{
-        .lhs = undefined,
-        .rhs = undefined,
+        .lhs = switch (@typeInfo(@TypeOf(arg[0]))) {
+            .enum_literal => .{
+                // TODO
+                .column = columns.Column{},
+            },
+            .type => if (@hasField(arg[0], "__jetquery_function"))
+                .{ .column = columns.translate(
+                    Table,
+                    relations,
+                    .{arg[0]},
+                )[0] }
+            else
+                @compileError("Unexpected type in columns: `" ++ @typeName(arg[0]) ++ "`"),
+            else => blk: {
+                const value: Node.Value = .{
+                    .field_context = field_context,
+                    .Table = findRelation(Table, relations, path),
+                    .name = name,
+                    .type = T,
+                    .field_info = field_info,
+                    .index = value_index.*,
+                };
+                value_index.* += 1;
+                break :blk .{ .value = value };
+            },
+        },
         .operator = std.enums.nameCast(Node.Triplet.Operator, arg[1]),
+        .rhs = switch (@typeInfo(@TypeOf(arg[2]))) {
+            .enum_literal => .{
+                // TODO
+                .column = columns.Column{},
+            },
+            .type => if (@hasField(arg[2], "__jetquery_function"))
+                .{ .column = columns.translate(
+                    Table,
+                    relations,
+                    .{arg[2]},
+                )[0] }
+            else
+                @compileError("Unexpected type in columns: `" ++ @typeName(arg[2]) ++ "`"),
+            else => blk: {
+                const value: Node.Value = .{
+                    .field_context = field_context,
+                    .Table = findRelation(Table, relations, path),
+                    .name = name,
+                    .type = T,
+                    .field_info = field_info,
+                    .index = value_index.*,
+                };
+                value_index.* += 1;
+                break :blk .{ .value = value };
+            },
+        },
     };
     value_index.* += 1;
     return t;

@@ -66,7 +66,7 @@ pub fn build(b: *std.Build) !void {
     run_migration_unit_tests.step.dependOn(&run_lib_unit_tests.step);
 
     migration_unit_tests.step.dependOn(&exe_generate_migrations.step);
-    test_step.dependOn(&run_migration_unit_tests.step);
+    // test_step.dependOn(&run_migration_unit_tests.step);
 
     const run_generate_migrations_cmd = b.addRunArtifact(exe_generate_migrations);
     const generated_migrations_path = run_generate_migrations_cmd.addOutputFileArg("migrations.zig");

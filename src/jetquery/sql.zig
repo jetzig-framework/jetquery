@@ -44,16 +44,31 @@ pub const Function = struct {
     column_name: []const u8,
 };
 
-pub fn max(comptime column: anytype) Function {
-    return .{ .context = .max, .column_name = @tagName(column) };
+pub fn min(comptime column: anytype) type {
+    return struct {
+        comptime __jetquery_function: Function = .{
+            .context = .min,
+            .column_name = @tagName(column),
+        },
+    };
 }
 
-pub fn min(comptime column: anytype) Function {
-    return .{ .context = .min, .column_name = @tagName(column) };
+pub fn max(comptime column: anytype) type {
+    return struct {
+        comptime __jetquery_function: Function = .{
+            .context = .max,
+            .column_name = @tagName(column),
+        },
+    };
 }
 
-pub fn count(comptime column: anytype) Function {
-    return .{ .context = .count, .column_name = @tagName(column) };
+pub fn count(comptime column: anytype) type {
+    return struct {
+        comptime __jetquery_function: Function = .{
+            .context = .count,
+            .column_name = @tagName(column),
+        },
+    };
 }
 
 pub fn render(
@@ -67,13 +82,46 @@ pub fn render(
     comptime distinct: ?[]const jetquery.columns.Column,
     comptime where_clauses: []const Where.Tree,
     comptime group_by: ?[]const jetquery.columns.Column,
+    comptime having_clauses: []const Where.Tree,
 ) []const u8 {
     return switch (query_context) {
-        .select => renderSelect(Adapter, Table, relations, columns, field_infos, order_clauses, where_clauses, group_by),
-        .update => renderUpdate(Adapter, Table, where_clauses, field_infos),
-        .insert => renderInsert(Adapter, Table, field_infos),
-        .delete, .delete_all => renderDelete(Adapter, Table, field_infos, where_clauses, query_context),
-        .count => renderCount(Adapter, Table, relations, field_infos, where_clauses, distinct),
+        .select => renderSelect(
+            Adapter,
+            Table,
+            relations,
+            columns,
+            field_infos,
+            order_clauses,
+            where_clauses,
+            group_by,
+            having_clauses,
+        ),
+        .update => renderUpdate(
+            Adapter,
+            Table,
+            where_clauses,
+            field_infos,
+        ),
+        .insert => renderInsert(
+            Adapter,
+            Table,
+            field_infos,
+        ),
+        .delete, .delete_all => renderDelete(
+            Adapter,
+            Table,
+            field_infos,
+            where_clauses,
+            query_context,
+        ),
+        .count => renderCount(
+            Adapter,
+            Table,
+            relations,
+            field_infos,
+            where_clauses,
+            distinct,
+        ),
         .none => "",
     };
 }
@@ -87,6 +135,7 @@ fn renderSelect(
     comptime order_clauses: []const OrderClause,
     comptime where_clauses: []const Where.Tree,
     comptime group_by: ?[]const jetquery.columns.Column,
+    comptime having_clauses: []const Where.Tree,
 ) []const u8 {
     comptime {
         const select_columns = renderSelectColumns(Adapter, Table, relations, columns);
@@ -100,7 +149,7 @@ fn renderSelect(
                 from,
                 joins,
                 renderWhere(Adapter, where_clauses),
-                renderGroupBy(Adapter, group_by),
+                renderGroupBy(Adapter, group_by, having_clauses),
                 renderOrder(Table, Adapter, order_clauses),
                 renderLimit(Adapter, field_infos),
             },
@@ -227,7 +276,11 @@ fn renderOrder(
     );
 }
 
-fn renderGroupBy(Adapter: type, comptime maybe_group_by: ?[]const jetquery.columns.Column) []const u8 {
+fn renderGroupBy(
+    Adapter: type,
+    comptime maybe_group_by: ?[]const jetquery.columns.Column,
+    comptime having_clauses: []const Where.Tree,
+) []const u8 {
     const group_by = maybe_group_by orelse return "";
 
     var size: usize = 0;
@@ -236,6 +289,14 @@ fn renderGroupBy(Adapter: type, comptime maybe_group_by: ?[]const jetquery.colum
         const separator = if (index + 1 < group_by.len) ", " else "";
         const column_sql = Adapter.columnSql(column.table, column) ++ separator;
         size += column_sql.len;
+    }
+
+    const and_operator = " AND ";
+    const having = " HAVING ";
+    if (having_clauses.len > 0) size += having.len;
+    for (having_clauses, 0..) |clause, index| {
+        if (index > 0) size += and_operator.len;
+        size += clause.render(Adapter).len;
     }
 
     var buf: [size]u8 = undefined;
@@ -248,6 +309,19 @@ fn renderGroupBy(Adapter: type, comptime maybe_group_by: ?[]const jetquery.colum
         cursor += column_sql.len;
     }
 
+    if (having_clauses.len > 0) {
+        @memcpy(buf[cursor .. cursor + having.len], having);
+        cursor += having.len;
+    }
+
+    for (having_clauses, 0..) |clause, index| {
+        if (index > 0) size += and_operator.len;
+        const operator = if (index > 0) and_operator else "";
+        const sql = operator ++ clause.render(Adapter);
+        @memcpy(buf[cursor .. cursor + sql.len], sql);
+        cursor += sql.len;
+    }
+
     return std.fmt.comptimePrint(" GROUP BY {s}", .{buf});
 }
 
@@ -257,13 +331,13 @@ fn renderWhere(Adapter: type, comptime where_clauses: []const Where.Tree) []cons
     const and_operator = " AND ";
     var size: usize = 0;
     for (where_clauses, 0..) |clause, index| {
-        if ((index) > 0) size += and_operator.len;
+        if (index > 0) size += and_operator.len;
         size += clause.render(Adapter).len;
     }
     var buf: [size]u8 = undefined;
     var cursor: usize = 0;
     for (where_clauses, 0..) |clause, index| {
-        const operator = if ((index) > 0) and_operator else "";
+        const operator = if (index > 0) and_operator else "";
         const sql = operator ++ clause.render(Adapter);
         @memcpy(buf[cursor .. cursor + sql.len], sql);
         cursor += sql.len;
