@@ -74,10 +74,12 @@ pub fn ColumnType(Table: type, comptime field_info: FieldInfo) type {
         );
         if (FT == jetcommon.types.DateTime) return i64 else return FT;
     } else {
-        @compileError(std.fmt.comptimePrint(
-            "No column `{s}` defined in Schema for `{s}`.",
-            .{ field_info.name, Table.name },
-        ));
+        // TODO
+        return field_info.info.type;
+        // @compileError(std.fmt.comptimePrint(
+        //     "No column `{s}` defined in Schema for `{s}`.",
+        //     .{ field_info.name, Table.name },
+        // ));
     }
 }
 

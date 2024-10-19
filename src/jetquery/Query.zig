@@ -661,27 +661,50 @@ fn Statement(
 
         pub fn having(self: Self, args: anytype) Statement(.select, Schema, Table, .{
             .relations = options.relations,
-            .field_infos = options.field_infos,
+            .field_infos = options.field_infos ++ jetquery.fields.fieldInfos(
+                Table,
+                options.relations,
+                @TypeOf(args),
+                .where,
+            ),
             .columns = options.columns,
             .order_clauses = options.order_clauses,
             .result_context = .many,
             .where_clauses = options.where_clauses,
             .group_by = options.group_by,
+            // TODO: Set start index to last where/having value index
             .having_clauses = options.having_clauses ++
-                .{sql.Where.tree(Table, &.{}, @TypeOf(args), .where, 0)},
+                .{sql.Where.tree(
+                Table,
+                options.relations,
+                @TypeOf(args),
+                .where,
+                options.field_infos.len,
+            )},
         }) {
             const S = Statement(.select, Schema, Table, .{
                 .relations = options.relations,
-                .field_infos = options.field_infos,
+                .field_infos = options.field_infos ++ jetquery.fields.fieldInfos(
+                    Table,
+                    options.relations,
+                    @TypeOf(args),
+                    .where,
+                ),
                 .columns = options.columns,
                 .order_clauses = options.order_clauses,
                 .result_context = .many,
                 .where_clauses = options.where_clauses,
                 .group_by = options.group_by,
                 .having_clauses = options.having_clauses ++
-                    .{sql.Where.tree(Table, &.{}, @TypeOf(args), .where, 0)},
+                    .{sql.Where.tree(
+                    Table,
+                    options.relations,
+                    @TypeOf(args),
+                    .where,
+                    options.field_infos.len,
+                )},
             });
-            return self.extend(S, .{}, .none);
+            return self.extend(S, args, .none);
         }
 
         pub fn include(

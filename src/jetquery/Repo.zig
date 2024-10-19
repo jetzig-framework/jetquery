@@ -372,386 +372,386 @@ pub fn dropTable(self: *Repo, comptime name: []const u8, options: DropTableOptio
     defer result.deinit();
 }
 
-// test "Repo" {
-//     var repo = try Repo.init(
-//         std.testing.allocator,
-//         .{
-//             .adapter = .{
-//                 .postgresql = .{
-//                     .database = "postgres",
-//                     .username = "postgres",
-//                     .hostname = "127.0.0.1",
-//                     .password = "password",
-//                     .port = 5432,
-//                 },
-//             },
-//         },
-//     );
-//     defer repo.deinit();
-//
-//     const Schema = struct {
-//         pub const Cat = jetquery.Table(
-//             @This(),
-//             "cats",
-//             struct { name: []const u8, paws: i32 },
-//             .{},
-//         );
-//     };
-//
-//     try repo.dropTable("cats", .{ .if_exists = true });
-//     try repo.createTable(
-//         "cats",
-//         &.{
-//             jetquery.table.column("name", .string, .{}),
-//             jetquery.table.column("paws", .integer, .{}),
-//         },
-//         .{ .if_not_exists = true },
-//     );
-//
-//     try jetquery.Query(Schema, .Cat).insert(.{ .name = "Hercules", .paws = 4 }).execute(&repo);
-//     try jetquery.Query(Schema, .Cat).insert(.{ .name = "Princes", .paws = 4 }).execute(&repo);
-//
-//     const query = jetquery.Query(Schema, .Cat)
-//         .select(.{ .name, .paws })
-//         .where(.{ .paws = 4 });
-//
-//     const cats = try repo.all(query);
-//     defer repo.free(cats);
-//
-//     for (cats) |cat| {
-//         try std.testing.expectEqualStrings("Hercules", cat.name);
-//         try std.testing.expectEqual(4, cat.paws);
-//         break;
-//     } else {
-//         try std.testing.expect(false);
-//     }
-//
-//     const count_all = try query.count().execute(&repo);
-//     try std.testing.expectEqual(2, count_all);
-//
-//     const count_distinct = try jetquery.Query(Schema, .Cat).distinct(.{.paws}).count().execute(&repo);
-//     try std.testing.expectEqual(1, count_distinct);
-// }
-//
-// test "Repo.loadConfig" {
-//     // Loads default config file: `jetquery.config.zig`
-//     var repo = try Repo.loadConfig(std.testing.allocator, .{});
-//     defer repo.deinit();
-//     try std.testing.expect(repo.adapter == .postgresql);
-// }
-//
-// test "relations" {
-//     var repo = try Repo.init(
-//         std.testing.allocator,
-//         .{
-//             .adapter = .{
-//                 .postgresql = .{
-//                     .database = "postgres",
-//                     .username = "postgres",
-//                     .hostname = "127.0.0.1",
-//                     .password = "password",
-//                     .port = 5432,
-//                 },
-//             },
-//         },
-//     );
-//     defer repo.deinit();
-//
-//     const Schema = struct {
-//         pub const Cat = jetquery.Table(
-//             @This(),
-//             "cats",
-//             struct { id: i32, human_id: i32, name: []const u8, paws: i32 },
-//             .{ .relations = .{ .human = jetquery.relation.belongsTo(.Human, .{}) } },
-//         );
-//
-//         pub const Human = jetquery.Table(
-//             @This(),
-//             "humans",
-//             struct { id: i32, name: []const u8 },
-//             .{ .relations = .{ .cats = jetquery.relation.hasMany(.Cat, .{}) } },
-//         );
-//     };
-//
-//     try repo.dropTable("cats", .{ .if_exists = true });
-//     try repo.dropTable("humans", .{ .if_exists = true });
-//
-//     try repo.createTable(
-//         "cats",
-//         &.{
-//             jetquery.table.column("id", .integer, .{}),
-//             jetquery.table.column("human_id", .integer, .{}),
-//             jetquery.table.column("name", .string, .{}),
-//             jetquery.table.column("paws", .integer, .{}),
-//         },
-//         .{ .if_not_exists = true },
-//     );
-//
-//     try repo.createTable(
-//         "humans",
-//         &.{
-//             jetquery.table.column("id", .integer, .{}),
-//             jetquery.table.column("name", .string, .{}),
-//         },
-//         .{ .if_not_exists = true },
-//     );
-//
-//     try jetquery.Query(Schema, .Cat)
-//         .insert(.{ .id = 1, .name = "Hercules", .paws = 4, .human_id = 1 })
-//         .execute(&repo);
-//     try jetquery.Query(Schema, .Human)
-//         .insert(.{ .id = 1, .name = "Bob" })
-//         .execute(&repo);
-//
-//     const query = jetquery.Query(Schema, .Cat)
-//         .include(.human, .{})
-//         .findBy(.{ .name = "Hercules" });
-//
-//     const cat = try query.execute(&repo) orelse return try std.testing.expect(false);
-//     defer repo.free(cat);
-//
-//     try std.testing.expectEqualStrings("Hercules", cat.name);
-//     try std.testing.expectEqual(4, cat.paws);
-//     try std.testing.expectEqualStrings("Bob", cat.human.name);
-//
-//     const bob = try jetquery.Query(Schema, .Human)
-//         .include(.cats, .{})
-//         .findBy(.{ .name = "Bob" })
-//         .execute(&repo) orelse return try std.testing.expect(false);
-//     defer repo.free(bob);
-//
-//     try std.testing.expectEqualStrings("Hercules", bob.cats[0].name);
-//
-//     try repo.insert(Schema.Cat.init(.{
-//         .id = 2,
-//         .name = "Princes",
-//         .paws = std.crypto.random.int(u3),
-//         .human_id = bob.id,
-//     }));
-//     try repo.insert(Schema.Cat.init(.{
-//         .id = 3,
-//         .name = "Heracles",
-//         .paws = std.crypto.random.int(u3),
-//         .human_id = 1000,
-//     }));
-//
-//     const bob_with_more_cats = try jetquery.Query(Schema, .Human)
-//         .include(.cats, .{})
-//         .findBy(.{ .name = "Bob" })
-//         .execute(&repo) orelse return try std.testing.expect(false);
-//     defer repo.free(bob_with_more_cats);
-//
-//     try std.testing.expect(bob_with_more_cats.cats.len == 2);
-//     try std.testing.expectEqualStrings("Hercules", bob_with_more_cats.cats[0].name);
-//     try std.testing.expectEqualStrings("Princes", bob_with_more_cats.cats[1].name);
-//
-//     try repo.insert(Schema.Human.init(.{
-//         .id = 2,
-//         .name = "Jane",
-//     }));
-//
-//     const jane = try jetquery.Query(Schema, .Human)
-//         .include(.cats, .{})
-//         .findBy(.{ .name = "Jane" })
-//         .execute(&repo) orelse return try std.testing.expect(false);
-//     defer repo.free(jane);
-//
-//     try std.testing.expect(jane.cats.len == 0);
-//
-//     try repo.insert(Schema.Cat.init(.{
-//         .id = 4,
-//         .human_id = jane.id,
-//         .name = "Cindy",
-//         .paws = std.crypto.random.int(u3),
-//     }));
-//
-//     try repo.insert(Schema.Cat.init(.{
-//         .id = 5,
-//         .human_id = jane.id,
-//         .name = "Garfield",
-//         .paws = std.crypto.random.int(u3),
-//     }));
-//
-//     const humans = try jetquery.Query(Schema, .Human).include(.cats, .{}).all(&repo);
-//     defer repo.free(humans);
-//
-//     try std.testing.expect(humans.len == 2);
-//     // XXX: Currently depending on Postgres returning rows in insertion/ID order.
-//     // TODO: Apply a default order by to all queries to ensure determinism.
-//     try std.testing.expectEqualStrings("Bob", humans[0].name);
-//     try std.testing.expectEqualStrings("Jane", humans[1].name);
-//     try std.testing.expectEqualStrings("Hercules", humans[0].cats[0].name);
-//     try std.testing.expectEqualStrings("Princes", humans[0].cats[1].name);
-//     try std.testing.expectEqualStrings("Jane", humans[1].name);
-//     try std.testing.expectEqualStrings("Cindy", humans[1].cats[0].name);
-//     try std.testing.expectEqualStrings("Garfield", humans[1].cats[1].name);
-// }
-//
-// test "timestamps" {
-//     var repo = try Repo.init(
-//         std.testing.allocator,
-//         .{
-//             .adapter = .{
-//                 .postgresql = .{
-//                     .database = "postgres",
-//                     .username = "postgres",
-//                     .hostname = "127.0.0.1",
-//                     .password = "password",
-//                     .port = 5432,
-//                 },
-//             },
-//         },
-//     );
-//     defer repo.deinit();
-//
-//     const Schema = struct {
-//         pub const Cat = jetquery.Table(
-//             @This(),
-//             "cats",
-//             struct {
-//                 id: i32,
-//                 name: []const u8,
-//                 paws: i32,
-//                 created_at: jetquery.DateTime,
-//                 updated_at: jetquery.DateTime,
-//             },
-//             .{},
-//         );
-//     };
-//
-//     try repo.dropTable("cats", .{ .if_exists = true });
-//
-//     try repo.createTable(
-//         "cats",
-//         &.{
-//             jetquery.table.primaryKey("id", .{}),
-//             jetquery.table.column("name", .string, .{}),
-//             jetquery.table.column("paws", .integer, .{}),
-//             jetquery.table.column("created_at", .datetime, .{}),
-//             jetquery.table.column("updated_at", .datetime, .{}),
-//         },
-//         .{},
-//     );
-//
-//     const now = std.time.microTimestamp();
-//     std.time.sleep(std.time.ns_per_ms);
-//
-//     try jetquery.Query(Schema, .Cat).insert(.{ .name = "Hercules", .paws = 4 }).execute(&repo);
-//
-//     const maybe_cat = try jetquery.Query(Schema, .Cat)
-//         .findBy(.{ .name = "Hercules" })
-//         .execute(&repo);
-//
-//     if (maybe_cat) |cat| {
-//         defer repo.free(cat);
-//         try std.testing.expect(cat.created_at.microseconds() > now);
-//     }
-// }
-//
-// test "save" {
-//     var repo = try Repo.init(
-//         std.testing.allocator,
-//         .{
-//             .adapter = .{
-//                 .postgresql = .{
-//                     .database = "postgres",
-//                     .username = "postgres",
-//                     .hostname = "127.0.0.1",
-//                     .password = "password",
-//                     .port = 5432,
-//                 },
-//             },
-//         },
-//     );
-//     defer repo.deinit();
-//
-//     const Schema = struct {
-//         pub const Cat = jetquery.Table(
-//             @This(),
-//             "cats",
-//             struct { id: i32, name: []const u8, paws: i32 },
-//             .{},
-//         );
-//     };
-//
-//     try repo.dropTable("cats", .{ .if_exists = true });
-//     try repo.createTable("cats", &.{
-//         jetquery.table.column("id", .integer, .{}),
-//         jetquery.table.column("name", .string, .{}),
-//         jetquery.table.column("paws", .integer, .{}),
-//     }, .{ .if_not_exists = true });
-//
-//     try jetquery.Query(Schema, .Cat)
-//         .insert(.{ .id = 1000, .name = "Hercules", .paws = 4 })
-//         .execute(&repo);
-//
-//     var cat = try jetquery.Query(Schema, .Cat)
-//         .findBy(.{ .name = "Hercules" })
-//         .execute(&repo) orelse return std.testing.expect(false);
-//     defer repo.free(cat);
-//
-//     cat.name = "Princes";
-//     try repo.save(cat);
-//
-//     const updated_cat = try jetquery.Query(Schema, .Cat)
-//         .find(1000)
-//         .execute(&repo) orelse return std.testing.expect(false);
-//     defer repo.free(updated_cat);
-//     try std.testing.expectEqualStrings("Princes", updated_cat.name);
-// }
-//
-// test "aggregate max()" {
-//     var repo = try Repo.init(
-//         std.testing.allocator,
-//         .{
-//             .adapter = .{
-//                 .postgresql = .{
-//                     .database = "postgres",
-//                     .username = "postgres",
-//                     .hostname = "127.0.0.1",
-//                     .password = "password",
-//                     .port = 5432,
-//                 },
-//             },
-//         },
-//     );
-//     defer repo.deinit();
-//
-//     try repo.dropTable("cats", .{ .if_exists = true });
-//     try repo.createTable("cats", &.{
-//         jetquery.table.column("name", .string, .{}),
-//         jetquery.table.column("paws", .integer, .{}),
-//     }, .{ .if_not_exists = true });
-//
-//     const Schema = struct {
-//         pub const Cat = jetquery.Table(
-//             @This(),
-//             "cats",
-//             struct { name: []const u8, paws: usize },
-//             .{},
-//         );
-//     };
-//     const sql = jetquery.sql;
-//
-//     try repo.insert(Schema.Cat.init(.{ .name = "Hercules", .paws = 2 }));
-//     try repo.insert(Schema.Cat.init(.{ .name = "Hercules", .paws = 8 }));
-//     try repo.insert(Schema.Cat.init(.{ .name = "Hercules", .paws = 4 }));
-//     try repo.insert(Schema.Cat.init(.{ .name = "Princes", .paws = 100 }));
-//     try repo.insert(Schema.Cat.init(.{ .name = "Princes", .paws = 5 }));
-//     try repo.insert(Schema.Cat.init(.{ .name = "Princes", .paws = 2 }));
-//
-//     const cats = try jetquery.Query(Schema, .Cat)
-//         .select(.{ .name, sql.max(.paws) })
-//         .groupBy(.{.name})
-//         .orderBy(.{.name})
-//         .all(&repo);
-//     defer repo.free(cats);
-//
-//     try std.testing.expectEqualStrings(cats[0].name, "Hercules");
-//     try std.testing.expect(cats[0].max_paws == 8);
-//     try std.testing.expectEqualStrings(cats[1].name, "Princes");
-//     try std.testing.expect(cats[1].max_paws == 100);
-// }
+test "Repo" {
+    var repo = try Repo.init(
+        std.testing.allocator,
+        .{
+            .adapter = .{
+                .postgresql = .{
+                    .database = "postgres",
+                    .username = "postgres",
+                    .hostname = "127.0.0.1",
+                    .password = "password",
+                    .port = 5432,
+                },
+            },
+        },
+    );
+    defer repo.deinit();
+
+    const Schema = struct {
+        pub const Cat = jetquery.Table(
+            @This(),
+            "cats",
+            struct { name: []const u8, paws: i32 },
+            .{},
+        );
+    };
+
+    try repo.dropTable("cats", .{ .if_exists = true });
+    try repo.createTable(
+        "cats",
+        &.{
+            jetquery.table.column("name", .string, .{}),
+            jetquery.table.column("paws", .integer, .{}),
+        },
+        .{ .if_not_exists = true },
+    );
+
+    try jetquery.Query(Schema, .Cat).insert(.{ .name = "Hercules", .paws = 4 }).execute(&repo);
+    try jetquery.Query(Schema, .Cat).insert(.{ .name = "Princes", .paws = 4 }).execute(&repo);
+
+    const query = jetquery.Query(Schema, .Cat)
+        .select(.{ .name, .paws })
+        .where(.{ .paws = 4 });
+
+    const cats = try repo.all(query);
+    defer repo.free(cats);
+
+    for (cats) |cat| {
+        try std.testing.expectEqualStrings("Hercules", cat.name);
+        try std.testing.expectEqual(4, cat.paws);
+        break;
+    } else {
+        try std.testing.expect(false);
+    }
+
+    const count_all = try query.count().execute(&repo);
+    try std.testing.expectEqual(2, count_all);
+
+    const count_distinct = try jetquery.Query(Schema, .Cat).distinct(.{.paws}).count().execute(&repo);
+    try std.testing.expectEqual(1, count_distinct);
+}
+
+test "Repo.loadConfig" {
+    // Loads default config file: `jetquery.config.zig`
+    var repo = try Repo.loadConfig(std.testing.allocator, .{});
+    defer repo.deinit();
+    try std.testing.expect(repo.adapter == .postgresql);
+}
+
+test "relations" {
+    var repo = try Repo.init(
+        std.testing.allocator,
+        .{
+            .adapter = .{
+                .postgresql = .{
+                    .database = "postgres",
+                    .username = "postgres",
+                    .hostname = "127.0.0.1",
+                    .password = "password",
+                    .port = 5432,
+                },
+            },
+        },
+    );
+    defer repo.deinit();
+
+    const Schema = struct {
+        pub const Cat = jetquery.Table(
+            @This(),
+            "cats",
+            struct { id: i32, human_id: i32, name: []const u8, paws: i32 },
+            .{ .relations = .{ .human = jetquery.relation.belongsTo(.Human, .{}) } },
+        );
+
+        pub const Human = jetquery.Table(
+            @This(),
+            "humans",
+            struct { id: i32, name: []const u8 },
+            .{ .relations = .{ .cats = jetquery.relation.hasMany(.Cat, .{}) } },
+        );
+    };
+
+    try repo.dropTable("cats", .{ .if_exists = true });
+    try repo.dropTable("humans", .{ .if_exists = true });
+
+    try repo.createTable(
+        "cats",
+        &.{
+            jetquery.table.column("id", .integer, .{}),
+            jetquery.table.column("human_id", .integer, .{}),
+            jetquery.table.column("name", .string, .{}),
+            jetquery.table.column("paws", .integer, .{}),
+        },
+        .{ .if_not_exists = true },
+    );
+
+    try repo.createTable(
+        "humans",
+        &.{
+            jetquery.table.column("id", .integer, .{}),
+            jetquery.table.column("name", .string, .{}),
+        },
+        .{ .if_not_exists = true },
+    );
+
+    try jetquery.Query(Schema, .Cat)
+        .insert(.{ .id = 1, .name = "Hercules", .paws = 4, .human_id = 1 })
+        .execute(&repo);
+    try jetquery.Query(Schema, .Human)
+        .insert(.{ .id = 1, .name = "Bob" })
+        .execute(&repo);
+
+    const query = jetquery.Query(Schema, .Cat)
+        .include(.human, .{})
+        .findBy(.{ .name = "Hercules" });
+
+    const cat = try query.execute(&repo) orelse return try std.testing.expect(false);
+    defer repo.free(cat);
+
+    try std.testing.expectEqualStrings("Hercules", cat.name);
+    try std.testing.expectEqual(4, cat.paws);
+    try std.testing.expectEqualStrings("Bob", cat.human.name);
+
+    const bob = try jetquery.Query(Schema, .Human)
+        .include(.cats, .{})
+        .findBy(.{ .name = "Bob" })
+        .execute(&repo) orelse return try std.testing.expect(false);
+    defer repo.free(bob);
+
+    try std.testing.expectEqualStrings("Hercules", bob.cats[0].name);
+
+    try repo.insert(Schema.Cat.init(.{
+        .id = 2,
+        .name = "Princes",
+        .paws = std.crypto.random.int(u3),
+        .human_id = bob.id,
+    }));
+    try repo.insert(Schema.Cat.init(.{
+        .id = 3,
+        .name = "Heracles",
+        .paws = std.crypto.random.int(u3),
+        .human_id = 1000,
+    }));
+
+    const bob_with_more_cats = try jetquery.Query(Schema, .Human)
+        .include(.cats, .{})
+        .findBy(.{ .name = "Bob" })
+        .execute(&repo) orelse return try std.testing.expect(false);
+    defer repo.free(bob_with_more_cats);
+
+    try std.testing.expect(bob_with_more_cats.cats.len == 2);
+    try std.testing.expectEqualStrings("Hercules", bob_with_more_cats.cats[0].name);
+    try std.testing.expectEqualStrings("Princes", bob_with_more_cats.cats[1].name);
+
+    try repo.insert(Schema.Human.init(.{
+        .id = 2,
+        .name = "Jane",
+    }));
+
+    const jane = try jetquery.Query(Schema, .Human)
+        .include(.cats, .{})
+        .findBy(.{ .name = "Jane" })
+        .execute(&repo) orelse return try std.testing.expect(false);
+    defer repo.free(jane);
+
+    try std.testing.expect(jane.cats.len == 0);
+
+    try repo.insert(Schema.Cat.init(.{
+        .id = 4,
+        .human_id = jane.id,
+        .name = "Cindy",
+        .paws = std.crypto.random.int(u3),
+    }));
+
+    try repo.insert(Schema.Cat.init(.{
+        .id = 5,
+        .human_id = jane.id,
+        .name = "Garfield",
+        .paws = std.crypto.random.int(u3),
+    }));
+
+    const humans = try jetquery.Query(Schema, .Human).include(.cats, .{}).all(&repo);
+    defer repo.free(humans);
+
+    try std.testing.expect(humans.len == 2);
+    // XXX: Currently depending on Postgres returning rows in insertion/ID order.
+    // TODO: Apply a default order by to all queries to ensure determinism.
+    try std.testing.expectEqualStrings("Bob", humans[0].name);
+    try std.testing.expectEqualStrings("Jane", humans[1].name);
+    try std.testing.expectEqualStrings("Hercules", humans[0].cats[0].name);
+    try std.testing.expectEqualStrings("Princes", humans[0].cats[1].name);
+    try std.testing.expectEqualStrings("Jane", humans[1].name);
+    try std.testing.expectEqualStrings("Cindy", humans[1].cats[0].name);
+    try std.testing.expectEqualStrings("Garfield", humans[1].cats[1].name);
+}
+
+test "timestamps" {
+    var repo = try Repo.init(
+        std.testing.allocator,
+        .{
+            .adapter = .{
+                .postgresql = .{
+                    .database = "postgres",
+                    .username = "postgres",
+                    .hostname = "127.0.0.1",
+                    .password = "password",
+                    .port = 5432,
+                },
+            },
+        },
+    );
+    defer repo.deinit();
+
+    const Schema = struct {
+        pub const Cat = jetquery.Table(
+            @This(),
+            "cats",
+            struct {
+                id: i32,
+                name: []const u8,
+                paws: i32,
+                created_at: jetquery.DateTime,
+                updated_at: jetquery.DateTime,
+            },
+            .{},
+        );
+    };
+
+    try repo.dropTable("cats", .{ .if_exists = true });
+
+    try repo.createTable(
+        "cats",
+        &.{
+            jetquery.table.primaryKey("id", .{}),
+            jetquery.table.column("name", .string, .{}),
+            jetquery.table.column("paws", .integer, .{}),
+            jetquery.table.column("created_at", .datetime, .{}),
+            jetquery.table.column("updated_at", .datetime, .{}),
+        },
+        .{},
+    );
+
+    const now = std.time.microTimestamp();
+    std.time.sleep(std.time.ns_per_ms);
+
+    try jetquery.Query(Schema, .Cat).insert(.{ .name = "Hercules", .paws = 4 }).execute(&repo);
+
+    const maybe_cat = try jetquery.Query(Schema, .Cat)
+        .findBy(.{ .name = "Hercules" })
+        .execute(&repo);
+
+    if (maybe_cat) |cat| {
+        defer repo.free(cat);
+        try std.testing.expect(cat.created_at.microseconds() > now);
+    }
+}
+
+test "save" {
+    var repo = try Repo.init(
+        std.testing.allocator,
+        .{
+            .adapter = .{
+                .postgresql = .{
+                    .database = "postgres",
+                    .username = "postgres",
+                    .hostname = "127.0.0.1",
+                    .password = "password",
+                    .port = 5432,
+                },
+            },
+        },
+    );
+    defer repo.deinit();
+
+    const Schema = struct {
+        pub const Cat = jetquery.Table(
+            @This(),
+            "cats",
+            struct { id: i32, name: []const u8, paws: i32 },
+            .{},
+        );
+    };
+
+    try repo.dropTable("cats", .{ .if_exists = true });
+    try repo.createTable("cats", &.{
+        jetquery.table.column("id", .integer, .{}),
+        jetquery.table.column("name", .string, .{}),
+        jetquery.table.column("paws", .integer, .{}),
+    }, .{ .if_not_exists = true });
+
+    try jetquery.Query(Schema, .Cat)
+        .insert(.{ .id = 1000, .name = "Hercules", .paws = 4 })
+        .execute(&repo);
+
+    var cat = try jetquery.Query(Schema, .Cat)
+        .findBy(.{ .name = "Hercules" })
+        .execute(&repo) orelse return std.testing.expect(false);
+    defer repo.free(cat);
+
+    cat.name = "Princes";
+    try repo.save(cat);
+
+    const updated_cat = try jetquery.Query(Schema, .Cat)
+        .find(1000)
+        .execute(&repo) orelse return std.testing.expect(false);
+    defer repo.free(updated_cat);
+    try std.testing.expectEqualStrings("Princes", updated_cat.name);
+}
+
+test "aggregate max()" {
+    var repo = try Repo.init(
+        std.testing.allocator,
+        .{
+            .adapter = .{
+                .postgresql = .{
+                    .database = "postgres",
+                    .username = "postgres",
+                    .hostname = "127.0.0.1",
+                    .password = "password",
+                    .port = 5432,
+                },
+            },
+        },
+    );
+    defer repo.deinit();
+
+    try repo.dropTable("cats", .{ .if_exists = true });
+    try repo.createTable("cats", &.{
+        jetquery.table.column("name", .string, .{}),
+        jetquery.table.column("paws", .integer, .{}),
+    }, .{ .if_not_exists = true });
+
+    const Schema = struct {
+        pub const Cat = jetquery.Table(
+            @This(),
+            "cats",
+            struct { name: []const u8, paws: usize },
+            .{},
+        );
+    };
+    const sql = jetquery.sql;
+
+    try repo.insert(Schema.Cat.init(.{ .name = "Hercules", .paws = 2 }));
+    try repo.insert(Schema.Cat.init(.{ .name = "Hercules", .paws = 8 }));
+    try repo.insert(Schema.Cat.init(.{ .name = "Hercules", .paws = 4 }));
+    try repo.insert(Schema.Cat.init(.{ .name = "Princes", .paws = 100 }));
+    try repo.insert(Schema.Cat.init(.{ .name = "Princes", .paws = 5 }));
+    try repo.insert(Schema.Cat.init(.{ .name = "Princes", .paws = 2 }));
+
+    const cats = try jetquery.Query(Schema, .Cat)
+        .select(.{ .name, sql.max(.paws) })
+        .groupBy(.{.name})
+        .orderBy(.{.name})
+        .all(&repo);
+    defer repo.free(cats);
+
+    try std.testing.expectEqualStrings(cats[0].name, "Hercules");
+    try std.testing.expect(cats[0].max_paws == 8);
+    try std.testing.expectEqualStrings(cats[1].name, "Princes");
+    try std.testing.expect(cats[1].max_paws == 100);
+}
 
 test "aggregate count() with HAVING" {
     var repo = try Repo.init(
@@ -784,6 +784,7 @@ test "aggregate count() with HAVING" {
             .{},
         );
     };
+
     try repo.insert(Schema.Cat.init(.{ .name = "Hercules", .paws = 2 }));
     try repo.insert(Schema.Cat.init(.{ .name = "Hercules", .paws = 8 }));
     try repo.insert(Schema.Cat.init(.{ .name = "Hercules", .paws = 4 }));
@@ -796,7 +797,7 @@ test "aggregate count() with HAVING" {
     const cats = try jetquery.Query(Schema, .Cat)
         .select(.{ .name, sql.max(.paws) })
         .groupBy(.{.name})
-        .having(.{.{ sql.count(.name), .eq, 3 }})
+        .having(.{ sql.count(.name), .gte, 3 })
         .orderBy(.{.name})
         .all(&repo);
     defer repo.free(cats);

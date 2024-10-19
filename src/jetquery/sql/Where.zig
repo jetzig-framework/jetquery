@@ -103,6 +103,7 @@ pub const Node = union(enum) {
         field_info: std.builtin.Type.StructField,
         field_context: fields.FieldContext,
         index: usize,
+        synthetic: bool = false,
 
         pub fn ColumnType(self: Value) type {
             const T = fields.ColumnType(self.Table, fields.fieldInfo(
@@ -257,27 +258,38 @@ pub const Node = union(enum) {
     }
 
     fn ValuesTuple(comptime self: Node) type {
-        var types: [self.countValues()]type = undefined;
+        const len = self.countValues();
+        var types: [len]type = undefined;
         var index: usize = 0;
 
-        switch (self) {
+        appendValueType(self, len, &types, &index);
+        return std.meta.Tuple(&types);
+    }
+
+    fn appendValueType(
+        comptime node: Node,
+        comptime len: usize,
+        types: *[len]type,
+        index: *usize,
+    ) void {
+        switch (node) {
             .condition => {},
             .value => |value| {
                 if (!value.isNull()) {
-                    types[index] = value.ColumnType();
-                    index += 1;
+                    types[index.*] = value.ColumnType();
+                    index.* += 1;
                 }
             },
             .group => |group| {
-                appendValueTypes(group, &types, &index);
+                for (group.children) |child| appendValueType(child, len, types, index);
             },
             // TODO
             .triplet => |triplet| {
                 switch (triplet.lhs) {
                     .value => |value| {
                         if (!value.isNull()) {
-                            types[index] = value.type;
-                            index += 1;
+                            types[index.*] = value.type;
+                            index.* += 1;
                         }
                     },
                     .column => {},
@@ -285,16 +297,14 @@ pub const Node = union(enum) {
                 switch (triplet.rhs) {
                     .value => |value| {
                         if (!value.isNull()) {
-                            types[index] = value.type;
-                            index += 1;
+                            types[index.*] = value.type;
+                            index.* += 1;
                         }
                     },
                     .column => {},
                 }
             },
         }
-
-        return std.meta.Tuple(&types);
     }
 
     fn ErrorsTuple(comptime self: Node) type {
@@ -307,221 +317,100 @@ pub const Node = union(enum) {
     }
 
     fn values_fields(comptime self: Node, Table: type, relations: []const type) [self.countValues()]Field {
-        var fields_array: [self.countValues()]Field = undefined;
+        const len = self.countValues();
+        var fields_array: [len]Field = undefined;
         var tuple_index: usize = 0;
-
-        switch (self) {
-            .condition => {},
-            .value => |value| {
-                if (!value.isNull()) {
-                    fields_array[value.index] = .{
-                        .Table = value.Table,
-                        .name = value.name,
-                        .context = value.field_context,
-                        .column_type = value.ColumnType(),
-                        .index = tuple_index,
-                    };
-                    tuple_index += 1;
-                }
-            },
-            .group => |group| {
-                appendFields(group, Table, relations, &fields_array, &tuple_index);
-            },
-            // TODO
-            .triplet => |triplet| {
-                switch (triplet.lhs) {
-                    .value => |value| {
-                        if (!value.isNull()) {
-                            fields_array[value.index] = .{
-                                .Table = value.Table,
-                                .name = value.name,
-                                .context = value.field_context,
-                                .column_type = value.ColumnType(),
-                                .index = tuple_index,
-                            };
-                            tuple_index += 1;
-                        }
-                    },
-                    .column => {},
-                }
-                switch (triplet.rhs) {
-                    .value => |value| {
-                        if (!value.isNull()) {
-                            fields_array[value.index] = .{
-                                .Table = value.Table,
-                                .name = value.name,
-                                .context = value.field_context,
-                                .column_type = value.ColumnType(),
-                                .index = tuple_index,
-                            };
-                            tuple_index += 1;
-                        }
-                    },
-                    .column => {},
-                }
-            },
-        }
+        appendField(self, Table, relations, len, &fields_array, &tuple_index);
 
         return fields_array;
     }
 
-    fn countValues(comptime self: Node) usize {
-        var count: usize = 0;
+    fn appendValueField(
+        T: type,
+        comptime value: Node.Value,
+        comptime len: usize,
+        fields_array: *[len]Field,
+        tuple_index: *usize,
+    ) void {
+        if (!value.isNull()) {
+            fields_array[tuple_index.*] = .{
+                .Table = value.Table,
+                .name = value.name,
+                .context = value.field_context,
+                .column_type = T,
+                .index = tuple_index.*,
+            };
+            tuple_index.* += 1;
+        }
+    }
 
-        switch (self) {
+    fn appendField(
+        node: Node,
+        Table: type,
+        relations: []const type,
+        comptime len: usize,
+        fields_array: *[len]Field,
+        tuple_index: *usize,
+    ) void {
+        switch (node) {
             .condition => {},
             .value => |value| {
-                if (!value.isNull()) count += 1;
+                appendValueField(value.ColumnType(), value, len, fields_array, tuple_index);
             },
             .group => |group| {
-                countGroupValues(group, &count);
+                for (group.children) |child| {
+                    appendField(child, Table, relations, len, fields_array, tuple_index);
+                }
             },
             // TODO
             .triplet => |triplet| {
                 switch (triplet.lhs) {
                     .value => |value| {
-                        if (!value.isNull()) count += 1;
+                        appendValueField(value.type, value, len, fields_array, tuple_index);
                     },
                     .column => {},
                 }
                 switch (triplet.rhs) {
                     .value => |value| {
-                        if (!value.isNull()) count += 1;
+                        appendValueField(value.type, value, len, fields_array, tuple_index);
                     },
                     .column => {},
                 }
             },
         }
+    }
+
+    fn countValues(comptime self: Node) usize {
+        var count: usize = 0;
+        countNodeValues(self, &count);
 
         return count;
     }
 
-    fn countGroupValues(comptime group: Group, comptime count: *usize) void {
-        for (group.children) |child| {
-            switch (child) {
-                .condition => {},
-                .value => |value| {
-                    if (!value.isNull()) count.* += 1;
-                },
-                .group => |capture| {
-                    countGroupValues(capture, count);
-                },
-                // TODO
-                .triplet => |triplet| {
-                    switch (triplet.lhs) {
-                        .value => |value| {
-                            if (!value.isNull()) count.* += 1;
-                        },
-                        .column => {},
-                    }
-                    switch (triplet.rhs) {
-                        .value => |value| {
-                            if (!value.isNull()) count.* += 1;
-                        },
-                        .column => {},
-                    }
-                },
-            }
-        }
-    }
-
-    fn appendValueTypes(comptime group: Group, comptime types: []type, comptime index: *usize) void {
-        for (group.children) |child| {
-            switch (child) {
-                .condition => {},
-                .value => |value| {
-                    if (!value.isNull()) {
-                        types[index.*] = value.ColumnType();
-                        index.* += 1;
-                    }
-                },
-                .group => |capture| {
-                    appendValueTypes(capture, types, index);
-                },
-                // TODO
-                .triplet => |triplet| {
-                    switch (triplet.lhs) {
-                        .value => |value| {
-                            if (!value.isNull()) {
-                                types[index.*] = value.type;
-                                index.* += 1;
-                            }
-                        },
-                        .column => {},
-                    }
-                    switch (triplet.rhs) {
-                        .value => |value| {
-                            if (!value.isNull()) {
-                                types[index.*] = value.type;
-                                index.* += 1;
-                            }
-                        },
-                        .column => {},
-                    }
-                },
-            }
-        }
-    }
-
-    fn appendFields(
-        comptime group: Group,
-        Table: type,
-        relations: []const type,
-        comptime fields_array: []Field,
-        tuple_index: *usize,
-    ) void {
-        for (group.children) |child| {
-            switch (child) {
-                .condition => {},
-                .value => |value| {
-                    if (!value.isNull()) {
-                        fields_array[tuple_index.*] = .{
-                            .Table = value.Table,
-                            .name = value.name,
-                            .context = value.field_context,
-                            .column_type = value.ColumnType(),
-                            .index = value.index,
-                        };
-                        tuple_index.* += 1;
-                    }
-                },
-                .group => |capture| {
-                    appendFields(capture, Table, relations, fields_array, tuple_index);
-                },
-                // TODO
-                .triplet => |triplet| {
-                    switch (triplet.lhs) {
-                        .value => |value| {
-                            if (!value.isNull()) {
-                                fields_array[value.index] = .{
-                                    .Table = value.Table,
-                                    .name = value.name,
-                                    .context = value.field_context,
-                                    .column_type = value.type,
-                                    .index = tuple_index.*,
-                                };
-                                tuple_index.* += 1;
-                            }
-                        },
-                        .column => {},
-                    }
-                    switch (triplet.rhs) {
-                        .value => |value| {
-                            if (!value.isNull()) {
-                                fields_array[value.index] = .{
-                                    .Table = value.Table,
-                                    .name = value.name,
-                                    .context = value.field_context,
-                                    .column_type = value.type,
-                                    .index = tuple_index.*,
-                                };
-                                tuple_index.* += 1;
-                            }
-                        },
-                        .column => {},
-                    }
-                },
-            }
+    fn countNodeValues(comptime node: Node, count: *usize) void {
+        switch (node) {
+            .condition => {},
+            .value => |value| {
+                if (!value.isNull()) count.* += 1;
+            },
+            .group => |group| {
+                for (group.children) |child| countNodeValues(child, count);
+            },
+            // TODO
+            .triplet => |triplet| {
+                switch (triplet.lhs) {
+                    .value => |value| {
+                        if (!value.isNull()) count.* += 1;
+                    },
+                    .column => {},
+                }
+                switch (triplet.rhs) {
+                    .value => |value| {
+                        if (!value.isNull()) count.* += 1;
+                    },
+                    .column => {},
+                }
+            },
         }
     }
 };
@@ -681,11 +570,12 @@ fn assignValues(
                 // comptime var).
                 const T = @TypeOf(@field(arg, field.name));
                 idx += if (comptime coercion.canCoerceDelegate(T)) 1 else switch (@typeInfo(T)) {
-                    .@"struct", .enum_literal => 0,
+                    .@"struct", .enum_literal, .type => 0,
                     else => 1,
                 };
             }
         },
+        .type => {},
         .enum_literal => {},
         .null => {},
         else => {
@@ -749,71 +639,85 @@ fn makeTriplet(
     Table: type,
     relations: []const type,
     T: type,
-    field_context: fields.FieldContext,
-    field_info: std.builtin.Type.StructField,
-    name: []const u8,
-    path: [][]const u8,
-    value_index: *usize,
+    comptime field_context: fields.FieldContext,
+    comptime field_info: std.builtin.Type.StructField,
+    comptime name: []const u8,
+    comptime path: [][]const u8,
+    comptime value_index: *usize,
 ) Node.Triplet {
     const arg: T = undefined;
 
-    const t = Node.Triplet{
-        .lhs = switch (@typeInfo(@TypeOf(arg[0]))) {
-            .enum_literal => .{
-                // TODO
-                .column = columns.Column{},
-            },
-            .type => if (@hasField(arg[0], "__jetquery_function"))
-                .{ .column = columns.translate(
-                    Table,
-                    relations,
-                    .{arg[0]},
-                )[0] }
-            else
-                @compileError("Unexpected type in columns: `" ++ @typeName(arg[0]) ++ "`"),
-            else => blk: {
-                const value: Node.Value = .{
-                    .field_context = field_context,
-                    .Table = findRelation(Table, relations, path),
-                    .name = name,
-                    .type = T,
-                    .field_info = field_info,
-                    .index = value_index.*,
-                };
-                value_index.* += 1;
-                break :blk .{ .value = value };
-            },
-        },
+    return .{
+        .lhs = makeOperand(
+            T,
+            0,
+            Table,
+            relations,
+            field_context,
+            name,
+            path,
+            field_info,
+            value_index,
+        ),
         .operator = std.enums.nameCast(Node.Triplet.Operator, arg[1]),
-        .rhs = switch (@typeInfo(@TypeOf(arg[2]))) {
-            .enum_literal => .{
-                // TODO
-                .column = columns.Column{},
-            },
-            .type => if (@hasField(arg[2], "__jetquery_function"))
-                .{ .column = columns.translate(
-                    Table,
-                    relations,
-                    .{arg[2]},
-                )[0] }
-            else
-                @compileError("Unexpected type in columns: `" ++ @typeName(arg[2]) ++ "`"),
-            else => blk: {
-                const value: Node.Value = .{
-                    .field_context = field_context,
-                    .Table = findRelation(Table, relations, path),
-                    .name = name,
-                    .type = T,
-                    .field_info = field_info,
-                    .index = value_index.*,
-                };
-                value_index.* += 1;
-                break :blk .{ .value = value };
-            },
+        .rhs = makeOperand(
+            T,
+            2,
+            Table,
+            relations,
+            field_context,
+            name,
+            path,
+            field_info,
+            value_index,
+        ),
+    };
+}
+
+fn makeOperand(
+    T: type,
+    comptime arg_index: usize,
+    Table: type,
+    relations: []const type,
+    comptime field_context: fields.FieldContext,
+    comptime name: []const u8,
+    comptime path: [][]const u8,
+    comptime field_info: std.builtin.Type.StructField,
+    comptime value_index: *usize,
+) Node.Triplet.Operand {
+    const arg: T = undefined;
+    // TODO
+    const A = switch (@typeInfo(@TypeOf(arg[arg_index]))) {
+        .comptime_int => i32,
+        else => @TypeOf(arg[arg_index]),
+    };
+
+    return switch (@typeInfo(@TypeOf(arg[arg_index]))) {
+        .enum_literal => .{
+            // TODO
+            .column = columns.Column{},
+        },
+        .type => if (@hasField(arg[arg_index], "__jetquery_function"))
+            .{ .column = columns.translate(
+                Table,
+                relations,
+                .{arg[arg_index]},
+            )[arg_index] }
+        else
+            @compileError("Unexpected type in columns: `" ++ @typeName(arg[arg_index]) ++ "`"),
+        else => blk: {
+            const value: Node.Value = .{
+                .field_context = field_context,
+                .Table = findRelation(Table, relations, path),
+                .name = name,
+                .type = A,
+                .field_info = field_info,
+                .index = value_index.*,
+            };
+            value_index.* += 1;
+            break :blk .{ .value = value };
         },
     };
-    value_index.* += 1;
-    return t;
 }
 
 fn debugNode(comptime node: Node, comptime depth: usize) void {
