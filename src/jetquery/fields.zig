@@ -14,13 +14,14 @@ pub const FieldInfo = struct {
 };
 
 pub fn fieldInfos(
+    Adapter: type,
     Table: type,
     relations: []const type,
     T: type,
     comptime context: FieldContext,
-) [Where.tree(Table, relations, T, context, 0).values_count]FieldInfo {
+) [Where.tree(Adapter, Table, relations, T, context, 0).values_count]FieldInfo {
     comptime {
-        const tree = Where.tree(Table, relations, T, context, 0);
+        const tree = Where.tree(Adapter, Table, relations, T, context, 0);
         var value_fields: [tree.values_count]FieldInfo = undefined;
         for (std.meta.fields(tree.ValuesTuple), tree.values_fields, 0..) |tuple_field, value_field, index| {
             value_fields[index] = fieldInfo(tuple_field, value_field.Table, value_field.name, context);

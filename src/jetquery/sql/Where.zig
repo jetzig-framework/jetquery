@@ -74,6 +74,7 @@ pub const Tree = struct {
 };
 
 pub fn tree(
+    Adapter: type,
     Table: type,
     relations: []const type,
     T: type,
@@ -81,7 +82,18 @@ pub fn tree(
     comptime first_value_index: usize,
 ) Tree {
     var index: usize = first_value_index;
-    const root = nodeTree(Table, relations, T, T, "root", undefined, &.{}, field_context, &index);
+    const root = nodeTree(
+        Adapter,
+        Table,
+        relations,
+        T,
+        T,
+        "root",
+        undefined,
+        &.{},
+        field_context,
+        &index,
+    );
 
     return .{
         .root = root,
@@ -420,6 +432,7 @@ pub const Node = union(enum) {
 };
 
 fn nodeTree(
+    Adapter: type,
     Table: type,
     relations: []const type,
     OG: type,
@@ -448,6 +461,7 @@ fn nodeTree(
             .@"struct" => |info| blk: {
                 if (isTriplet(T)) {
                     break :blk .{ .triplet = makeTriplet(
+                        Adapter,
                         Table,
                         relations,
                         T,
@@ -458,7 +472,17 @@ fn nodeTree(
                         value_index,
                     ) };
                 }
-                const nodes = childNodes(Table, relations, OG, field_info, info, path, field_context, value_index);
+                const nodes = childNodes(
+                    Adapter,
+                    Table,
+                    relations,
+                    OG,
+                    field_info,
+                    info,
+                    path,
+                    field_context,
+                    value_index,
+                );
                 break :blk .{ .group = .{ .name = name, .children = &nodes } };
             },
             .enum_literal => blk: {
@@ -500,6 +524,7 @@ fn nodeTree(
 }
 
 fn childNodes(
+    Adapter: type,
     Table: type,
     relations: []const type,
     OG: type,
@@ -516,6 +541,7 @@ fn childNodes(
         for (0..path.len) |idx| appended_path[idx] = path[idx];
         appended_path[appended_path.len - 1] = field.name;
         nodes[index] = nodeTree(
+            Adapter,
             Table,
             relations,
             OG,
@@ -660,6 +686,7 @@ fn isTriplet(T: type) bool {
 }
 
 fn makeTriplet(
+    Adapter: type,
     Table: type,
     relations: []const type,
     T: type,
@@ -673,9 +700,11 @@ fn makeTriplet(
 
     return .{
         .lhs = makeOperand(
-            T,
-            0,
+            Adapter,
             Table,
+            T,
+            if (@TypeOf(arg[2]) == type) arg[2] else @TypeOf(arg[2]),
+            0,
             relations,
             field_context,
             name,
@@ -685,9 +714,11 @@ fn makeTriplet(
         ),
         .operator = std.enums.nameCast(Node.Triplet.Operator, arg[1]),
         .rhs = makeOperand(
-            T,
-            2,
+            Adapter,
             Table,
+            T,
+            if (@TypeOf(arg[0]) == type) arg[0] else @TypeOf(arg[0]),
+            2,
             relations,
             field_context,
             name,
@@ -699,9 +730,11 @@ fn makeTriplet(
 }
 
 fn makeOperand(
-    T: type,
-    comptime arg_index: usize,
+    Adapter: type,
     Table: type,
+    T: type,
+    Other: type,
+    comptime arg_index: usize,
     relations: []const type,
     comptime field_context: fields.FieldContext,
     comptime name: []const u8,
@@ -710,26 +743,29 @@ fn makeOperand(
     comptime value_index: *usize,
 ) Node.Triplet.Operand {
     const arg: T = undefined;
-    // TODO
-    const A = switch (@typeInfo(@TypeOf(arg[arg_index]))) {
-        .comptime_int => i32,
-        else => @TypeOf(arg[arg_index]),
-    };
 
     return switch (@typeInfo(@TypeOf(arg[arg_index]))) {
         .enum_literal => .{
             // TODO
             .column = columns.Column{},
         },
-        .type => if (@hasField(arg[arg_index], "__jetquery_function"))
-            .{ .column = columns.translate(
-                Table,
-                relations,
-                .{arg[arg_index]},
-            )[arg_index] }
-        else
-            @compileError("Unexpected type in columns: `" ++ @typeName(arg[arg_index]) ++ "`"),
+        .type => functionColumn(arg[arg_index], Table, relations),
         else => blk: {
+            const A = switch (@typeInfo(Other)) {
+                .type => Adapter.Aggregate(functionColumn(Other).function.?),
+                // TODO
+                .enum_literal => unreachable,
+                // We're comparing two values, let Zig reconsile the types:
+                else => switch (@typeInfo(@TypeOf(arg[arg_index]))) {
+                    // We need to ensure that we don't store a comptime value otherwise our
+                    // entire data structure needs to be comptime-known. This only occurs when a
+                    // user does, `.where(.{ 1, .eql, 1 })` (e.g.), otherwise we use the other
+                    // side of the triplet's type to coerce to.
+                    .comptime_int => isize,
+                    .comptime_float => f64,
+                    else => @TypeOf(arg[arg_index]),
+                },
+            };
             const value: Node.Value = .{
                 .field_context = field_context,
                 .Table = findRelation(Table, relations, path),
@@ -742,6 +778,17 @@ fn makeOperand(
             break :blk .{ .value = value };
         },
     };
+}
+
+fn functionColumn(T: type, Table: type, relations: []const type) Node.Triplet.Operand {
+    return if (@hasField(T, "__jetquery_function"))
+        .{ .column = columns.translate(
+            Table,
+            relations,
+            .{T},
+        )[0] }
+    else
+        @compileError("Unexpected type in clause: `" ++ @typeName(T) ++ "`");
 }
 
 fn debugNode(comptime node: Node, comptime depth: usize) void {

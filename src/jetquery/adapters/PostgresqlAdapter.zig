@@ -17,7 +17,7 @@ pub const Count = i64;
 pub const Max = i32;
 pub const Min = i32;
 
-pub fn Aggregate(context: jetquery.sql.FunctionContext) type {
+pub fn Aggregate(comptime context: jetquery.sql.FunctionContext) type {
     return switch (context) {
         .min => Min,
         .max => Max,
