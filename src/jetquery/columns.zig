@@ -17,9 +17,11 @@ pub const Column = struct {
 pub fn translate(
     Table: type,
     relations: []const type,
-    comptime args: anytype,
-) [sizeOf(Table, relations, args)]Column {
+    comptime maybe_args: anytype,
+) [sizeOf(Table, relations, maybe_args)]Column {
     comptime {
+        const args = if (@TypeOf(maybe_args) == @TypeOf(null)) return .{} else maybe_args;
+
         if (args.len == 0) return Table.columns();
 
         var fields: [sizeOf(Table, relations, args)]Column = undefined;
@@ -65,9 +67,11 @@ pub fn translate(
 fn sizeOf(
     Table: type,
     comptime relations: []const type,
-    comptime args: anytype,
+    comptime maybe_args: anytype,
 ) usize {
     comptime {
+        const args = if (@TypeOf(maybe_args) == @TypeOf(null)) return 0 else maybe_args;
+
         if (args.len == 0) return Table.columns().len;
 
         var size: usize = 0;

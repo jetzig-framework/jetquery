@@ -22,15 +22,19 @@ pub fn RelationTable(Schema: type, Table: type, comptime name: RelationsEnum(Tab
     return @field(Schema, @tagName(source));
 }
 
+pub const JoinContext = enum { inner, outer, include };
+
 pub fn Relation(
     Schema: type,
     Table: type,
     comptime name: RelationsEnum(Table),
     comptime columns: anytype,
+    comptime join_context: JoinContext,
 ) type {
     comptime {
         const relation = @field(Table.relations, @tagName(name));
         return struct {
+            pub const context = join_context;
             pub const Source = RelationTable(Schema, Table, name);
             pub const relation_type = relation.relation_type;
             pub const options = relation.options;

@@ -180,12 +180,34 @@ pub fn Query(Schema: type, comptime table: anytype) type {
             comptime select_columns: anytype,
         ) Statement(.select, Schema, Table, .{
             .relations = &.{
-                jetquery.relation.Relation(Schema, Table, name, select_columns),
+                jetquery.relation.Relation(Schema, Table, name, select_columns, .include),
             },
             .default_select = true,
             .columns = &Table.columns(),
         }) {
             return InitialStatement(Schema, Table).include(name, select_columns);
+        }
+
+        /// Join to another table by association name. Columns on the joined table are not
+        /// included in the result set. Use `include` to fetch associations, use `join` to filter
+        /// results.
+        /// ```zig
+        /// Query(Schema, .MyTable).join(.inner, .my_relation);
+        /// ```
+        /// If required, call `.select` after a `.join` to specify association columns to select:
+        /// ```zig
+        /// Query(Schema, .MyTable).join(.inner, .my_relation)
+        ///     .select(.{ .foo, .my_relation = .{ .bar, .baz } })
+        /// ```
+        pub fn join(
+            comptime join_context: jetquery.relation.JoinContext,
+            comptime name: jetquery.relation.RelationsEnum(Table),
+        ) Statement(.select, Schema, Table, .{
+            .relations = &.{jetquery.relation.Relation(Schema, Table, name, null, join_context)},
+            .default_select = true,
+            .columns = &Table.columns(),
+        }) {
+            return InitialStatement(Schema, Table).join(join_context, name);
         }
 
         /// Create a `SELECT DISTINCT` query with the specified `columns`, e.g.:
@@ -739,7 +761,7 @@ fn Statement(
             else => |tag| tag,
         }, Schema, Table, .{
             .relations = options.relations ++
-                .{jetquery.relation.Relation(Schema, Table, name, select_columns)},
+                .{jetquery.relation.Relation(Schema, Table, name, select_columns, .include)},
             .field_infos = options.field_infos,
             .columns = switch (query_context) {
                 .none => &Table.columns(),
@@ -759,7 +781,59 @@ fn Statement(
                 else => |tag| tag,
             }, Schema, Table, .{
                 .relations = options.relations ++
-                    .{jetquery.relation.Relation(Schema, Table, name, select_columns)},
+                    .{jetquery.relation.Relation(Schema, Table, name, select_columns, .include)},
+                .field_infos = options.field_infos,
+                .columns = switch (query_context) {
+                    .none => &Table.columns(),
+                    else => options.columns,
+                },
+                .order_clauses = options.order_clauses,
+                .result_context = switch (options.result_context) {
+                    .none => .many,
+                    else => |tag| tag,
+                },
+                .default_select = options.default_select,
+                .where_clauses = options.where_clauses,
+                .having_clauses = options.having_clauses,
+            });
+            return self.extend(S, .{}, .none);
+        }
+
+        pub fn join(
+            self: Self,
+            comptime join_context: jetquery.relation.JoinContext,
+            comptime name: jetquery.relation.RelationsEnum(Table),
+        ) Statement(
+            switch (query_context) {
+                .none => .select,
+                else => |tag| tag,
+            },
+            Schema,
+            Table,
+            .{
+                .relations = options.relations ++
+                    .{jetquery.relation.Relation(Schema, Table, name, null, join_context)},
+                .field_infos = options.field_infos,
+                .columns = switch (query_context) {
+                    .none => &Table.columns(),
+                    else => options.columns,
+                },
+                .order_clauses = options.order_clauses,
+                .result_context = switch (options.result_context) {
+                    .none => .many,
+                    else => |tag| tag,
+                },
+                .default_select = options.default_select,
+                .where_clauses = options.where_clauses,
+                .having_clauses = options.having_clauses,
+            },
+        ) {
+            const S = Statement(switch (query_context) {
+                .none => .select,
+                else => |tag| tag,
+            }, Schema, Table, .{
+                .relations = options.relations ++
+                    .{jetquery.relation.Relation(Schema, Table, name, null, join_context)},
                 .field_infos = options.field_infos,
                 .columns = switch (query_context) {
                     .none => &Table.columns(),

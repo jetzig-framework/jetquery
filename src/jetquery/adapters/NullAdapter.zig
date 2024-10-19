@@ -77,6 +77,20 @@ pub fn innerJoinSql(
     return "";
 }
 
+pub fn outerJoinSql(
+    Table: type,
+    JoinTable: type,
+    comptime name: []const u8,
+    comptime options: jetquery.adapters.JoinOptions,
+) []const u8 {
+    _ = Table;
+    _ = JoinTable;
+    _ = name;
+    _ = options;
+
+    return "";
+}
+
 pub fn emptyWhereSql() []const u8 {
     return "";
 }

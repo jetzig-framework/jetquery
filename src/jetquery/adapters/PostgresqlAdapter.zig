@@ -330,6 +330,28 @@ pub fn innerJoinSql(
     );
 }
 
+pub fn outerJoinSql(
+    Table: type,
+    JoinTable: type,
+    comptime name: []const u8,
+    comptime options: jetquery.adapters.JoinOptions,
+) []const u8 {
+    const foreign_key = options.foreign_key orelse name ++ "_id";
+    const primary_key = options.primary_key orelse "id";
+
+    return std.fmt.comptimePrint(
+        \\ LEFT OUTER JOIN "{s}" ON "{s}"."{s}" = "{s}"."{s}"
+    ,
+        .{
+            JoinTable.name,
+            Table.name,
+            foreign_key,
+            JoinTable.name,
+            primary_key,
+        },
+    );
+}
+
 pub fn emptyWhereSql() []const u8 {
     return "(1 = 1)";
 }

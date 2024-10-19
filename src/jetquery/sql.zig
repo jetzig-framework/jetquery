@@ -161,7 +161,7 @@ fn renderSelect(
     comptime having_clauses: []const Where.Tree,
 ) []const u8 {
     comptime {
-        const select_columns = renderSelectColumns(Adapter, Table, relations, columns);
+        const select_columns = renderSelectColumns(Adapter, relations, columns);
         const from = std.fmt.comptimePrint(" FROM {s}", .{Adapter.identifier(Table.name)});
         const joins = renderJoins(Adapter, Table, relations);
 
@@ -375,17 +375,25 @@ fn renderJoins(Adapter: type, Table: type, relations: []const type) []const u8 {
 
         var buf_len: usize = 0;
         for (relations) |Relation| {
-            buf_len += switch (Relation.relation_type) {
-                .belongs_to => renderInnerJoin(Adapter, Table, Relation).len,
-                .has_many => "".len,
+            buf_len += switch (Relation.context) {
+                .inner => renderInnerJoin(Adapter, Table, Relation).len,
+                .outer => renderOuterJoin(Adapter, Table, Relation).len,
+                .include => switch (Relation.relation_type) {
+                    .belongs_to => renderInnerJoin(Adapter, Table, Relation).len,
+                    .has_many => "".len,
+                },
             };
         }
         var buf: [buf_len]u8 = undefined;
         var cursor: usize = 0;
         for (relations) |Relation| {
-            const sql = switch (Relation.relation_type) {
-                .belongs_to => renderInnerJoin(Adapter, Table, Relation),
-                .has_many => "",
+            const sql = switch (Relation.context) {
+                .inner => renderInnerJoin(Adapter, Table, Relation),
+                .outer => renderOuterJoin(Adapter, Table, Relation),
+                .include => switch (Relation.relation_type) {
+                    .belongs_to => renderInnerJoin(Adapter, Table, Relation),
+                    .has_many => "",
+                },
             };
             @memcpy(buf[cursor .. cursor + sql.len], sql);
             cursor += sql.len;
@@ -409,9 +417,22 @@ fn renderInnerJoin(Adapter: type, Table: type, Relation: type) []const u8 {
     );
 }
 
+fn renderOuterJoin(Adapter: type, Table: type, Relation: type) []const u8 {
+    const PrimaryKey = std.meta.FieldEnum(Relation.Source.Definition);
+    const ForeignKey = std.meta.FieldEnum(Table.Definition);
+    const primary_key: PrimaryKey = std.enums.nameCast(PrimaryKey, Relation.primary_key);
+    const foreign_key: ForeignKey = std.enums.nameCast(ForeignKey, Relation.foreign_key);
+
+    return Adapter.outerJoinSql(
+        Table,
+        Relation.Source,
+        Relation.relation_name,
+        .{ .primary_key = @tagName(primary_key), .foreign_key = @tagName(foreign_key) },
+    );
+}
+
 fn renderSelectColumns(
     Adapter: type,
-    Table: type,
     relations: []const type,
     comptime columns: []const jetquery.columns.Column,
 ) []const u8 {
@@ -426,7 +447,13 @@ fn renderSelectColumns(
 
         var columns_buf_len: usize = 0;
         for (columns, 0..) |column, index| {
-            columns_buf_len += renderSelectColumn(Adapter, Table, column, index, total_columns).len;
+            columns_buf_len += renderSelectColumn(
+                Adapter,
+                column.table,
+                column,
+                index,
+                total_columns,
+            ).len;
         }
 
         var start = columns.len;
@@ -452,7 +479,7 @@ fn renderSelectColumns(
         for (columns, 0..) |column, index| {
             const column_identifier = renderSelectColumn(
                 Adapter,
-                Table,
+                column.table,
                 column,
                 index,
                 total_columns,

@@ -112,6 +112,19 @@ pub const Adapter = union(enum) {
         };
     }
 
+    /// SQL representing an outer join, e.g. `LEFT OUTER JOIN "foo" ON "bar"."baz" = "foo"."baz"`
+    pub fn outerJoinSql(
+        self: Adapter,
+        Table: type,
+        JoinTable: type,
+        comptime name: []const u8,
+        comptime options: JoinOptions,
+    ) []const u8 {
+        return switch (self) {
+            inline else => |adapter| @TypeOf(adapter).outerJoinSql(Table, JoinTable, name, options),
+        };
+    }
+
     /// SQL fragment used as a `WHERE` clause when no clause has been applied by the user.
     pub fn emptyWhereSQL(self: Adapter) []const u8 {
         return switch (self) {

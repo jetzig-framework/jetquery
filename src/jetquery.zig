@@ -927,3 +927,139 @@ test "like/ilike" {
         \\SELECT "cats"."name" FROM "cats" WHERE ("cats"."name" LIKE $1 OR "cats"."name" ILIKE $2)
     , query.sql);
 }
+
+test "inner join" {
+    const Schema = struct {
+        pub const Human = Table(
+            @This(),
+            "humans",
+            struct { id: i32, family_id: i32, cat_id: i32, name: []const u8 },
+            .{
+                .relations = .{
+                    .cat = relation.belongsTo(.Cat, .{}),
+                    .family = relation.belongsTo(.Family, .{}),
+                },
+            },
+        );
+
+        pub const Cat = Table(
+            @This(),
+            "cats",
+            struct { id: i32, name: []const u8, paws: i32, created_at: i64, updated_at: i64 },
+            .{},
+        );
+    };
+
+    const query = Query(Schema, .Human)
+        .join(.inner, .cat)
+        .select(.{.name});
+    try std.testing.expectEqualStrings(
+        \\SELECT "humans"."name" FROM "humans" INNER JOIN "cats" ON "humans"."cat_id" = "cats"."id" WHERE (1 = 1)
+    , query.sql);
+}
+
+test "outer join" {
+    const Schema = struct {
+        pub const Human = Table(
+            @This(),
+            "humans",
+            struct { id: i32, family_id: i32, cat_id: i32, name: []const u8 },
+            .{
+                .relations = .{
+                    .cat = relation.belongsTo(.Cat, .{}),
+                    .family = relation.belongsTo(.Family, .{}),
+                },
+            },
+        );
+
+        pub const Cat = Table(
+            @This(),
+            "cats",
+            struct { id: i32, name: []const u8, paws: i32, created_at: i64, updated_at: i64 },
+            .{},
+        );
+    };
+
+    const query = Query(Schema, .Human)
+        .join(.outer, .cat)
+        .select(.{.name});
+    try std.testing.expectEqualStrings(
+        \\SELECT "humans"."name" FROM "humans" LEFT OUTER JOIN "cats" ON "humans"."cat_id" = "cats"."id" WHERE (1 = 1)
+    , query.sql);
+}
+
+test "inner and outer join" {
+    const Schema = struct {
+        pub const Human = Table(
+            @This(),
+            "humans",
+            struct { id: i32, family_id: i32, cat_id: i32, name: []const u8 },
+            .{
+                .relations = .{
+                    .cat = relation.belongsTo(.Cat, .{}),
+                    .family = relation.belongsTo(.Family, .{}),
+                },
+            },
+        );
+
+        pub const Cat = Table(
+            @This(),
+            "cats",
+            struct { id: i32, name: []const u8, paws: i32, created_at: i64, updated_at: i64 },
+            .{},
+        );
+
+        pub const Family = Table(
+            @This(),
+            "families",
+            struct { id: i32, name: []const u8 },
+            .{},
+        );
+    };
+
+    const query = Query(Schema, .Human)
+        .join(.inner, .cat)
+        .join(.outer, .family)
+        .select(.{.name});
+    try std.testing.expectEqualStrings(
+        \\SELECT "humans"."name" FROM "humans" INNER JOIN "cats" ON "humans"."cat_id" = "cats"."id" LEFT OUTER JOIN "families" ON "humans"."family_id" = "families"."id" WHERE (1 = 1)
+    , query.sql);
+}
+
+test "inner and outer join with select on relation columns" {
+    const Schema = struct {
+        pub const Human = Table(
+            @This(),
+            "humans",
+            struct { id: i32, family_id: i32, cat_id: i32, name: []const u8 },
+            .{
+                .relations = .{
+                    .cat = relation.belongsTo(.Cat, .{}),
+                    .family = relation.belongsTo(.Family, .{}),
+                },
+            },
+        );
+
+        pub const Cat = Table(
+            @This(),
+            "cats",
+            struct { id: i32, name: []const u8, paws: i32, created_at: i64, updated_at: i64 },
+            .{},
+        );
+
+        pub const Family = Table(
+            @This(),
+            "families",
+            struct { id: i32, name: []const u8 },
+            .{},
+        );
+    };
+
+    const query = Query(Schema, .Human)
+        .join(.inner, .cat)
+        .join(.outer, .family)
+        .select(.{ .name, .{ .family = .{.id}, .cat = .{.paws} } });
+    try std.testing.expectEqualStrings(
+        \\SELECT "humans"."name", "families"."id", "cats"."paws" FROM "humans" INNER JOIN "cats" ON "humans"."cat_id" = "cats"."id" LEFT OUTER JOIN "families" ON "humans"."family_id" = "families"."id" WHERE (1 = 1)
+    , query.sql);
+}
