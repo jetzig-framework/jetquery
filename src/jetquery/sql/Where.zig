@@ -301,7 +301,6 @@ pub const Node = union(enum) {
             .group => |group| {
                 for (group.children) |child| appendValueType(child, len, types, index);
             },
-            // TODO
             .triplet => |triplet| {
                 switch (triplet.lhs) {
                     .value => |value| {
@@ -705,6 +704,7 @@ fn makeTriplet(
             T,
             if (@TypeOf(arg[2]) == type) arg[2] else @TypeOf(arg[2]),
             0,
+            2,
             relations,
             field_context,
             name,
@@ -719,6 +719,7 @@ fn makeTriplet(
             T,
             if (@TypeOf(arg[0]) == type) arg[0] else @TypeOf(arg[0]),
             2,
+            0,
             relations,
             field_context,
             name,
@@ -735,6 +736,7 @@ fn makeOperand(
     T: type,
     Other: type,
     comptime arg_index: usize,
+    comptime other_arg_index: usize,
     relations: []const type,
     comptime field_context: fields.FieldContext,
     comptime name: []const u8,
@@ -746,15 +748,16 @@ fn makeOperand(
 
     return switch (@typeInfo(@TypeOf(arg[arg_index]))) {
         .enum_literal => .{
-            // TODO
-            .column = columns.Column{},
+            .column = columns.translate(Table, relations, .{arg[arg_index]})[0],
         },
         .type => functionColumn(arg[arg_index], Table, relations),
         else => blk: {
             const A = switch (@typeInfo(Other)) {
                 .type => Adapter.Aggregate(functionColumn(Other).function.?),
-                // TODO
-                .enum_literal => unreachable,
+                .enum_literal => enum_blk: {
+                    const column = columns.translate(Table, relations, .{arg[other_arg_index]})[0];
+                    break :enum_blk column.type;
+                },
                 // We're comparing two values, let Zig reconsile the types:
                 else => switch (@typeInfo(@TypeOf(arg[arg_index]))) {
                     // We need to ensure that we don't store a comptime value otherwise our
