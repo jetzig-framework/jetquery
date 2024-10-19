@@ -42,35 +42,58 @@ pub const FunctionContext = enum { min, max, count };
 pub const Function = struct {
     context: FunctionContext,
     column_name: []const u8,
+    alias: []const u8,
 };
 
-pub fn min(comptime column: anytype) type {
+fn FunctionType(comptime context: FunctionContext, comptime column: anytype) type {
+    if (@typeInfo(@TypeOf(column)) != .enum_literal) {
+        @compileError(std.fmt.comptimePrint(
+            "Expected enum literal as SQL function argument, found: `{s}`",
+            .{@tagName(@typeInfo(@TypeOf(column)))},
+        ));
+    }
+
     return struct {
         comptime __jetquery_function: Function = .{
-            .context = .min,
+            .context = context,
             .column_name = @tagName(column),
+            .alias = @tagName(context) ++ "__" ++ @tagName(column),
         },
+
+        pub fn as(comptime alias: []const u8) type {
+            return struct {
+                comptime __jetquery_function: Function = .{
+                    .context = context,
+                    .column_name = @tagName(column),
+                    .alias = alias,
+                },
+            };
+        }
     };
 }
 
-pub fn max(comptime column: anytype) type {
-    return struct {
-        comptime __jetquery_function: Function = .{
-            .context = .max,
-            .column_name = @tagName(column),
-        },
-    };
+pub inline fn min(comptime column: anytype) type {
+    return FunctionType(.min, column);
 }
 
-pub fn count(comptime column: anytype) type {
-    return struct {
-        comptime __jetquery_function: Function = .{
-            .context = .count,
-            .column_name = @tagName(column),
-        },
-    };
+pub inline fn max(comptime column: anytype) type {
+    return FunctionType(.max, column);
 }
 
+pub inline fn count(comptime column: anytype) type {
+    return FunctionType(.count, column);
+}
+
+pub inline fn avg(comptime column: anytype) type {
+    return FunctionType(.avg, column);
+}
+
+pub inline fn sum(comptime column: anytype) type {
+    return FunctionType(.sum, column);
+}
+
+// pub fn as(comptime self: Column, comptime name: []const u8) Column {
+// }
 pub fn render(
     Adapter: type,
     query_context: QueryContext,

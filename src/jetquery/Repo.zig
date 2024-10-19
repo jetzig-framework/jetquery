@@ -748,9 +748,9 @@ test "aggregate max()" {
     defer repo.free(cats);
 
     try std.testing.expectEqualStrings(cats[0].name, "Hercules");
-    try std.testing.expect(cats[0].max_paws == 8);
+    try std.testing.expect(cats[0].max__paws == 8);
     try std.testing.expectEqualStrings(cats[1].name, "Princes");
-    try std.testing.expect(cats[1].max_paws == 100);
+    try std.testing.expect(cats[1].max__paws == 100);
 }
 
 test "aggregate count() with HAVING" {
@@ -795,7 +795,7 @@ test "aggregate count() with HAVING" {
     const sql = jetquery.sql;
 
     const cats = try jetquery.Query(Schema, .Cat)
-        .select(.{ .name, sql.max(.paws) })
+        .select(.{ .name, sql.max(.paws).as("maximum_paws") })
         .groupBy(.{.name})
         .having(.{ .{ sql.count(.name), .gt_eql, 3 }, .OR, .{ sql.count(.name), .lt_eql, 3 } })
         .orderBy(.{.name})
@@ -803,7 +803,7 @@ test "aggregate count() with HAVING" {
     defer repo.free(cats);
 
     try std.testing.expectEqualStrings(cats[0].name, "Hercules");
-    try std.testing.expect(cats[0].max_paws == 8);
+    try std.testing.expect(cats[0].maximum_paws == 8);
     try std.testing.expectEqualStrings(cats[1].name, "Princes");
-    try std.testing.expect(cats[1].max_paws == 100);
+    try std.testing.expect(cats[1].maximum_paws == 100);
 }

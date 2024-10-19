@@ -43,7 +43,7 @@ pub fn translate(
                         const function = (arg{}).__jetquery_function;
                         var column = primaryColumn(Table, function.column_name);
                         column.function = function.context;
-                        column.alias = @tagName(function.context) ++ "_" ++ column.name;
+                        column.alias = function.alias;
                         fields[index] = column;
                         index += 1;
                     } else {
