@@ -796,7 +796,7 @@ test "aggregate count() with HAVING" {
 
     const cats = try jetquery.Query(Schema, .Cat)
         .select(.{ .name, sql.max(.paws).as("maximum_paws") })
-        .where(.{ .{ .name, .eql, "Hercules" }, .OR, .{ .name, .eql, "Princes" } })
+        .where(.{ .{ .name = "Hercules" }, .OR, .{ .name, .like, "Pri%" } })
         .groupBy(.{.name})
         .having(.{ .{ sql.count(.name), .gt_eql, "3" }, .OR, .{ sql.count(.name), .lt_eql, 3 } })
         .orderBy(.{.name})

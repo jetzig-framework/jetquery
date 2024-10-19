@@ -60,6 +60,9 @@ pub const Tree = struct {
     pub fn values(comptime self: Tree, args: anytype) ClauseValues(self.ValuesTuple, self.ErrorsTuple) {
         var vals: self.ValuesTuple = undefined;
         var errors: self.ErrorsTuple = undefined;
+        if (@typeInfo(@TypeOf(args)) != .@"struct") @compileError(
+            "Expected `struct`, found `" ++ @tagName(@typeInfo(@TypeOf(args))) ++ "`",
+        );
         assignValues(args, self.ValuesTuple, &vals, self.ErrorsTuple, &errors, self.values_fields, 0);
         return .{ .values = vals, .errors = errors };
     }
@@ -166,6 +169,8 @@ pub const Node = union(enum) {
             lt_eql,
             gt,
             gt_eql,
+            like,
+            ilike, // Not supported by all databases
         };
 
         pub const Operand = union(enum) {
@@ -259,6 +264,8 @@ pub const Node = union(enum) {
                     .lt_eql => "<=",
                     .gt => ">",
                     .gt_eql => ">=",
+                    .like => "LIKE",
+                    .ilike => "ILIKE", // Not supported by all databases
                 };
 
                 writer.print(" {s} ", .{operator}) catch unreachable;

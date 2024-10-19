@@ -873,3 +873,57 @@ test "aggregate count()" {
         \\SELECT "cats"."name", COUNT("cats"."paws") FROM "cats" WHERE (1 = 1) GROUP BY "cats"."name"
     , query.sql);
 }
+
+test "aggregate avg()" {
+    const Schema = struct {
+        pub const Cat = Table(
+            @This(),
+            "cats",
+            struct { name: []const u8, paws: usize },
+            .{},
+        );
+    };
+
+    const query = Query(Schema, .Cat)
+        .select(.{ .name, sql.avg(.paws) })
+        .groupBy(.{.name});
+    try std.testing.expectEqualStrings(
+        \\SELECT "cats"."name", AVG("cats"."paws") FROM "cats" WHERE (1 = 1) GROUP BY "cats"."name"
+    , query.sql);
+}
+
+test "aggregate sum()" {
+    const Schema = struct {
+        pub const Cat = Table(
+            @This(),
+            "cats",
+            struct { name: []const u8, paws: usize },
+            .{},
+        );
+    };
+
+    const query = Query(Schema, .Cat)
+        .select(.{ .name, sql.sum(.paws) })
+        .groupBy(.{.name});
+    try std.testing.expectEqualStrings(
+        \\SELECT "cats"."name", SUM("cats"."paws") FROM "cats" WHERE (1 = 1) GROUP BY "cats"."name"
+    , query.sql);
+}
+
+test "like/ilike" {
+    const Schema = struct {
+        pub const Cat = Table(
+            @This(),
+            "cats",
+            struct { name: []const u8, paws: usize },
+            .{},
+        );
+    };
+
+    const query = Query(Schema, .Cat)
+        .select(.{.name})
+        .where(.{ .{ .name, .like, "Herc%" }, .OR, .{ .name, .ilike, "princ%" } });
+    try std.testing.expectEqualStrings(
+        \\SELECT "cats"."name" FROM "cats" WHERE ("cats"."name" LIKE $1 OR "cats"."name" ILIKE $2)
+    , query.sql);
+}

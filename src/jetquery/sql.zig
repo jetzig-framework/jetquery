@@ -38,7 +38,7 @@ pub const ColumnInfo = struct {
     relation: ?type,
 };
 
-pub const FunctionContext = enum { min, max, count };
+pub const FunctionContext = enum { min, max, count, avg, sum };
 pub const Function = struct {
     context: FunctionContext,
     column_name: []const u8,
