@@ -148,12 +148,12 @@ pub const Node = union(enum) {
         rhs: Operand,
 
         pub const Operator = enum {
-            eq,
-            neq,
+            eql,
+            not_eql,
             lt,
-            lte,
+            lt_eql,
             gt,
-            gte,
+            gt_eql,
         };
 
         pub const Operand = union(enum) {
@@ -214,7 +214,14 @@ pub const Node = union(enum) {
                 var prev_child: ?Node = null;
                 for (group.children) |child| {
                     if (prev_child) |capture| {
-                        if (child == .group and (capture == .group or capture == .value)) {
+                        const is_and = switch (child) {
+                            .group, .triplet => switch (capture) {
+                                .group, .value, .triplet => true,
+                                else => false,
+                            },
+                            else => false,
+                        };
+                        if (is_and) {
                             writer.print(" AND ", .{}) catch unreachable;
                         }
                     }
@@ -223,7 +230,6 @@ pub const Node = union(enum) {
                 }
                 if (group.children.len > 1) writer.print(")", .{}) catch unreachable;
             },
-            // TODO
             .triplet => |triplet| {
                 switch (triplet.lhs) {
                     .value => |value| {
@@ -235,12 +241,12 @@ pub const Node = union(enum) {
                 }
 
                 const operator = switch (triplet.operator) {
-                    .eq => "=",
-                    .neq => "<>",
+                    .eql => "=",
+                    .not_eql => "<>",
                     .lt => "<",
-                    .lte => "<=",
+                    .lt_eql => "<=",
                     .gt => ">",
-                    .gte => ">=",
+                    .gt_eql => ">=",
                 };
 
                 writer.print(" {s} ", .{operator}) catch unreachable;
@@ -362,7 +368,6 @@ pub const Node = union(enum) {
                     appendField(child, Table, relations, len, fields_array, tuple_index);
                 }
             },
-            // TODO
             .triplet => |triplet| {
                 switch (triplet.lhs) {
                     .value => |value| {
@@ -396,7 +401,6 @@ pub const Node = union(enum) {
             .group => |group| {
                 for (group.children) |child| countNodeValues(child, count);
             },
-            // TODO
             .triplet => |triplet| {
                 switch (triplet.lhs) {
                     .value => |value| {
@@ -551,9 +555,13 @@ fn assignValues(
         return;
     }
 
+    comptime var idx: usize = tuple_index;
+
     switch (@typeInfo(@TypeOf(arg))) {
         .@"struct" => |info| {
-            comptime var idx: usize = tuple_index;
+            // XXX: Note that we will always land here first because the first arg to `where` is
+            // is always a struct, so we can safely start here for incrementing our index
+            // counter.
             inline for (info.fields) |field| {
                 assignValues(
                     @field(arg, field.name),
@@ -564,23 +572,39 @@ fn assignValues(
                     values_fields,
                     idx,
                 );
-
-                // TODO: There must be a better way of tracking current arg index - we can't pass a
-                // comptime pointer to this function without triggering an error (runtime ref to
-                // comptime var).
-                const T = @TypeOf(@field(arg, field.name));
-                idx += if (comptime coercion.canCoerceDelegate(T)) 1 else switch (@typeInfo(T)) {
-                    .@"struct", .enum_literal, .type => 0,
-                    else => 1,
-                };
+                comptime detectValues(field.type, &idx);
             }
         },
         .type => {},
         .enum_literal => {},
         .null => {},
         else => {
-            assignValue(arg, ValuesTuple, values_tuple, ErrorsTuple, errors_tuple, values_fields, tuple_index);
+            assignValue(
+                arg,
+                ValuesTuple,
+                values_tuple,
+                ErrorsTuple,
+                errors_tuple,
+                values_fields,
+                tuple_index,
+            );
         },
+    }
+}
+
+fn detectValues(T: type, index: *usize) void {
+    comptime {
+        if (coercion.canCoerceDelegate(T)) {
+            index.* += 1;
+            return;
+        }
+        switch (@typeInfo(T)) {
+            .@"struct" => |info| {
+                for (info.fields) |field| detectValues(field.type, index);
+            },
+            .type, .enum_literal, .null => {},
+            else => index.* += 1,
+        }
     }
 }
 
@@ -591,7 +615,7 @@ fn assignValue(
     ErrorsTuple: type,
     errors_tuple: *ErrorsTuple,
     values_fields: []const Field,
-    comptime tuple_index: isize,
+    comptime tuple_index: usize,
 ) void {
     inline for (
         std.meta.fields(ValuesTuple),
@@ -723,19 +747,25 @@ fn makeOperand(
 fn debugNode(comptime node: Node, comptime depth: usize) void {
     const indent = " " ** depth;
     switch (node) {
-        .condition => |tag| {
-            @compileLog(std.fmt.comptimePrint("{s}{s}", .{ indent, @tagName(tag) }));
+        .condition => |value| {
+            @compileLog(std.fmt.comptimePrint("{s}{s}", .{ indent, @tagName(value) }));
         },
-        .value => |tag| {
-            @compileLog(std.fmt.comptimePrint("{s}{s}", .{ indent, tag.name }));
+        .value => |value| {
+            @compileLog(std.fmt.comptimePrint("{s}{s}", .{ indent, value.name }));
         },
-        .group => |tag| {
-            for (tag.children) |child| {
+        .group => |group| {
+            for (group.children) |child| {
                 debugNode(child, depth + 1);
             }
         },
-        // TODO
-        .triplet => {},
+        .triplet => |triplet| {
+            @compileLog(std.fmt.comptimePrint("{s}{s}{s}{s}", .{
+                indent,
+                @tagName(triplet.lhs),
+                @tagName(triplet.operator),
+                @tagName(triplet.rhs),
+            }));
+        },
     }
 }
 

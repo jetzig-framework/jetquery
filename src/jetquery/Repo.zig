@@ -110,7 +110,7 @@ pub fn executeInternal(
                 defer result.deinit();
                 return try result.unary(@TypeOf(query).ResultType);
             }
-            // TODO: Switch this back to `next()` when relation mapping is added there
+            // TODO: Switch this back to `next()` if/when relation mapping is added there
             const rows = try result.all(query);
             defer self.allocator.free(rows);
             // We should only ever get here where `LIMIT 1` is applied
@@ -797,7 +797,7 @@ test "aggregate count() with HAVING" {
     const cats = try jetquery.Query(Schema, .Cat)
         .select(.{ .name, sql.max(.paws) })
         .groupBy(.{.name})
-        .having(.{ sql.count(.name), .gte, 3 })
+        .having(.{ .{ sql.count(.name), .gt_eql, 3 }, .OR, .{ sql.count(.name), .lt_eql, 3 } })
         .orderBy(.{.name})
         .all(&repo);
     defer repo.free(cats);

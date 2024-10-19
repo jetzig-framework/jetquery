@@ -672,7 +672,6 @@ fn Statement(
             .result_context = .many,
             .where_clauses = options.where_clauses,
             .group_by = options.group_by,
-            // TODO: Set start index to last where/having value index
             .having_clauses = options.having_clauses ++
                 .{sql.Where.tree(
                 Table,
