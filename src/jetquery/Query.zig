@@ -278,6 +278,16 @@ fn StatementOptions(comptime query_context: sql.QueryContext) type {
         distinct: ?[]const jetquery.columns.Column = null,
         group_by: ?[]const jetquery.columns.Column = null,
         having_clauses: []const sql.Where.Tree = &.{},
+
+        pub fn orderClauses(self: @This(), Table: type) []const sql.OrderClause {
+            if (query_context != .select) return self.order_clauses;
+            if (self.order_clauses.len > 0) return self.order_clauses;
+            // We could force ordering by one of the grouped columns but this seems like
+            // overreaching - we should only apply a default order on ungrouped select queries.
+            if (self.group_by != null) return self.order_clauses;
+
+            return Table.defaultOrderBy();
+        }
     };
 }
 
@@ -317,7 +327,7 @@ fn Statement(
             options.relations,
             options.field_infos,
             options.columns,
-            options.order_clauses,
+            options.orderClauses(Table),
             options.distinct,
             options.where_clauses,
             options.group_by,
@@ -1079,8 +1089,12 @@ fn Statement(
 fn translateOrderBy(
     Table: type,
     comptime args: anytype,
-) [std.meta.fields(@TypeOf(args)).len]sql.OrderClause {
+) [orderBySize(@TypeOf(args))]sql.OrderClause {
     comptime {
+        if (@typeInfo(@TypeOf(args)) == .enum_literal) return .{.{
+            .column = Table.column(@tagName(args)),
+            .direction = .ascending,
+        }};
         var clauses: [std.meta.fields(@TypeOf(args)).len]sql.OrderClause = undefined;
         const is_tuple = @typeInfo(@TypeOf(args)).@"struct".is_tuple;
         const fields = std.meta.fields(@TypeOf(args));
@@ -1102,6 +1116,19 @@ fn translateOrderBy(
         }
         return clauses;
     }
+}
+
+fn orderBySize(T: type) usize {
+    return switch (@typeInfo(T)) {
+        .enum_literal => 1,
+        .@"struct" => std.meta.fields(T).len,
+        else => |tag| @compileError(
+            std.fmt.comptimePrint(
+                "Unsupported argument type for `orderBy`: `{s}`. Expected [enum_literal, struct]",
+                .{@tagName(tag)},
+            ),
+        ),
+    };
 }
 
 fn timestampsFields(

@@ -120,5 +120,11 @@ pub fn Table(Schema: type, table_name: []const u8, T: type, options: anytype) ty
                 @compileError("Failed matching `" ++ @typeName(@This()) ++ "` in schema.");
             }
         }
+
+        pub fn defaultOrderBy() []const jetquery.sql.OrderClause {
+            if (!@hasField(Definition, primary_key)) return &.{};
+
+            return &.{.{ .column = column(primary_key), .direction = .ascending }};
+        }
     };
 }

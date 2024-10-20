@@ -140,9 +140,6 @@ pub fn all(self: *Repo, query: anytype) ![]@TypeOf(query).ResultType {
 }
 
 pub fn save(self: *Repo, value: anytype) !void {
-    // TODO: Infer primary key instead of assuming `id` - we can set this in the schema as an
-    // option to each table - we already have the table available as `value.__jetquery_model`.
-
     // XXX: We have to include all (selected) values in the UPDATE because we can't generate a
     // type for the `update` params (which becomes a tuple passed to pg.zig) at runtime - ideally
     // we would only include modified values but we would need to generate all possible
@@ -151,10 +148,13 @@ pub fn save(self: *Repo, value: anytype) !void {
     // TODO: We can use pg.zig's dynamic statement binding to solve this.
     if (!self.isModified(value)) return;
 
+    const primary_key = value.__jetquery_model.primary_key;
+
     comptime var size: usize = 0;
     comptime {
         for (std.meta.fields(@TypeOf(value))) |field| {
-            if (!std.mem.startsWith(u8, field.name, "__") and !std.mem.eql(u8, field.name, "id")) {
+            const is_primary_key = std.mem.eql(u8, field.name, primary_key);
+            if (!std.mem.startsWith(u8, field.name, "__") and !is_primary_key) {
                 size += 1;
             }
         }
@@ -617,12 +617,10 @@ test "relations" {
         .paws = std.crypto.random.int(u3),
     }));
 
-    const humans = try jetquery.Query(Schema, .Human).include(.cats, .{}).all(&repo);
+    const humans = try jetquery.Query(Schema, .Human).include(.cats, .{}).orderBy(.name).all(&repo);
     defer repo.free(humans);
 
     try std.testing.expect(humans.len == 2);
-    // XXX: Currently depending on Postgres returning rows in insertion/ID order.
-    // TODO: Apply a default order by to all queries to ensure determinism.
     try std.testing.expectEqualStrings("Bob", humans[0].name);
     try std.testing.expectEqualStrings("Jane", humans[1].name);
     try std.testing.expectEqualStrings("Hercules", humans[0].cats[0].name);

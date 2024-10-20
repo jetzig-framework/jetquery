@@ -416,11 +416,16 @@ fn translateColumnType(name: []const u8) jetquery.Column.Type {
     // TODO
     const types = std.StaticStringMap(jetquery.Column.Type).initComptime(.{
         .{ "integer", jetquery.Column.Type.integer },
+        .{ "real", jetquery.Column.Type.float },
+        .{ "boolean", jetquery.Column.Type.boolean },
+        .{ "numeric", jetquery.Column.Type.decimal },
         .{ "character varying", jetquery.Column.Type.string },
+        .{ "text", jetquery.Column.Type.text },
         .{ "timestamp without time zone", jetquery.Column.Type.datetime },
+        .{ "timestamp with time zone", jetquery.Column.Type.datetime },
     });
     return types.get(name) orelse {
-        std.log.err("Unrecognized type: {s}\n", .{name});
+        std.log.err("Unsupported column type: `{s}`\n", .{name});
         unreachable;
     };
 }

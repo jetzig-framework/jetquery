@@ -30,36 +30,59 @@ pub fn generateSchema(self: Reflect, comptime schema: type) ![]const u8 {
     , .{});
 
     const reflection = try self.repo.adapter.reflect(allocator, self.repo);
-    for (reflection.tables) |table| {
-        const model_name = try translateTableName(allocator, schema, table.name);
-        try writer.print(
-            \\
-            \\pub const {s} = jetquery.Table(
-            \\@This(),
-            \\"{s}",
-            \\struct {{
-            \\
-        , .{ model_name, try util.zigEscape(allocator, .string, table.name) });
+    const map = try reflection.tableMap(allocator);
+    var written = std.BufSet.init(allocator);
 
-        for (reflection.columns) |column| {
-            if (!std.mem.eql(u8, column.table, table.name)) continue;
-            try writer.print(
-                \\{s}: {s},
-                \\
-            ,
-                .{ try util.zigEscape(allocator, .id, column.name), column.zigType() },
-            );
+    // Write tables already defined in the schema first ...
+    inline for (comptime std.meta.declarations(schema)) |decl| {
+        if (map.get(@field(schema, decl.name).name)) |table| {
+            try writeTable(allocator, schema, reflection, table, writer);
+            try written.insert(table.name);
         }
+    }
 
-        try writer.print(
-            \\}},
-            \\{s}
-            \\);
-            \\
-        , .{try stringifyOptions(allocator, schema, table.name)});
+    // ... then write any remaining tables to preserve schema order if edited by user.
+    for (reflection.tables) |table| {
+        if (written.contains(table.name)) continue;
+        try writeTable(allocator, schema, reflection, table, writer);
     }
 
     return try self.allocator.dupe(u8, try validateAndFormat(allocator, buf.items));
+}
+
+fn writeTable(
+    allocator: std.mem.Allocator,
+    comptime schema: type,
+    reflection: jetquery.Reflection,
+    table: jetquery.Reflection.TableInfo,
+    writer: anytype,
+) !void {
+    const model_name = try translateTableName(allocator, schema, table.name);
+    try writer.print(
+        \\
+        \\pub const {s} = jetquery.Table(
+        \\@This(),
+        \\"{s}",
+        \\struct {{
+        \\
+    , .{ model_name, try util.zigEscape(allocator, .string, table.name) });
+
+    for (reflection.columns) |column| {
+        if (!std.mem.eql(u8, column.table, table.name)) continue;
+        try writer.print(
+            \\{s}: {s},
+            \\
+        ,
+            .{ try util.zigEscape(allocator, .id, column.name), column.zigType() },
+        );
+    }
+
+    try writer.print(
+        \\}},
+        \\{s}
+        \\);
+        \\
+    , .{try stringifyOptions(allocator, schema, table.name)});
 }
 
 fn validateAndFormat(allocator: std.mem.Allocator, input: []const u8) ![]const u8 {
@@ -289,8 +312,28 @@ test "reflect" {
         jetquery.table.column("name", .string, .{ .not_null = true }),
         jetquery.table.timestamps(.{}),
     }, .{});
+    try repo.createTable("dogs", &.{
+        jetquery.table.primaryKey("id", .{}),
+        jetquery.table.column("name", .string, .{ .not_null = true }),
+        jetquery.table.column("is_woofy", .boolean, .{}),
+        jetquery.table.column("description", .text, .{}),
+        jetquery.table.column("bark_rating", .float, .{}),
+        jetquery.table.column("food_budget", .decimal, .{}),
+        jetquery.table.timestamps(.{}),
+    }, .{});
 
     const Schema = struct {
+        pub const Human = jetquery.Table(
+            @This(),
+            "humans",
+            struct { id: i32, name: []const u8 },
+            .{
+                .relations = .{
+                    .cats = jetquery.relation.hasMany(.Cat, .{ .foreign_key = "custom_foreign_key" }),
+                },
+            },
+        );
+
         pub const Cat = jetquery.Table(
             @This(),
             "cats",
@@ -302,17 +345,6 @@ test "reflect" {
                 .primary_key = "custom_primary_key",
             },
         );
-
-        pub const Human = jetquery.Table(
-            @This(),
-            "humans",
-            struct { id: i32, name: []const u8 },
-            .{
-                .relations = .{
-                    .cats = jetquery.relation.hasMany(.Cat, .{ .foreign_key = "custom_foreign_key" }),
-                },
-            },
-        );
     };
 
     const reflect = init(std.testing.allocator, &repo);
@@ -320,6 +352,22 @@ test "reflect" {
     defer std.testing.allocator.free(schema);
     try std.testing.expectEqualStrings(
         \\const jetquery = @import("jetquery");
+        \\
+        \\pub const Human = jetquery.Table(
+        \\    @This(),
+        \\    "humans",
+        \\    struct {
+        \\        id: i32,
+        \\        name: []const u8,
+        \\        created_at: jetquery.DateTime,
+        \\        updated_at: jetquery.DateTime,
+        \\    },
+        \\    .{
+        \\        .relations = .{
+        \\            .cats = jetquery.relation.hasMany(.Cat, .{ .foreign_key = "custom_foreign_key" }),
+        \\        },
+        \\    },
+        \\);
         \\
         \\pub const Cat = jetquery.Table(
         \\    @This(),
@@ -339,21 +387,16 @@ test "reflect" {
         \\    },
         \\);
         \\
-        \\pub const Human = jetquery.Table(
-        \\    @This(),
-        \\    "humans",
-        \\    struct {
-        \\        id: i32,
-        \\        name: []const u8,
-        \\        created_at: jetquery.DateTime,
-        \\        updated_at: jetquery.DateTime,
-        \\    },
-        \\    .{
-        \\        .relations = .{
-        \\            .cats = jetquery.relation.hasMany(.Cat, .{ .foreign_key = "custom_foreign_key" }),
-        \\        },
-        \\    },
-        \\);
+        \\pub const Dog = jetquery.Table(@This(), "dogs", struct {
+        \\    id: i32,
+        \\    name: []const u8,
+        \\    is_woofy: ?bool,
+        \\    description: ?[]const u8,
+        \\    bark_rating: ?f64,
+        \\    food_budget: ?[]const u8,
+        \\    created_at: jetquery.DateTime,
+        \\    updated_at: jetquery.DateTime,
+        \\}, .{});
         \\
     , schema);
 }
