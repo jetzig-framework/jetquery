@@ -13,7 +13,7 @@ pub fn init(allocator: std.mem.Allocator, repo: *jetquery.Repo) Reflect {
     return .{ .repo = repo, .allocator = allocator };
 }
 
-pub fn run(self: Reflect, comptime schema: type) !void {
+pub fn generateSchema(self: Reflect, comptime schema: type) ![]const u8 {
     var arena = std.heap.ArenaAllocator.init(self.allocator);
     defer arena.deinit();
 
@@ -59,8 +59,7 @@ pub fn run(self: Reflect, comptime schema: type) !void {
         , .{try stringifyOptions(allocator, schema, table.name)});
     }
 
-    const output = try validateAndFormat(allocator, buf.items);
-    std.debug.print("***\n{s}\n***\n", .{output});
+    return try self.allocator.dupe(u8, try validateAndFormat(allocator, buf.items));
 }
 
 fn validateAndFormat(allocator: std.mem.Allocator, input: []const u8) ![]const u8 {
@@ -245,7 +244,7 @@ fn translateTableName(
 }
 
 test "reflect" {
-    var repo = try jetquery.Repo.init(
+    var admin_repo = try jetquery.Repo.init(
         std.testing.allocator,
         .{
             .adapter = .{
@@ -259,7 +258,37 @@ test "reflect" {
             },
         },
     );
+    defer admin_repo.deinit();
+    try admin_repo.dropDatabase("reflection_test", .{ .if_exists = true });
+    try admin_repo.createDatabase("reflection_test", .{});
+
+    var repo = try jetquery.Repo.init(
+        std.testing.allocator,
+        .{
+            .adapter = .{
+                .postgresql = .{
+                    .database = "reflection_test",
+                    .username = "postgres",
+                    .hostname = "127.0.0.1",
+                    .password = "password",
+                    .port = 5432,
+                },
+            },
+        },
+    );
     defer repo.deinit();
+
+    try repo.createTable("cats", &.{
+        jetquery.table.primaryKey("id", .{}),
+        jetquery.table.column("name", .string, .{ .not_null = true }),
+        jetquery.table.column("human_id", .integer, .{}),
+        jetquery.table.timestamps(.{}),
+    }, .{});
+    try repo.createTable("humans", &.{
+        jetquery.table.primaryKey("id", .{}),
+        jetquery.table.column("name", .string, .{ .not_null = true }),
+        jetquery.table.timestamps(.{}),
+    }, .{});
 
     const Schema = struct {
         pub const Cat = jetquery.Table(
@@ -287,5 +316,44 @@ test "reflect" {
     };
 
     const reflect = init(std.testing.allocator, &repo);
-    try reflect.run(Schema);
+    const schema = try reflect.generateSchema(Schema);
+    defer std.testing.allocator.free(schema);
+    try std.testing.expectEqualStrings(
+        \\const jetquery = @import("jetquery");
+        \\
+        \\pub const Cat = jetquery.Table(
+        \\    @This(),
+        \\    "cats",
+        \\    struct {
+        \\        id: i32,
+        \\        name: []const u8,
+        \\        human_id: ?i32,
+        \\        created_at: jetquery.DateTime,
+        \\        updated_at: jetquery.DateTime,
+        \\    },
+        \\    .{
+        \\        .primary_key = "custom_primary_key",
+        \\        .relations = .{
+        \\            .human = jetquery.relation.belongsTo(.Human, .{}),
+        \\        },
+        \\    },
+        \\);
+        \\
+        \\pub const Human = jetquery.Table(
+        \\    @This(),
+        \\    "humans",
+        \\    struct {
+        \\        id: i32,
+        \\        name: []const u8,
+        \\        created_at: jetquery.DateTime,
+        \\        updated_at: jetquery.DateTime,
+        \\    },
+        \\    .{
+        \\        .relations = .{
+        \\            .cats = jetquery.relation.hasMany(.Cat, .{ .foreign_key = "custom_foreign_key" }),
+        \\        },
+        \\    },
+        \\);
+        \\
+    , schema);
 }

@@ -30,7 +30,7 @@ pub const Result = union(enum) {
     }
 
     pub fn all(self: *Result, query: anytype) ![]@TypeOf(query).ResultType {
-        // TODO: Clean up the spaghetti
+        // TODO: Eat the spaghetti
         const RT = @TypeOf(query).ResultType;
 
         return switch (self.*) {
@@ -130,7 +130,14 @@ pub const Result = union(enum) {
                         }
 
                         if (comptime primary_key_present) {
-                            const maybe_row_index = id_map.get(@field(aux_row, foreign_key));
+                            const foreign_key_value = @field(aux_row, foreign_key);
+                            const maybe_row_index = switch (@typeInfo(@TypeOf(foreign_key_value))) {
+                                .optional => if (foreign_key_value) |value|
+                                    id_map.get(value)
+                                else
+                                    null,
+                                else => id_map.get(foreign_key_value),
+                            };
 
                             if (maybe_row_index) |row_index| {
                                 // We pre-fill the map with an empty `MergedRow` so this is

@@ -69,18 +69,13 @@ pub fn ColumnType(Table: type, comptime field_info: FieldInfo) type {
     }
 
     if (comptime @hasField(Table.Definition, field_info.name)) {
-        const FT = std.meta.FieldType(
-            Table.Definition,
-            std.enums.nameCast(std.meta.FieldEnum(Table.Definition), field_info.name),
-        );
+        const FT = fieldType(Table.Definition, field_info.name);
         if (FT == jetcommon.types.DateTime) return i64 else return FT;
     } else {
-        // TODO
+        // TODO - we arrive here when we process triplets, e.g.
+        // `.{ .foo, .lt_eql, 100 }`
+        // Figure out if returning the field type is a sensible thing to do.
         return field_info.info.type;
-        // @compileError(std.fmt.comptimePrint(
-        //     "No column `{s}` defined in Schema for `{s}`.",
-        //     .{ field_info.name, Table.name },
-        // ));
     }
 }
 
@@ -136,5 +131,9 @@ pub fn structType(comptime fields: []const std.builtin.Type.StructField) type {
 
 pub fn fieldType(T: type, comptime name: []const u8) type {
     const tag = std.enums.nameCast(std.meta.FieldEnum(T), name);
-    return std.meta.fieldInfo(T, tag).type;
+    const FT = std.meta.fieldInfo(T, tag).type;
+    return switch (@typeInfo(FT)) {
+        .optional => |optional| optional.child,
+        else => FT,
+    };
 }

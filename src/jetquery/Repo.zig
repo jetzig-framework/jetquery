@@ -18,6 +18,10 @@ const InitOptions = struct {
     lazy_connect: bool = false,
 };
 
+pub const CreateTableOptions = struct { if_not_exists: bool = false };
+pub const DropTableOptions = struct { if_exists: bool = false };
+pub const DropDatabaseOptions = struct { if_exists: bool = false };
+
 /// Initialize a new Repo for executing queries.
 pub fn init(allocator: std.mem.Allocator, options: InitOptions) !Repo {
     return .{
@@ -292,8 +296,6 @@ pub fn generateId(self: *Repo) i128 {
     return self.result_id.fetchAdd(1, .monotonic);
 }
 
-pub const CreateTableOptions = struct { if_not_exists: bool = false };
-
 /// Create a database table named `nme`. Pass `.{ .if_not_exists = true }` to use
 /// `CREATE TABLE IF NOT EXISTS` syntax.
 pub fn createTable(
@@ -348,8 +350,6 @@ pub fn createTable(
     defer result.deinit();
 }
 
-pub const DropTableOptions = struct { if_exists: bool = false };
-
 /// Drop a database table named `name`. Pass `.{ .if_exists = true }` to use
 /// `DROP TABLE IF EXISTS` syntax.
 pub fn dropTable(self: *Repo, comptime name: []const u8, options: DropTableOptions) !void {
@@ -359,8 +359,53 @@ pub fn dropTable(self: *Repo, comptime name: []const u8, options: DropTableOptio
     const writer = buf.writer();
 
     try writer.print(
-        \\DROP TABLE{s} "{s}"
-    , .{ if (options.if_exists) " IF EXISTS" else "", name });
+        \\DROP TABLE{s} {s}
+    , .{ if (options.if_exists) " IF EXISTS" else "", self.adapter.identifier(name) });
+
+    var result = try self.adapter.execute(
+        self,
+        buf.items,
+        &.{},
+        try jetquery.debug.getCallerInfo(@returnAddress()),
+    );
+    try result.drain();
+    defer result.deinit();
+}
+
+/// Create a new database in the current repo. Repo must be initialized with the appropriate user
+/// credentials for creating new databases.
+pub fn createDatabase(self: *Repo, comptime name: []const u8, options: struct {}) !void {
+    _ = options;
+    var buf = std.ArrayList(u8).init(self.allocator);
+    defer buf.deinit();
+
+    const writer = buf.writer();
+
+    try writer.print(
+        \\CREATE DATABASE {s}
+    , .{self.adapter.identifier(name)});
+
+    var result = try self.adapter.execute(
+        self,
+        buf.items,
+        &.{},
+        try jetquery.debug.getCallerInfo(@returnAddress()),
+    );
+    try result.drain();
+    defer result.deinit();
+}
+
+/// Create a new database in the current repo. Repo must be initialized with the appropriate user
+/// credentials for creating new databases.
+pub fn dropDatabase(self: *Repo, comptime name: []const u8, options: DropDatabaseOptions) !void {
+    var buf = std.ArrayList(u8).init(self.allocator);
+    defer buf.deinit();
+
+    const writer = buf.writer();
+
+    try writer.print(
+        \\DROP DATABASE{s} {s}
+    , .{ if (options.if_exists) " IF EXISTS" else "", self.adapter.identifier(name) });
 
     var result = try self.adapter.execute(
         self,
@@ -461,7 +506,7 @@ test "relations" {
         pub const Cat = jetquery.Table(
             @This(),
             "cats",
-            struct { id: i32, human_id: i32, name: []const u8, paws: i32 },
+            struct { id: i32, human_id: ?i32, name: []const u8, paws: i32 },
             .{ .relations = .{ .human = jetquery.relation.belongsTo(.Human, .{}) } },
         );
 

@@ -1108,32 +1108,28 @@ fn timestampsFields(
     Table: type,
     comptime query_context: jetquery.fields.FieldContext,
 ) [timestampsSize(Table, query_context)]jetquery.fields.FieldInfo {
-    // TODO: Tidy this up a bit to remove all the repetition
     return if (comptime hasTimestamps(Table)) switch (query_context) {
         .update => .{
-            jetquery.fields.fieldInfo(.{
-                .name = "updated_at",
-                .type = i64,
-                .default_value = null,
-                .is_comptime = false,
-                .alignment = @alignOf(i64),
-            }, Table, "updated_at", query_context),
+            jetquery.fields.fieldInfo(
+                jetquery.fields.structField("updated_at", i64),
+                Table,
+                "updated_at",
+                query_context,
+            ),
         },
         .insert => .{
-            jetquery.fields.fieldInfo(.{
-                .name = "created_at",
-                .type = i64,
-                .default_value = null,
-                .is_comptime = false,
-                .alignment = @alignOf(i64),
-            }, Table, "created_at", query_context),
-            jetquery.fields.fieldInfo(.{
-                .name = "updated_at",
-                .type = i64,
-                .default_value = null,
-                .is_comptime = false,
-                .alignment = @alignOf(i64),
-            }, Table, "updated_at", query_context),
+            jetquery.fields.fieldInfo(
+                jetquery.fields.structField("created_at", i64),
+                Table,
+                "created_at",
+                query_context,
+            ),
+            jetquery.fields.fieldInfo(
+                jetquery.fields.structField("updated_at", i64),
+                Table,
+                "updated_at",
+                query_context,
+            ),
         },
         else => @compileError(
             "Timestamps detection not relevant for `" ++ @tagName(query_context) ++ "` query. (This is a bug).",

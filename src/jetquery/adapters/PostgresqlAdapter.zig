@@ -393,7 +393,7 @@ pub fn reflectColumns(
     repo: *jetquery.Repo,
 ) ![]const jetquery.Reflection.ColumnInfo {
     const sql =
-        \\SELECT "table_name", "column_name", "data_type", "is_nullable" FROM "information_schema"."columns" WHERE "table_schema" = 'public' ORDER BY "table_name", "column_name"
+        \\SELECT "table_name", "column_name", "data_type", "is_nullable" FROM "information_schema"."columns" WHERE "table_schema" = 'public' ORDER BY "table_name", "ordinal_position"
     ;
     var result = try self.execute(repo, sql, .{}, null);
     defer result.deinit();
