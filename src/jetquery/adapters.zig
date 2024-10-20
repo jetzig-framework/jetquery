@@ -85,9 +85,9 @@ pub const Adapter = union(enum) {
     }
 
     /// SQL representing an `ORDER BY` directive, e.g. `"foo" DESC`
-    pub fn orderSql(self: Adapter, Table: type, comptime order_clause: jetquery.OrderClause) []const u8 {
+    pub fn orderSql(self: Adapter, comptime order_clause: jetquery.OrderClause) []const u8 {
         return switch (self) {
-            inline else => |adapter| @TypeOf(adapter).orderSql(Table, order_clause),
+            inline else => |adapter| @TypeOf(adapter).orderSql(order_clause),
         };
     }
 

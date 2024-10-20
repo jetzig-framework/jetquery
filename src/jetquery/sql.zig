@@ -20,7 +20,7 @@ pub const OrderClause = struct {
     direction: OrderDirection,
 };
 
-pub const OrderDirection = enum { ascending, descending };
+pub const OrderDirection = enum { ascending, descending, asc, desc };
 pub const CountContext = enum { all, distinct };
 pub const CountColumn = struct {
     type: CountContext,
@@ -173,7 +173,7 @@ fn renderSelect(
                 joins,
                 renderWhere(Adapter, where_clauses),
                 renderGroupBy(Adapter, group_by, having_clauses),
-                renderOrder(Table, Adapter, order_clauses),
+                renderOrder(Adapter, order_clauses),
                 renderLimit(Adapter, field_infos),
             },
         );
@@ -273,7 +273,6 @@ fn renderLimit(
 }
 
 fn renderOrder(
-    Table: type,
     Adapter: type,
     comptime order_clauses: []const OrderClause,
 ) []const u8 {
@@ -282,14 +281,13 @@ fn renderOrder(
     var size: usize = 0;
     for (order_clauses, 0..) |order_clause, index| {
         const separator = if (index + 1 < order_clauses.len) ", " else "";
-        size += (Adapter.orderSql(Table, order_clause) ++ separator).len;
-        if (index + 1 < order_clauses.len) size += ", ".len;
+        size += (Adapter.orderSql(order_clause) ++ separator).len;
     }
     var order_buf: [size]u8 = undefined;
     var cursor: usize = 0;
     for (order_clauses, 0..) |order_clause, index| {
         const separator = if (index + 1 < order_clauses.len) ", " else "";
-        const order_sql = Adapter.orderSql(Table, order_clause) ++ separator;
+        const order_sql = Adapter.orderSql(order_clause) ++ separator;
         @memcpy(order_buf[cursor .. cursor + order_sql.len], order_sql);
         cursor += order_sql.len;
     }

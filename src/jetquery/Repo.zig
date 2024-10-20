@@ -628,6 +628,15 @@ test "relations" {
     try std.testing.expectEqualStrings("Jane", humans[1].name);
     try std.testing.expectEqualStrings("Cindy", humans[1].cats[0].name);
     try std.testing.expectEqualStrings("Garfield", humans[1].cats[1].name);
+
+    // TODO: Merge rows on `next()`
+    // const iterating_query = jetquery.Query(Schema, .Human).include(.cats, .{});
+    // var humans_iterated = try iterating_query.execute(&repo);
+    // defer humans_iterated.deinit();
+    // while (try humans_iterated.next(iterating_query)) |human| {
+    //     defer repo.free(human);
+    //     std.debug.print("{s}\n", .{human.name});
+    // }
 }
 
 test "timestamps" {

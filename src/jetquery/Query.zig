@@ -669,7 +669,7 @@ fn Statement(
             .relations = options.relations,
             .field_infos = options.field_infos,
             .columns = options.columns,
-            .order_clauses = &translateOrderBy(Table, args),
+            .order_clauses = &translateOrderBy(Table, options.relations, args),
             .result_context = options.result_context,
             .where_clauses = options.where_clauses,
             .group_by = options.group_by,
@@ -679,7 +679,7 @@ fn Statement(
                 .relations = options.relations,
                 .field_infos = options.field_infos,
                 .columns = options.columns,
-                .order_clauses = &translateOrderBy(Table, args),
+                .order_clauses = &translateOrderBy(Table, options.relations, args),
                 .result_context = options.result_context,
                 .where_clauses = options.where_clauses,
                 .group_by = options.group_by,
@@ -1088,45 +1088,102 @@ fn Statement(
 
 fn translateOrderBy(
     Table: type,
+    relations: []const type,
     comptime args: anytype,
 ) [orderBySize(@TypeOf(args))]sql.OrderClause {
     comptime {
-        if (@typeInfo(@TypeOf(args)) == .enum_literal) return .{.{
-            .column = Table.column(@tagName(args)),
-            .direction = .ascending,
-        }};
-        var clauses: [std.meta.fields(@TypeOf(args)).len]sql.OrderClause = undefined;
+        switch (@typeInfo(@TypeOf(args))) {
+            .enum_literal => return .{.{
+                .column = Table.column(@tagName(args)),
+                .direction = .ascending,
+            }},
+            .@"struct" => {},
+            else => |tag| @compileError(
+                std.fmt.comptimePrint(
+                    "Unsupported `orderBy` argument: `{s}`. Expected [enum_literal, struct]",
+                    .{@tagName(tag)},
+                ),
+            ),
+        }
+        var clauses: [orderBySize(@TypeOf(args))]sql.OrderClause = undefined;
         const is_tuple = @typeInfo(@TypeOf(args)).@"struct".is_tuple;
         const fields = std.meta.fields(@TypeOf(args));
 
-        for (fields, if (is_tuple) args else fields, 0..) |field, arg, index| {
-            clauses[index] = if (is_tuple)
-                .{
+        var index: usize = 0;
+        for (fields, if (is_tuple) args else fields) |field, arg| {
+            if (is_tuple) {
+                // Short-hand (default ascending):
+                // orderBy(.{ .foo, .bar, .baz })
+                clauses[index] = .{
                     .column = Table.column(@tagName(arg)),
                     .direction = .ascending,
-                }
-            else
-                .{
+                };
+                index += 1;
+                continue;
+            } else if (@hasField(Table.Definition, field.name)) {
+                // Explicit form:
+                // orderBy(.{ .foo = .ascending })
+                // orderBy(.{ .bar = .descending })
+                clauses[index] = .{
                     .column = Table.column(field.name),
                     .direction = std.enums.nameCast(
                         sql.OrderDirection,
                         @tagName(@field(args, field.name)),
                     ),
                 };
+                index += 1;
+                continue;
+            } else {
+                // Nested form, ordering by relations fields:
+                // orderBy(.{ .foo = .{ .bar })
+                // orderBy(.{ .foo = .{ .bar = .descending } })
+                relations: for (relations) |relation| {
+                    if (std.mem.eql(u8, relation.relation_name, field.name)) {
+                        const nested_clauses = translateOrderBy(
+                            relation.Source,
+                            &.{},
+                            @field(args, field.name),
+                        );
+                        for (nested_clauses) |clause| {
+                            clauses[index] = clause;
+                            index += 1;
+                        }
+                        break :relations;
+                    }
+                } else {
+                    @compileError(
+                        std.fmt.comptimePrint(
+                            "Unrecognized `orderBy` field `{s}` in current table and active joins/includes.",
+                            .{field.name},
+                        ),
+                    );
+                }
+            }
         }
         return clauses;
     }
 }
 
 fn orderBySize(T: type) usize {
+    const error_message = "Unsupported argument type for `orderBy`: `{s}`. Expected [enum_literal, struct]";
+
     return switch (@typeInfo(T)) {
         .enum_literal => 1,
-        .@"struct" => std.meta.fields(T).len,
+        .@"struct" => blk: {
+            var count: usize = 0;
+            for (std.meta.fields(T)) |field| {
+                count += switch (@typeInfo(field.type)) {
+                    .enum_literal => 1,
+                    .@"struct" => orderBySize(field.type),
+                    else => |tag| @compileError(
+                        std.fmt.comptimePrint(error_message, .{@tagName(tag)}),
+                    ),
+                };
+            }
+            break :blk count;
+        },
         else => |tag| @compileError(
-            std.fmt.comptimePrint(
-                "Unsupported argument type for `orderBy`: `{s}`. Expected [enum_literal, struct]",
-                .{@tagName(tag)},
-            ),
+            std.fmt.comptimePrint(error_message, .{@tagName(tag)}),
         ),
     };
 }

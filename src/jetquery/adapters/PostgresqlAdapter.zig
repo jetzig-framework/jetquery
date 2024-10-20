@@ -222,6 +222,7 @@ pub fn identifier(comptime name: []const u8) []const u8 {
 
 /// SQL fragment used to represent a column bound to a table, e.g. `"foo"."bar"`
 pub fn columnSql(Table: type, comptime column: jetquery.columns.Column) []const u8 {
+    // TODO: Table is redundant as column contains the table already.
     return if (column.function) |function|
         std.fmt.comptimePrint(
             \\{s}("{s}"."{s}")
@@ -262,15 +263,15 @@ pub fn anyParamSql(comptime index: usize) []const u8 {
     return std.fmt.comptimePrint("ANY (${})", .{index + 1});
 }
 
-pub fn orderSql(Table: type, comptime order_clause: jetquery.sql.OrderClause) []const u8 {
+pub fn orderSql(comptime order_clause: jetquery.sql.OrderClause) []const u8 {
     const direction = switch (order_clause.direction) {
-        .ascending => "ASC",
-        .descending => "DESC",
+        .ascending, .asc => "ASC",
+        .descending, .desc => "DESC",
     };
 
     return std.fmt.comptimePrint(
         "{s} {s}",
-        .{ columnSql(Table, order_clause.column), direction },
+        .{ columnSql(order_clause.column.table, order_clause.column), direction },
     );
 }
 

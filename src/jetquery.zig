@@ -151,6 +151,146 @@ test "order by" {
     , query.sql);
 }
 
+test "order by (aliased desc = descending)" {
+    const Schema = struct {
+        pub const Cat = Table(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});
+    };
+    const query = Query(Schema, .Cat)
+        .select(.{ .name, .paws })
+        .orderBy(.{ .name = .desc });
+
+    try std.testing.expectEqualStrings(
+        \\SELECT "cats"."name", "cats"."paws" FROM "cats" WHERE (1 = 1) ORDER BY "cats"."name" DESC
+    , query.sql);
+}
+
+test "order by (aliased asc = ascending)" {
+    const Schema = struct {
+        pub const Cat = Table(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});
+    };
+    const query = Query(Schema, .Cat)
+        .select(.{ .name, .paws })
+        .orderBy(.{ .name = .asc });
+
+    try std.testing.expectEqualStrings(
+        \\SELECT "cats"."name", "cats"."paws" FROM "cats" WHERE (1 = 1) ORDER BY "cats"."name" ASC
+    , query.sql);
+}
+
+test "order by (short-hand)" {
+    const Schema = struct {
+        pub const Cat = Table(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});
+    };
+    const query = Query(Schema, .Cat)
+        .select(.{ .name, .paws })
+        .orderBy(.name);
+
+    try std.testing.expectEqualStrings(
+        \\SELECT "cats"."name", "cats"."paws" FROM "cats" WHERE (1 = 1) ORDER BY "cats"."name" ASC
+    , query.sql);
+}
+
+test "order by with relations (short-hand)" {
+    const Schema = struct {
+        pub const Human = Table(
+            @This(),
+            "humans",
+            struct { id: i32, cat_id: i32, name: []const u8 },
+            .{ .relations = .{ .cat = relation.belongsTo(.Cat, .{}) } },
+        );
+
+        pub const Cat = Table(
+            @This(),
+            "cats",
+            struct { id: i32, name: []const u8, paws: i32 },
+            .{},
+        );
+    };
+
+    const query = Query(Schema, .Human)
+        .join(.inner, .cat)
+        .orderBy(.{ .cat = .name });
+
+    try std.testing.expectEqualStrings(
+        \\SELECT "humans"."id", "humans"."cat_id", "humans"."name" FROM "humans" INNER JOIN "cats" ON "humans"."cat_id" = "cats"."id" WHERE (1 = 1) ORDER BY "cats"."name" ASC
+    ,
+        query.sql,
+    );
+}
+
+test "order by with relations (explicit form)" {
+    const Schema = struct {
+        pub const Human = Table(
+            @This(),
+            "humans",
+            struct { id: i32, cat_id: i32, name: []const u8 },
+            .{ .relations = .{ .cat = relation.belongsTo(.Cat, .{}) } },
+        );
+
+        pub const Cat = Table(
+            @This(),
+            "cats",
+            struct { id: i32, name: []const u8, paws: i32 },
+            .{},
+        );
+    };
+
+    const query = Query(Schema, .Human)
+        .join(.inner, .cat)
+        .orderBy(.{ .cat = .{ .name = .descending } });
+
+    try std.testing.expectEqualStrings(
+        \\SELECT "humans"."id", "humans"."cat_id", "humans"."name" FROM "humans" INNER JOIN "cats" ON "humans"."cat_id" = "cats"."id" WHERE (1 = 1) ORDER BY "cats"."name" DESC
+    ,
+        query.sql,
+    );
+}
+
+test "order by with relations and base table, short + explicit forms" {
+    const Schema = struct {
+        pub const Human = Table(
+            @This(),
+            "humans",
+            struct { id: i32, cat_id: i32, family_id: i32, name: []const u8 },
+            .{
+                .relations = .{
+                    .cat = relation.belongsTo(.Cat, .{}),
+                    .family = relation.belongsTo(.Family, .{}),
+                },
+            },
+        );
+
+        pub const Cat = Table(
+            @This(),
+            "cats",
+            struct { id: i32, name: []const u8, paws: i32 },
+            .{},
+        );
+
+        pub const Family = Table(
+            @This(),
+            "families",
+            struct { id: i32, name: []const u8 },
+            .{},
+        );
+    };
+
+    const query = Query(Schema, .Human)
+        .join(.inner, .cat)
+        .join(.inner, .family)
+        .orderBy(.{
+        .id = .descending,
+        .cat = .{ .name = .descending },
+        .family = .{ .id, .name },
+    });
+
+    try std.testing.expectEqualStrings(
+        \\SELECT "humans"."id", "humans"."cat_id", "humans"."family_id", "humans"."name" FROM "humans" INNER JOIN "cats" ON "humans"."cat_id" = "cats"."id" INNER JOIN "families" ON "humans"."family_id" = "families"."id" WHERE (1 = 1) ORDER BY "humans"."id" DESC, "cats"."name" DESC, "families"."id" ASC, "families"."name" ASC
+    ,
+        query.sql,
+    );
+}
+
 test "insert" {
     const Schema = struct {
         pub const Cat = Table(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});

@@ -19,6 +19,7 @@ pub const Result = union(enum) {
     }
 
     pub fn next(self: *Result, query: anytype) !?@TypeOf(query).ResultType {
+        // TODO: Fetch auxiliary queries and merge.
         return switch (self.*) {
             inline else => |*adapted_result| blk: {
                 var row = try adapted_result.next(query) orelse break :blk null;
