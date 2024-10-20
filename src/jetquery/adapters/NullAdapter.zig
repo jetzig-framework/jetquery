@@ -1,3 +1,5 @@
+const std = @import("std");
+
 const jetquery = @import("../../jetquery.zig");
 const fields = @import("../fields.zig");
 
@@ -93,4 +95,14 @@ pub fn outerJoinSql(
 
 pub fn emptyWhereSql() []const u8 {
     return "";
+}
+
+pub fn reflect(
+    self: *const NullAdapter,
+    allocator: std.mem.Allocator,
+    repo: *const jetquery.Repo,
+) !jetquery.Reflection {
+    _ = allocator;
+    _ = self;
+    return .{ .allocator = repo.allocator, .tables = &.{}, .columns = &.{} };
 }

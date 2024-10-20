@@ -22,6 +22,7 @@ pub const Column = @import("jetquery/schema/Column.zig");
 pub const Value = @import("jetquery/Value.zig").Value;
 pub const DateTime = jetcommon.types.DateTime;
 pub const debug = @import("jetquery/debug.zig");
+pub const Reflection = @import("jetquery/reflection/Reflection.zig");
 
 pub const adapter = std.enums.nameCast(adapters.Name, config.database.adapter);
 pub const timestamp_updated_column_name = "updated_at";

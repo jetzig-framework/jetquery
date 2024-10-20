@@ -3,7 +3,6 @@ const std = @import("std");
 const pg = @import("pg");
 
 const jetquery = @import("../../jetquery.zig");
-const sql = @import("../sql.zig");
 
 const PostgresqlAdapter = @This();
 
@@ -111,7 +110,7 @@ pub const Result = struct {
 
 fn resolvedValue(
     allocator: std.mem.Allocator,
-    column_info: sql.ColumnInfo,
+    column_info: jetquery.sql.ColumnInfo,
     row: *const pg.Row,
 ) !column_info.type {
     return switch (column_info.type) {
@@ -263,7 +262,7 @@ pub fn anyParamSql(comptime index: usize) []const u8 {
     return std.fmt.comptimePrint("ANY (${})", .{index + 1});
 }
 
-pub fn orderSql(Table: type, comptime order_clause: sql.OrderClause) []const u8 {
+pub fn orderSql(Table: type, comptime order_clause: jetquery.sql.OrderClause) []const u8 {
     const direction = switch (order_clause.direction) {
         .ascending => "ASC",
         .descending => "DESC",
@@ -354,6 +353,76 @@ pub fn outerJoinSql(
 
 pub fn emptyWhereSql() []const u8 {
     return "(1 = 1)";
+}
+
+pub fn reflect(
+    self: *PostgresqlAdapter,
+    allocator: std.mem.Allocator,
+    repo: *jetquery.Repo,
+) !jetquery.Reflection {
+    const tables = try self.reflectTables(allocator, repo);
+    const columns = try self.reflectColumns(allocator, repo);
+    return .{ .allocator = self.allocator, .tables = tables, .columns = columns };
+}
+
+pub fn reflectTables(
+    self: *PostgresqlAdapter,
+    allocator: std.mem.Allocator,
+    repo: *jetquery.Repo,
+) ![]const jetquery.Reflection.TableInfo {
+    const sql =
+        \\SELECT "table_name" FROM "information_schema"."tables" WHERE "table_schema" = 'public' AND "table_name" <> 'jetquery_migrations' ORDER BY "table_name"
+    ;
+    var result = try self.execute(repo, sql, .{}, null);
+    defer result.deinit();
+
+    var tables = std.ArrayList(jetquery.Reflection.TableInfo).init(allocator);
+    while (try result.postgresql.result.next()) |row| {
+        try tables.append(.{
+            .name = try allocator.dupe(u8, row.get([]const u8, 0)),
+        });
+    }
+    try result.drain();
+
+    return try tables.toOwnedSlice();
+}
+
+pub fn reflectColumns(
+    self: *PostgresqlAdapter,
+    allocator: std.mem.Allocator,
+    repo: *jetquery.Repo,
+) ![]const jetquery.Reflection.ColumnInfo {
+    const sql =
+        \\SELECT "table_name", "column_name", "data_type", "is_nullable" FROM "information_schema"."columns" WHERE "table_schema" = 'public' ORDER BY "table_name", "column_name"
+    ;
+    var result = try self.execute(repo, sql, .{}, null);
+    defer result.deinit();
+
+    var columns = std.ArrayList(jetquery.Reflection.ColumnInfo).init(allocator);
+    while (try result.postgresql.result.next()) |row| {
+        try columns.append(.{
+            .table = try allocator.dupe(u8, row.get([]const u8, 0)),
+            .name = try allocator.dupe(u8, row.get([]const u8, 1)),
+            .type = translateColumnType(row.get([]const u8, 2)),
+            .null = std.mem.eql(u8, row.get([]const u8, 3), "YES"),
+        });
+    }
+    try result.drain();
+
+    return try columns.toOwnedSlice();
+}
+
+fn translateColumnType(name: []const u8) jetquery.Column.Type {
+    // TODO
+    const types = std.StaticStringMap(jetquery.Column.Type).initComptime(.{
+        .{ "integer", jetquery.Column.Type.integer },
+        .{ "character varying", jetquery.Column.Type.string },
+        .{ "timestamp without time zone", jetquery.Column.Type.datetime },
+    });
+    return types.get(name) orelse {
+        std.log.err("Unrecognized type: {s}\n", .{name});
+        unreachable;
+    };
 }
 
 fn initPool(allocator: std.mem.Allocator, options: Options) !*pg.Pool {

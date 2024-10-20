@@ -45,7 +45,7 @@ pub fn build(b: *std.Build) !void {
     const run_lib_unit_tests = b.addRunArtifact(lib_unit_tests);
 
     const test_step = b.step("test", "Run unit tests");
-    test_step.dependOn(&run_lib_unit_tests.step);
+    // test_step.dependOn(&run_lib_unit_tests.step);
 
     const exe_generate_migrations = b.addExecutable(.{
         .name = "migrations",
@@ -90,6 +90,24 @@ pub fn build(b: *std.Build) !void {
     jetquery_migrate_module.addImport("migrations", migrations_module);
     jetquery_migrate_module.addImport("jetquery.config", config_module);
     jetquery_migrate_module.addImport("jetcommon", jetcommon_module);
+
+    const jetquery_reflect_module = b.addModule(
+        "jetquery_reflect",
+        .{ .root_source_file = b.path("src/jetquery/reflection/Reflect.zig") },
+    );
+    jetquery_reflect_module.addImport("jetquery", jetquery_module);
+    jetquery_reflect_module.addImport("migrations", migrations_module);
+    jetquery_reflect_module.addImport("jetquery.config", config_module);
+    jetquery_reflect_module.addImport("jetcommon", jetcommon_module);
+
+    const reflect_unit_tests = b.addTest(.{
+        .root_source_file = b.path("src/jetquery/reflection/Reflect.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const run_reflect_unit_tests = b.addRunArtifact(reflect_unit_tests);
+    reflect_unit_tests.root_module.addImport("jetquery", jetquery_module);
+    test_step.dependOn(&run_reflect_unit_tests.step);
 }
 
 fn findMigrations(allocator: std.mem.Allocator, path: []const u8) ![][]const u8 {

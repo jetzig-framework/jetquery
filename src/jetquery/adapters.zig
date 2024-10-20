@@ -1,3 +1,5 @@
+const std = @import("std");
+
 const jetquery = @import("../jetquery.zig");
 
 pub const PostgresqlAdapter = @import("adapters/PostgresqlAdapter.zig");
@@ -136,6 +138,16 @@ pub const Adapter = union(enum) {
     pub fn Aggregate(self: Adapter, context: jetquery.sql.FunctionContext) type {
         return switch (self) {
             inline else => |adapter| @TypeOf(adapter).Aggregate(context),
+        };
+    }
+
+    pub fn reflect(
+        self: *Adapter,
+        allocator: std.mem.Allocator,
+        repo: *jetquery.Repo,
+    ) !jetquery.Reflection {
+        return switch (self.*) {
+            inline else => |*adapter| try adapter.reflect(allocator, repo),
         };
     }
 };
