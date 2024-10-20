@@ -1215,8 +1215,15 @@ fn updateTimestamps(
         .update => {
             const timestamp = now();
             inline for (statement.field_infos, 0..) |field_info, index| {
-                if (comptime std.mem.eql(u8, field_info.name, jetquery.default_column_names.updated_at)) {
-                    @field(statement.field_values, std.fmt.comptimePrint("{}", .{index})) = timestamp;
+                if (comptime std.mem.eql(
+                    u8,
+                    field_info.name,
+                    jetquery.default_column_names.updated_at,
+                )) {
+                    @field(
+                        statement.field_values,
+                        std.fmt.comptimePrint("{}", .{index}),
+                    ) = timestamp;
                     statement.field_errors[index] = null;
                 }
             }
