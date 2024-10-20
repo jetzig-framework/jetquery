@@ -382,7 +382,7 @@ fn Statement(
             }
 
             if (comptime hasTimestamps(Table)) {
-                updateTimestamps(S, &statement, statement.field_infos, statement.query_context);
+                updateTimestamps(S, &statement, statement.query_context);
             }
 
             return statement;
@@ -1209,10 +1209,8 @@ fn validateQueryContext(comptime initial: sql.QueryContext, comptime attempted: 
 fn updateTimestamps(
     T: type,
     statement: *T,
-    comptime field_infos: []const jetquery.fields.FieldInfo,
     comptime context: sql.QueryContext,
 ) void {
-    _ = field_infos;
     switch (comptime context) {
         .update => {
             const timestamp = now();
@@ -1226,11 +1224,25 @@ fn updateTimestamps(
         .insert => {
             const timestamp = now();
             inline for (statement.field_infos, 0..) |field_info, index| {
-                if (comptime std.mem.eql(u8, field_info.name, jetquery.default_column_names.updated_at)) {
-                    @field(statement.field_values, std.fmt.comptimePrint("{}", .{index})) = timestamp;
+                if (comptime std.mem.eql(
+                    u8,
+                    field_info.name,
+                    jetquery.default_column_names.updated_at,
+                )) {
+                    @field(
+                        statement.field_values,
+                        std.fmt.comptimePrint("{}", .{index}),
+                    ) = timestamp;
                     statement.field_errors[index] = null;
-                } else if (comptime std.mem.eql(u8, field_info.name, jetquery.default_column_names.created_at)) {
-                    @field(statement.field_values, std.fmt.comptimePrint("{}", .{index})) = timestamp;
+                } else if (comptime std.mem.eql(
+                    u8,
+                    field_info.name,
+                    jetquery.default_column_names.created_at,
+                )) {
+                    @field(
+                        statement.field_values,
+                        std.fmt.comptimePrint("{}", .{index}),
+                    ) = timestamp;
                     statement.field_errors[index] = null;
                 }
             }
