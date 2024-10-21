@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 
 const pg = @import("pg");
 
@@ -149,13 +150,24 @@ fn maybeDupe(allocator: std.mem.Allocator, T: type, value: T) !T {
 }
 
 pub const Options = struct {
-    database: []const u8,
-    username: []const u8,
-    password: []const u8,
-    hostname: []const u8,
-    port: u16 = 5432,
-    pool_size: u16 = 8,
-    timeout: u32 = 10_000,
+    database: ?[]const u8 = null,
+    username: ?[]const u8 = null,
+    password: ?[]const u8 = null,
+    hostname: ?[]const u8 = null,
+    port: ?u16 = null,
+    pool_size: ?u16 = null,
+    timeout: ?u32 = null,
+
+    pub fn defaultValue(T: type, comptime name: []const u8) T {
+        const tag = std.enums.nameCast(std.meta.FieldEnum(Options), name);
+        return switch (tag) {
+            .database, .username, .password => null,
+            .hostname => "localhost",
+            .port => 5432,
+            .pool_size => 8,
+            .timeout => 10_000,
+        };
+    }
 };
 
 /// Initialize a new PostgreSQL adapter and connection pool.
@@ -433,18 +445,28 @@ fn translateColumnType(name: []const u8) jetquery.Column.Type {
 
 fn initPool(allocator: std.mem.Allocator, options: Options) !*pg.Pool {
     return try pg.Pool.init(allocator, .{
-        .size = options.pool_size,
+        .size = options.pool_size.?,
         .connect = .{
-            .port = options.port,
-            .host = options.hostname,
+            .port = options.port.?,
+            .host = options.hostname.?,
         },
         .auth = .{
-            .username = options.username,
-            .database = options.database,
-            .password = options.password,
-            .timeout = options.timeout,
+            .username = options.username orelse return configError("username"),
+            .database = options.database orelse return configError("database"),
+            .password = options.password orelse return configError("password"),
+            .timeout = options.timeout.?,
         },
     });
+}
+
+fn configError(comptime name: []const u8) error{JetQueryConfigError} {
+    const message = "Missing expected configuration value: `" ++ name ++ "`";
+    if (builtin.is_test) { // https://github.com/ziglang/zig/issues/5738
+        std.log.warn(message, .{});
+    } else {
+        std.log.err(message, .{});
+    }
+    return error.JetQueryConfigError;
 }
 
 fn connectionExecute(

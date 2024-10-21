@@ -24,13 +24,16 @@ pub const DropDatabaseOptions = struct { if_exists: bool = false };
 
 /// Initialize a new Repo for executing queries.
 pub fn init(allocator: std.mem.Allocator, options: InitOptions) !Repo {
+    var env = try std.process.getEnvMap(allocator);
+    defer env.deinit();
+
     return .{
         .allocator = allocator,
         .adapter = switch (options.adapter) {
             .postgresql => |adapter_options| .{
                 .postgresql = try jetquery.adapters.PostgresqlAdapter.init(
                     allocator,
-                    adapter_options,
+                    try applyDefaultOptions(@TypeOf(adapter_options), adapter_options, env),
                     options.lazy_connect,
                 ),
             },
@@ -38,6 +41,27 @@ pub fn init(allocator: std.mem.Allocator, options: InitOptions) !Repo {
         },
         .eventCallback = options.eventCallback,
     };
+}
+
+pub fn applyDefaultOptions(T: type, initial: T, env: std.process.EnvMap) !T {
+    var options: T = undefined;
+    const prefix = "JETQUERY_";
+    inline for (std.meta.fields(T)) |field| {
+        const env_name = comptime blk: {
+            var buf: [prefix.len + field.name.len]u8 = undefined;
+            @memcpy(buf[0..prefix.len], prefix);
+            for (field.name, prefix.len..) |char, index| buf[index] = std.ascii.toUpper(char);
+            break :blk buf;
+        };
+        @field(options, field.name) = @field(initial, field.name) orelse switch (field.type) {
+            ?u16, ?u32 => if (env.get(&env_name)) |value|
+                try std.fmt.parseInt(@typeInfo(field.type).optional.child, value, 10)
+            else
+                comptime T.defaultValue(field.type, field.name),
+            inline else => env.get(&env_name) orelse comptime T.defaultValue(field.type, field.name),
+        };
+    }
+    return options;
 }
 
 const GlobalOptions = struct {
@@ -859,4 +883,9 @@ test "aggregate count() with HAVING" {
     try std.testing.expect(cats[0].maximum_paws == 8);
     try std.testing.expectEqualStrings(cats[1].name, "Princes");
     try std.testing.expect(cats[1].maximum_paws == 100);
+}
+
+test "missing config options" {
+    const repo = Repo.init(std.testing.allocator, .{ .adapter = .{ .postgresql = .{} } });
+    try std.testing.expectError(error.JetQueryConfigError, repo);
 }
