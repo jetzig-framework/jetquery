@@ -665,6 +665,29 @@ fn Statement(
             return self.extend(S, .{bound}, .limit);
         }
 
+        pub fn offset(self: Self, bound: usize) Statement(query_context, Schema, Table, .{
+            .relations = options.relations,
+            .field_infos = options.field_infos ++ jetquery.fields.fieldInfos(Adapter(), Table, &.{}, @TypeOf(.{bound}), .offset),
+            .columns = options.columns,
+            .order_clauses = options.order_clauses,
+            .result_context = options.result_context,
+            .where_clauses = options.where_clauses,
+            .group_by = options.group_by,
+            .having_clauses = options.having_clauses,
+        }) {
+            const S = Statement(query_context, Schema, Table, .{
+                .relations = options.relations,
+                .field_infos = options.field_infos ++ jetquery.fields.fieldInfos(Adapter(), Table, &.{}, @TypeOf(.{bound}), .offset),
+                .columns = options.columns,
+                .order_clauses = options.order_clauses,
+                .result_context = options.result_context,
+                .where_clauses = options.where_clauses,
+                .group_by = options.group_by,
+                .having_clauses = options.having_clauses,
+            });
+            return self.extend(S, .{bound}, .offset);
+        }
+
         pub fn orderBy(self: Self, comptime args: anytype) Statement(query_context, Schema, Table, .{
             .relations = options.relations,
             .field_infos = options.field_infos,

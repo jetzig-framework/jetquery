@@ -138,6 +138,20 @@ test "limit" {
     , query.sql);
 }
 
+test "offset" {
+    const Schema = struct {
+        pub const Cat = Table(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});
+    };
+    const query = Query(Schema, .Cat)
+        .select(.{ .name, .paws })
+        .limit(100)
+        .offset(50);
+
+    try std.testing.expectEqualStrings(
+        \\SELECT "cats"."name", "cats"."paws" FROM "cats" WHERE (1 = 1) LIMIT $1 OFFSET $2
+    , query.sql);
+}
+
 test "order by" {
     const Schema = struct {
         pub const Cat = Table(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});

@@ -266,12 +266,25 @@ fn renderLimit(
 ) []const u8 {
     if (!hasParam(field_infos, .limit)) return "";
 
+    const offset = renderOffset(Adapter, field_infos);
+
     return std.fmt.comptimePrint(
-        " LIMIT {s}",
-        .{Adapter.paramSql(lastParamIndex(field_infos, .limit))},
+        " LIMIT {s}{s}",
+        .{ Adapter.paramSql(lastParamIndex(field_infos, .limit)), offset },
     );
 }
 
+fn renderOffset(
+    Adapter: type,
+    comptime field_infos: []const jetquery.fields.FieldInfo,
+) []const u8 {
+    if (!hasParam(field_infos, .offset)) return "";
+
+    return std.fmt.comptimePrint(
+        " OFFSET {s}",
+        .{Adapter.paramSql(lastParamIndex(field_infos, .offset))},
+    );
+}
 fn renderOrder(
     Adapter: type,
     comptime order_clauses: []const OrderClause,

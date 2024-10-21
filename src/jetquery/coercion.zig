@@ -10,7 +10,7 @@ pub fn coerce(
     value: anytype,
 ) CoercedValue(fields.ColumnType(Table, field_info), @TypeOf(value)) {
     switch (field_info.context) {
-        .limit => return switch (@typeInfo(@TypeOf(value))) {
+        .limit, .offset => return switch (@typeInfo(@TypeOf(value))) {
             .int, .comptime_int => .{ .value = value },
             else => coerceDelegate(usize, value),
         },
