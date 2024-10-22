@@ -107,8 +107,19 @@ pub const Result = union(enum) {
                     }
 
                     const q = aux_query.query.where(args);
+                    // Order args are a dynamic type so we can't easily use an optional here like
+                    // we can with `limit()`.
+                    const q_order = if (comptime @TypeOf(aux_query.relation.order_by) != @TypeOf(null))
+                        q.orderBy(aux_query.relation.order_by)
+                    else
+                        q;
+                    const q_limit = if (aux_query.relation.limit) |limit|
+                        q_order.limit(limit)
+                    else
+                        q_order;
+
                     var aux_result = try adapted_result.repo.executeInternal(
-                        q,
+                        q_limit,
                         adapted_result.caller_info,
                     );
                     defer aux_result.deinit();

@@ -277,6 +277,9 @@ pub fn free(self: *Repo, value: anytype) void {
             },
             else => {},
         },
+        .optional => {
+            if (value) |capture| return self.free(capture) else return;
+        },
         else => {},
     }
 
@@ -641,10 +644,19 @@ test "relations" {
         .paws = std.crypto.random.int(u3),
     }));
 
+    try repo.insert(Schema.Cat.init(.{
+        .id = 6,
+        .human_id = jane.id,
+        .name = "Felix",
+        .paws = std.crypto.random.int(u3),
+    }));
+
     const humans = try jetquery.Query(Schema, .Human).include(.cats, .{}).orderBy(.name).all(&repo);
     defer repo.free(humans);
 
     try std.testing.expect(humans.len == 2);
+    try std.testing.expect(humans[0].cats.len == 2);
+    try std.testing.expect(humans[1].cats.len == 3);
     try std.testing.expectEqualStrings("Bob", humans[0].name);
     try std.testing.expectEqualStrings("Jane", humans[1].name);
     try std.testing.expectEqualStrings("Hercules", humans[0].cats[0].name);
@@ -652,7 +664,15 @@ test "relations" {
     try std.testing.expectEqualStrings("Jane", humans[1].name);
     try std.testing.expectEqualStrings("Cindy", humans[1].cats[0].name);
     try std.testing.expectEqualStrings("Garfield", humans[1].cats[1].name);
+    try std.testing.expectEqualStrings("Felix", humans[1].cats[2].name);
 
+    const jane_two_cats = try jetquery.Query(Schema, .Human).findBy(.{ .name = "Jane" })
+        .include(.cats, .{ .limit = 2, .order_by = .{.name} })
+        .execute(&repo);
+    defer repo.free(jane_two_cats);
+    try std.testing.expect(jane_two_cats.?.cats.len == 2);
+    try std.testing.expectEqualStrings("Cindy", jane_two_cats.?.cats[0].name);
+    try std.testing.expectEqualStrings("Felix", jane_two_cats.?.cats[1].name);
     // TODO: Merge rows on `next()`
     // const iterating_query = jetquery.Query(Schema, .Human).include(.cats, .{});
     // var humans_iterated = try iterating_query.execute(&repo);

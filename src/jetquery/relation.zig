@@ -28,7 +28,7 @@ pub fn Relation(
     Schema: type,
     Table: type,
     comptime name: RelationsEnum(Table),
-    comptime columns: anytype,
+    comptime relation_options: anytype,
     comptime join_context: JoinContext,
 ) type {
     comptime {
@@ -39,7 +39,19 @@ pub fn Relation(
             pub const relation_type = relation.relation_type;
             pub const options = relation.options;
             pub const relation_name = @tagName(name);
-            pub const select_columns = jetquery.columns.translate(Source, &.{}, columns);
+            pub const select_columns = jetquery.columns.translate(
+                Source,
+                &.{},
+                if (@hasField(@TypeOf(relation_options), "select"))
+                    relation_options.select
+                else
+                    .{},
+            );
+            pub const limit = detectLimit(relation_options, relation_type);
+            pub const order_by = if (@hasField(@TypeOf(relation_options), "order_by"))
+                relation_options.order_by
+            else
+                null;
             pub const primary_key = options.primary_key orelse "id";
             pub const foreign_key = options.foreign_key orelse switch (relation_type) {
                 .belongs_to => relation_name ++ "_id",
@@ -75,4 +87,15 @@ pub fn hasMany(comptime model_name: anytype, comptime has_many_options: HasManyO
         pub const relation_type: RelationType = .has_many;
         pub const options = has_many_options;
     };
+}
+
+fn detectLimit(options: anytype, relation_type: RelationType) ?u64 {
+    if (@hasField(@TypeOf(options), "limit")) {
+        if (relation_type != .has_many) {
+            @compileError(
+                "`limit` on `include` only supported for `has_many` relations, found: `" ++
+                    @tagName(relation_type) ++ "`",
+            );
+        } else return @intCast(options.limit);
+    } else return null;
 }

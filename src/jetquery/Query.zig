@@ -169,23 +169,35 @@ pub fn Query(Schema: type, comptime table: anytype) type {
             return InitialStatement(Schema, Table).findBy(args);
         }
 
-        /// Indicate that a relation should be fetched with this query. Pass an array of columns
-        /// to select from the relation, or pass an empty array to select all columns.
+        /// Indicate that a relation should be fetched with this query. Pass options to control
+        /// the behaviour of the generated query.
+        ///
+        /// Select all columns and all rows of the association:
         /// ```zig
-        /// Query(Schema, .MyTable).include(.my_relation, &.{.foo, .bar});
-        /// Query(Schema, .MyTable).include(.my_relation, &.{});
+        /// Query(Schema, .MyTable).include(.my_relation, .{});
+        /// ```
+        /// Select specific columns:
+        /// ```zig
+        /// Query(Schema, .MyTable).include(.my_relation, .{ .select = .{ .foo, .bar } });
+        /// ```
+        /// Pass `limit` to limit the number of rows fetched for `hasMany` relations. This option
+        /// is not supported for `belongsTo` relations. Note that the limit applies to the sum of
+        /// all related records from the base result set so this option is only recommended when
+        /// using `find` and `findBy`, e.g. fetch 1 blog post and 10 associated comments.
+        /// ```zig
+        /// Query(Schema, .MyTable).include(.my_relation, .{ .limit = 10 });
         /// ```
         pub fn include(
             comptime name: jetquery.relation.RelationsEnum(Table),
-            comptime select_columns: anytype,
+            comptime include_options: anytype,
         ) Statement(.select, Schema, Table, .{
             .relations = &.{
-                jetquery.relation.Relation(Schema, Table, name, select_columns, .include),
+                jetquery.relation.Relation(Schema, Table, name, include_options, .include),
             },
             .default_select = true,
             .columns = &Table.columns(),
         }) {
-            return InitialStatement(Schema, Table).include(name, select_columns);
+            return InitialStatement(Schema, Table).include(name, include_options);
         }
 
         /// Join to another table by association name. Columns on the joined table are not
@@ -203,7 +215,13 @@ pub fn Query(Schema: type, comptime table: anytype) type {
             comptime join_context: jetquery.relation.JoinContext,
             comptime name: jetquery.relation.RelationsEnum(Table),
         ) Statement(.select, Schema, Table, .{
-            .relations = &.{jetquery.relation.Relation(Schema, Table, name, null, join_context)},
+            .relations = &.{jetquery.relation.Relation(
+                Schema,
+                Table,
+                name,
+                .{ .select = null },
+                join_context,
+            )},
             .default_select = true,
             .columns = &Table.columns(),
         }) {
@@ -312,7 +330,7 @@ fn Statement(
 ) type {
     return struct {
         field_values: jetquery.fields.FieldValues(Table, options.relations, options.field_infos),
-        limit_bound: ?usize = null,
+        limit_bound: ?u64 = null,
         field_errors: [options.field_infos.len]?anyerror,
 
         comptime query_context: sql.QueryContext = query_context,
@@ -642,7 +660,7 @@ fn Statement(
             return self.extend(S, .{}, .none);
         }
 
-        pub fn limit(self: Self, bound: usize) Statement(query_context, Schema, Table, .{
+        pub fn limit(self: Self, bound: u64) Statement(query_context, Schema, Table, .{
             .relations = options.relations,
             .field_infos = options.field_infos ++ jetquery.fields.fieldInfos(Adapter(), Table, &.{}, @TypeOf(.{bound}), .limit),
             .columns = options.columns,
@@ -665,7 +683,7 @@ fn Statement(
             return self.extend(S, .{bound}, .limit);
         }
 
-        pub fn offset(self: Self, bound: usize) Statement(query_context, Schema, Table, .{
+        pub fn offset(self: Self, bound: u64) Statement(query_context, Schema, Table, .{
             .relations = options.relations,
             .field_infos = options.field_infos ++ jetquery.fields.fieldInfos(Adapter(), Table, &.{}, @TypeOf(.{bound}), .offset),
             .columns = options.columns,
@@ -692,7 +710,7 @@ fn Statement(
             .relations = options.relations,
             .field_infos = options.field_infos,
             .columns = options.columns,
-            .order_clauses = &translateOrderBy(Table, options.relations, args),
+            .order_clauses = &sql.translateOrderBy(Table, options.relations, args),
             .result_context = options.result_context,
             .where_clauses = options.where_clauses,
             .group_by = options.group_by,
@@ -702,7 +720,7 @@ fn Statement(
                 .relations = options.relations,
                 .field_infos = options.field_infos,
                 .columns = options.columns,
-                .order_clauses = &translateOrderBy(Table, options.relations, args),
+                .order_clauses = &sql.translateOrderBy(Table, options.relations, args),
                 .result_context = options.result_context,
                 .where_clauses = options.where_clauses,
                 .group_by = options.group_by,
@@ -788,13 +806,13 @@ fn Statement(
         pub fn include(
             self: Self,
             comptime name: jetquery.relation.RelationsEnum(Table),
-            comptime select_columns: anytype,
+            comptime include_options: anytype,
         ) Statement(switch (query_context) {
             .none => .select,
             else => |tag| tag,
         }, Schema, Table, .{
             .relations = options.relations ++
-                .{jetquery.relation.Relation(Schema, Table, name, select_columns, .include)},
+                .{jetquery.relation.Relation(Schema, Table, name, include_options, .include)},
             .field_infos = options.field_infos,
             .columns = switch (query_context) {
                 .none => &Table.columns(),
@@ -814,7 +832,7 @@ fn Statement(
                 else => |tag| tag,
             }, Schema, Table, .{
                 .relations = options.relations ++
-                    .{jetquery.relation.Relation(Schema, Table, name, select_columns, .include)},
+                    .{jetquery.relation.Relation(Schema, Table, name, include_options, .include)},
                 .field_infos = options.field_infos,
                 .columns = switch (query_context) {
                     .none => &Table.columns(),
@@ -845,7 +863,13 @@ fn Statement(
             Table,
             .{
                 .relations = options.relations ++
-                    .{jetquery.relation.Relation(Schema, Table, name, null, join_context)},
+                    .{jetquery.relation.Relation(
+                    Schema,
+                    Table,
+                    name,
+                    .{ .select = null },
+                    join_context,
+                )},
                 .field_infos = options.field_infos,
                 .columns = switch (query_context) {
                     .none => &Table.columns(),
@@ -866,7 +890,13 @@ fn Statement(
                 else => |tag| tag,
             }, Schema, Table, .{
                 .relations = options.relations ++
-                    .{jetquery.relation.Relation(Schema, Table, name, null, join_context)},
+                    .{jetquery.relation.Relation(
+                    Schema,
+                    Table,
+                    name,
+                    .{ .select = null },
+                    join_context,
+                )},
                 .field_infos = options.field_infos,
                 .columns = switch (query_context) {
                     .none => &Table.columns(),
@@ -1106,108 +1136,6 @@ fn Statement(
                 } ++ .{relation_field};
             }
         }
-    };
-}
-
-fn translateOrderBy(
-    Table: type,
-    relations: []const type,
-    comptime args: anytype,
-) [orderBySize(@TypeOf(args))]sql.OrderClause {
-    comptime {
-        switch (@typeInfo(@TypeOf(args))) {
-            .enum_literal => return .{.{
-                .column = Table.column(@tagName(args)),
-                .direction = .ascending,
-            }},
-            .@"struct" => {},
-            else => |tag| @compileError(
-                std.fmt.comptimePrint(
-                    "Unsupported `orderBy` argument: `{s}`. Expected [enum_literal, struct]",
-                    .{@tagName(tag)},
-                ),
-            ),
-        }
-        var clauses: [orderBySize(@TypeOf(args))]sql.OrderClause = undefined;
-        const is_tuple = @typeInfo(@TypeOf(args)).@"struct".is_tuple;
-        const fields = std.meta.fields(@TypeOf(args));
-
-        var index: usize = 0;
-        for (fields, if (is_tuple) args else fields) |field, arg| {
-            if (is_tuple) {
-                // Short-hand (default ascending):
-                // orderBy(.{ .foo, .bar, .baz })
-                clauses[index] = .{
-                    .column = Table.column(@tagName(arg)),
-                    .direction = .ascending,
-                };
-                index += 1;
-                continue;
-            } else if (@hasField(Table.Definition, field.name)) {
-                // Explicit form:
-                // orderBy(.{ .foo = .ascending })
-                // orderBy(.{ .bar = .descending })
-                clauses[index] = .{
-                    .column = Table.column(field.name),
-                    .direction = std.enums.nameCast(
-                        sql.OrderDirection,
-                        @tagName(@field(args, field.name)),
-                    ),
-                };
-                index += 1;
-                continue;
-            } else {
-                // Nested form, ordering by relations fields:
-                // orderBy(.{ .foo = .{ .bar })
-                // orderBy(.{ .foo = .{ .bar = .descending } })
-                relations: for (relations) |relation| {
-                    if (std.mem.eql(u8, relation.relation_name, field.name)) {
-                        const nested_clauses = translateOrderBy(
-                            relation.Source,
-                            &.{},
-                            @field(args, field.name),
-                        );
-                        for (nested_clauses) |clause| {
-                            clauses[index] = clause;
-                            index += 1;
-                        }
-                        break :relations;
-                    }
-                } else {
-                    @compileError(
-                        std.fmt.comptimePrint(
-                            "Unrecognized `orderBy` field `{s}` in current table and active joins/includes.",
-                            .{field.name},
-                        ),
-                    );
-                }
-            }
-        }
-        return clauses;
-    }
-}
-
-fn orderBySize(T: type) usize {
-    const error_message = "Unsupported argument type for `orderBy`: `{s}`. Expected [enum_literal, struct]";
-
-    return switch (@typeInfo(T)) {
-        .enum_literal => 1,
-        .@"struct" => blk: {
-            var count: usize = 0;
-            for (std.meta.fields(T)) |field| {
-                count += switch (@typeInfo(field.type)) {
-                    .enum_literal => 1,
-                    .@"struct" => orderBySize(field.type),
-                    else => |tag| @compileError(
-                        std.fmt.comptimePrint(error_message, .{@tagName(tag)}),
-                    ),
-                };
-            }
-            break :blk count;
-        },
-        else => |tag| @compileError(
-            std.fmt.comptimePrint(error_message, .{@tagName(tag)}),
-        ),
     };
 }
 

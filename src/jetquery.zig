@@ -720,8 +720,8 @@ test "belongsTo (with specified columns)" {
         );
     };
     const query = Query(Schema, .Human)
-        .include(.cat, .{ .name, .paws })
-        .include(.family, .{.name})
+        .include(.cat, .{ .select = .{ .name, .paws } })
+        .include(.family, .{ .select = .{.name} })
         .select(.{.name})
         .findBy(.{ .name = "Bob" });
 
