@@ -463,7 +463,7 @@ pub fn createIndex(
     comptime options: CreateIndexOptions,
 ) !void {
     const adapter = jetquery.adapters.Type(jetquery.adapter);
-    const index_name = comptime options.name orelse &adapter.indexName(
+    const index_name = comptime options.name orelse adapter.indexName(
         table_name,
         column_names,
     );

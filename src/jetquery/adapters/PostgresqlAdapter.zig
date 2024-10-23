@@ -372,7 +372,7 @@ pub fn emptyWhereSql() []const u8 {
 pub fn indexName(
     comptime table_name: []const u8,
     comptime column_names: []const []const u8,
-) [indexNameSize(table_name, column_names)]u8 {
+) *const [indexNameSize(table_name, column_names)]u8 {
     comptime {
         var buf: [indexNameSize(table_name, column_names)]u8 = undefined;
         const prefix = std.fmt.comptimePrint("index_{s}_", .{table_name});
@@ -385,7 +385,8 @@ pub fn indexName(
             @memcpy(buf[cursor .. cursor + column_suffix.len], column_suffix);
             cursor += column_suffix.len;
         }
-        return buf;
+        const final = buf;
+        return &final;
     }
 }
 
