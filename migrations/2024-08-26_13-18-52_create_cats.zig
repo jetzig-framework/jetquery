@@ -13,6 +13,8 @@ pub fn up(repo: *jetquery.Repo) !void {
         },
         .{},
     );
+
+    try repo.createIndex("cats", &.{ "name", "paws" }, .{});
 }
 
 pub fn down(repo: *jetquery.Repo) !void {

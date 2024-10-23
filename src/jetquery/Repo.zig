@@ -377,35 +377,13 @@ pub fn createTable(
 
     inline for (columns) |column| {
         if (comptime !column.options.index) continue;
-        const adapter = jetquery.adapters.Type(jetquery.adapter);
-        const index_name = comptime column.options.index_name orelse &adapter.indexName(
-            name,
-            &.{column.name},
-        );
-
-        try self.createIndex(
-            index_name,
-            name,
-            &.{column.name},
-            .{ .unique = column.options.unique },
-        );
+        try self.createIndex(name, &.{column.name}, .{ .name = column.options.index_name });
     }
 
     inline for (columns) |column| {
         if (comptime !column.timestamps) continue;
-        const adapter = jetquery.adapters.Type(jetquery.adapter);
-
-        const created_at = comptime column.options.index_name orelse &adapter.indexName(
-            name,
-            &.{jetquery.default_column_names.created_at},
-        );
-        try self.createIndex(created_at, name, &.{jetquery.default_column_names.created_at}, .{});
-
-        const updated_at = comptime column.options.index_name orelse &adapter.indexName(
-            name,
-            &.{jetquery.default_column_names.updated_at},
-        );
-        try self.createIndex(updated_at, name, &.{jetquery.default_column_names.updated_at}, .{});
+        try self.createIndex(name, &.{jetquery.default_column_names.created_at}, .{});
+        try self.createIndex(name, &.{jetquery.default_column_names.updated_at}, .{});
     }
 }
 
@@ -472,18 +450,22 @@ pub fn dropDatabase(self: *Repo, comptime name: []const u8, options: DropDatabas
 
 pub const CreateIndexOptions = struct {
     unique: bool = false,
+    name: ?[]const u8 = null,
 };
 
 /// Create an index on the specified table name and column names. Optionally pass]
 /// `.{ .unique = true }` to create a unique constraint on the index.
 pub fn createIndex(
     self: *Repo,
-    comptime index_name: []const u8,
     comptime table_name: []const u8,
     comptime column_names: []const []const u8,
     comptime options: CreateIndexOptions,
 ) !void {
     const adapter = jetquery.adapters.Type(jetquery.adapter);
+    const index_name = comptime options.name orelse &adapter.indexName(
+        table_name,
+        column_names,
+    );
     const sql = comptime adapter.createIndexSql(index_name, table_name, column_names, options);
     try self.adapter.executeVoid(
         self,
