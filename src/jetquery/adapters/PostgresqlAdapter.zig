@@ -460,6 +460,13 @@ pub fn uniqueColumnSql() []const u8 {
     return " UNIQUE";
 }
 
+pub fn referenceSql(comptime reference: jetquery.Column.Reference) []const u8 {
+    return std.fmt.comptimePrint(
+        " REFERENCES {s}({s})",
+        .{ comptime identifier(reference[0]), comptime identifier(reference[1]) },
+    );
+}
+
 pub fn reflect(
     self: *PostgresqlAdapter,
     allocator: std.mem.Allocator,

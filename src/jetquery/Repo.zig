@@ -355,13 +355,14 @@ pub fn createTable(
             });
         } else {
             try writer.print(
-                \\{s}{s}{s}{s}{s}{s}
+                \\{s}{s}{s}{s}{s}{s}{s}
             , .{
                 self.adapter.identifier(column.name),
                 if (column.primary_key) "" else self.adapter.columnTypeSql(column.type),
                 if (!column.primary_key and column.options.not_null) self.adapter.notNullSql() else "",
                 if (column.primary_key) self.adapter.primaryKeySql() else "",
                 if (column.options.unique) self.adapter.uniqueColumnSql() else "",
+                if (column.options.reference) |reference| self.adapter.referenceSql(reference) else "",
                 if (index < columns.len - 1) ", " else "",
             });
         }

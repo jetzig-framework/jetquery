@@ -176,9 +176,17 @@ pub const Adapter = union(enum) {
         };
     }
 
+    /// SQL fragment used when specifying a unique constraint.
     pub fn uniqueColumnSql(self: Adapter) []const u8 {
         return switch (self) {
             inline else => |adapter| @TypeOf(adapter).uniqueColumnSql(),
+        };
+    }
+
+    /// SQL fragment used to denote a foreign key.
+    pub fn referenceSql(self: Adapter, comptime reference: jetquery.Column.Reference) []const u8 {
+        return switch (self) {
+            inline else => |adapter| @TypeOf(adapter).referenceSql(reference),
         };
     }
 

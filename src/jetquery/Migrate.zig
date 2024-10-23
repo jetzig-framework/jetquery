@@ -103,6 +103,7 @@ test "migrate" {
 
     try repo.dropTable("jetquery_migrations", .{ .if_exists = true });
     try repo.dropTable("cats", .{ .if_exists = true });
+    try repo.dropTable("humans", .{ .if_exists = true });
 
     const migrate = Migrate.init(&repo);
     try migrate.run();

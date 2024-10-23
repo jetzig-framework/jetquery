@@ -110,6 +110,11 @@ pub fn uniqueColumnSql() []const u8 {
     return "";
 }
 
+pub fn referenceSql(comptime reference: jetquery.Column.Reference) []const u8 {
+    _ = reference;
+    return "";
+}
+
 pub fn createIndexSql(
     comptime index_name: []const u8,
     comptime table_name: []const u8,

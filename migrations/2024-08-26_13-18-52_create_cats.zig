@@ -15,6 +15,17 @@ pub fn up(repo: *jetquery.Repo) !void {
     );
 
     try repo.createIndex("cats", &.{ "name", "paws" }, .{});
+
+    try repo.createTable(
+        "humans",
+        &.{
+            t.primaryKey("id", .{}),
+            t.column("name", .string, .{ .not_null = true, .unique = true }),
+            t.column("cat_id", .integer, .{ .reference = .{ "cats", "id" } }),
+            t.timestamps(.{}),
+        },
+        .{},
+    );
 }
 
 pub fn down(repo: *jetquery.Repo) !void {
