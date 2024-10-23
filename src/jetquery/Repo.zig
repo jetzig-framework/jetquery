@@ -470,7 +470,7 @@ pub fn createIndex(
     const sql = comptime adapter.createIndexSql(index_name, table_name, column_names, options);
     try self.adapter.executeVoid(
         self,
-        &sql,
+        sql,
         .{},
         try jetquery.debug.getCallerInfo(@returnAddress()),
     );

@@ -102,8 +102,8 @@ test "migrate" {
     defer repo.deinit();
 
     try repo.dropTable("jetquery_migrations", .{ .if_exists = true });
-    try repo.dropTable("cats", .{ .if_exists = true });
     try repo.dropTable("humans", .{ .if_exists = true });
+    try repo.dropTable("cats", .{ .if_exists = true });
 
     const migrate = Migrate.init(&repo);
     try migrate.run();
@@ -133,4 +133,8 @@ test "migrate" {
         .select(.{ .name, .paws, .created_at, .updated_at });
     var result2 = try repo.execute(query2);
     defer result2.deinit();
+
+    try repo.dropTable("jetquery_migrations", .{ .if_exists = true });
+    try repo.dropTable("humans", .{ .if_exists = true });
+    try repo.dropTable("cats", .{ .if_exists = true });
 }

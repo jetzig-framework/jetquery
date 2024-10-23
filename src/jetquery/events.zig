@@ -36,6 +36,7 @@ pub fn defaultCallback(event: Event) !void {
 
     if (event.err) |err| {
         std.debug.print(
+            \\
             \\/
             \\| Query:
             \\|   {s}

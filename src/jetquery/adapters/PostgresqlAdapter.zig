@@ -414,7 +414,7 @@ pub fn createIndexSql(
     comptime table_name: []const u8,
     comptime column_names: []const []const u8,
     comptime options: jetquery.Repo.CreateIndexOptions,
-) [createIndexSqlSize(index_name, table_name, column_names, options)]u8 {
+) *const [createIndexSqlSize(index_name, table_name, column_names, options)]u8 {
     comptime {
         var buf: [createIndexSqlSize(index_name, table_name, column_names, options)]u8 = undefined;
         const statement = std.fmt.comptimePrint(
@@ -431,7 +431,8 @@ pub fn createIndexSql(
             cursor += column.len;
         }
         buf[cursor] = ')';
-        return buf;
+        const final = buf;
+        return &final;
     }
 }
 
