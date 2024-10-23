@@ -18,6 +18,7 @@ pub const Average = i64;
 pub const Sum = i64;
 pub const Max = i32;
 pub const Min = i32;
+pub const max_identifier_len = 63;
 
 pub fn Aggregate(comptime context: jetquery.sql.FunctionContext) type {
     return switch (context) {
@@ -366,6 +367,97 @@ pub fn outerJoinSql(
 
 pub fn emptyWhereSql() []const u8 {
     return "(1 = 1)";
+}
+
+pub fn indexName(
+    comptime table_name: []const u8,
+    comptime column_names: []const []const u8,
+) [indexNameSize(table_name, column_names)]u8 {
+    comptime {
+        var buf: [indexNameSize(table_name, column_names)]u8 = undefined;
+        const prefix = std.fmt.comptimePrint("index_{s}_", .{table_name});
+        @memcpy(buf[0..prefix.len], prefix);
+
+        var cursor: usize = prefix.len;
+        for (column_names, 0..) |column_name, index| {
+            const separator = if (index + 1 < column_names.len) "_" else "";
+            const column_suffix = std.fmt.comptimePrint("{s}{s}", .{ column_name, separator });
+            @memcpy(buf[cursor .. cursor + column_suffix.len], column_suffix);
+            cursor += column_suffix.len;
+        }
+        return buf;
+    }
+}
+
+fn indexNameSize(comptime table_name: []const u8, comptime column_names: []const []const u8) usize {
+    comptime {
+        var size: usize = 0;
+        size += std.fmt.comptimePrint("index_{s}_", .{table_name}).len;
+        for (column_names, 0..) |column_name, index| {
+            const separator = if (index + 1 < column_names.len) "_" else "";
+            size += std.fmt.comptimePrint("{s}{s}", .{ column_name, separator }).len;
+        }
+        if (size > max_identifier_len) {
+            @compileError(
+                std.fmt.comptimePrint(
+                    "Generated index name length {} longer than {} characters. Specify `.index_name` to manually set a name for this index.",
+                    .{ size, max_identifier_len },
+                ),
+            );
+        }
+        return size;
+    }
+}
+
+pub fn createIndexSql(
+    comptime index_name: []const u8,
+    comptime table_name: []const u8,
+    comptime column_names: []const []const u8,
+    comptime options: jetquery.Repo.CreateIndexOptions,
+) [createIndexSqlSize(index_name, table_name, column_names, options)]u8 {
+    comptime {
+        var buf: [createIndexSqlSize(index_name, table_name, column_names, options)]u8 = undefined;
+        const statement = std.fmt.comptimePrint(
+            "CREATE {s}INDEX {s} ON {s} (",
+            .{ if (options.unique) "UNIQUE " else "", identifier(index_name), identifier(table_name) },
+        );
+        @memcpy(buf[0..statement.len], statement);
+
+        var cursor: usize = statement.len;
+        for (column_names, 0..) |column_name, index| {
+            const separator = if (index + 1 < column_names.len) ", " else "";
+            const column = std.fmt.comptimePrint("{s}{s}", .{ column_name, separator });
+            @memcpy(buf[cursor .. cursor + column.len], column);
+            cursor += column.len;
+        }
+        buf[cursor] = ')';
+        return buf;
+    }
+}
+
+fn createIndexSqlSize(
+    comptime index_name: []const u8,
+    comptime table_name: []const u8,
+    comptime column_names: []const []const u8,
+    comptime options: jetquery.Repo.CreateIndexOptions,
+) usize {
+    comptime {
+        var size: usize = 0;
+        size += std.fmt.comptimePrint(
+            "CREATE {s}INDEX {s} ON {s} (",
+            .{ if (options.unique) "UNIQUE " else "", identifier(index_name), identifier(table_name) },
+        ).len;
+        for (column_names, 0..) |column_name, index| {
+            const separator = if (index + 1 < column_names.len) ", " else "";
+            size += std.fmt.comptimePrint("{s}{s}", .{ column_name, separator }).len;
+        }
+        size += ")".len;
+        return size;
+    }
+}
+
+pub fn uniqueColumnSql() []const u8 {
+    return " UNIQUE";
 }
 
 pub fn reflect(

@@ -9,7 +9,7 @@ eventCallback: *const fn (event: jetquery.events.Event) anyerror!void = jetquery
 
 const Repo = @This();
 
-const InitOptions = struct {
+pub const InitOptions = struct {
     adapter: union(enum) {
         postgresql: jetquery.adapters.PostgresqlAdapter.Options,
         null,
@@ -329,7 +329,7 @@ pub fn createTable(
     self: *Repo,
     comptime name: []const u8,
     comptime columns: []const jetquery.Column,
-    options: CreateTableOptions,
+    comptime options: CreateTableOptions,
 ) !void {
     var buf = std.ArrayList(u8).init(self.allocator);
     defer buf.deinit();
@@ -355,26 +355,58 @@ pub fn createTable(
             });
         } else {
             try writer.print(
-                \\{s}{s}{s}{s}{s}
+                \\{s}{s}{s}{s}{s}{s}
             , .{
                 self.adapter.identifier(column.name),
                 if (column.primary_key) "" else self.adapter.columnTypeSql(column.type),
                 if (!column.primary_key and column.options.not_null) self.adapter.notNullSql() else "",
                 if (column.primary_key) self.adapter.primaryKeySql() else "",
+                if (column.options.unique) self.adapter.uniqueColumnSql() else "",
                 if (index < columns.len - 1) ", " else "",
             });
         }
     }
 
     try writer.print(")", .{});
-    var result = try self.adapter.execute(
+    try self.adapter.executeVoid(
         self,
         buf.items,
         &.{},
         try jetquery.debug.getCallerInfo(@returnAddress()),
     );
-    try result.drain();
-    defer result.deinit();
+
+    inline for (columns) |column| {
+        if (comptime !column.options.index) continue;
+        const adapter = jetquery.adapters.Type(jetquery.adapter);
+        const index_name = comptime column.options.index_name orelse &adapter.indexName(
+            name,
+            &.{column.name},
+        );
+
+        try self.createIndex(
+            index_name,
+            name,
+            &.{column.name},
+            .{ .unique = column.options.unique },
+        );
+    }
+
+    inline for (columns) |column| {
+        if (comptime !column.timestamps) continue;
+        const adapter = jetquery.adapters.Type(jetquery.adapter);
+
+        const created_at = comptime column.options.index_name orelse &adapter.indexName(
+            name,
+            &.{jetquery.default_column_names.created_at},
+        );
+        try self.createIndex(created_at, name, &.{jetquery.default_column_names.created_at}, .{});
+
+        const updated_at = comptime column.options.index_name orelse &adapter.indexName(
+            name,
+            &.{jetquery.default_column_names.updated_at},
+        );
+        try self.createIndex(updated_at, name, &.{jetquery.default_column_names.updated_at}, .{});
+    }
 }
 
 /// Drop a database table named `name`. Pass `.{ .if_exists = true }` to use
@@ -389,14 +421,12 @@ pub fn dropTable(self: *Repo, comptime name: []const u8, options: DropTableOptio
         \\DROP TABLE{s} {s}
     , .{ if (options.if_exists) " IF EXISTS" else "", self.adapter.identifier(name) });
 
-    var result = try self.adapter.execute(
+    try self.adapter.executeVoid(
         self,
         buf.items,
         &.{},
         try jetquery.debug.getCallerInfo(@returnAddress()),
     );
-    try result.drain();
-    defer result.deinit();
 }
 
 /// Create a new database in the current repo. Repo must be initialized with the appropriate user
@@ -412,14 +442,12 @@ pub fn createDatabase(self: *Repo, comptime name: []const u8, options: struct {}
         \\CREATE DATABASE {s}
     , .{self.adapter.identifier(name)});
 
-    var result = try self.adapter.execute(
+    try self.adapter.executeVoid(
         self,
         buf.items,
         &.{},
         try jetquery.debug.getCallerInfo(@returnAddress()),
     );
-    try result.drain();
-    defer result.deinit();
 }
 
 /// Create a new database in the current repo. Repo must be initialized with the appropriate user
@@ -434,14 +462,35 @@ pub fn dropDatabase(self: *Repo, comptime name: []const u8, options: DropDatabas
         \\DROP DATABASE{s} {s}
     , .{ if (options.if_exists) " IF EXISTS" else "", self.adapter.identifier(name) });
 
-    var result = try self.adapter.execute(
+    try self.adapter.executeVoid(
         self,
         buf.items,
         &.{},
         try jetquery.debug.getCallerInfo(@returnAddress()),
     );
-    try result.drain();
-    defer result.deinit();
+}
+
+pub const CreateIndexOptions = struct {
+    unique: bool = false,
+};
+
+/// Create an index on the specified table name and column names. Optionally pass]
+/// `.{ .unique = true }` to create a unique constraint on the index.
+pub fn createIndex(
+    self: *Repo,
+    comptime index_name: []const u8,
+    comptime table_name: []const u8,
+    comptime column_names: []const []const u8,
+    comptime options: CreateIndexOptions,
+) !void {
+    const adapter = jetquery.adapters.Type(jetquery.adapter);
+    const sql = comptime adapter.createIndexSql(index_name, table_name, column_names, options);
+    try self.adapter.executeVoid(
+        self,
+        &sql,
+        .{},
+        try jetquery.debug.getCallerInfo(@returnAddress()),
+    );
 }
 
 test "Repo" {

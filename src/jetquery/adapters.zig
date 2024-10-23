@@ -31,6 +31,18 @@ pub const Adapter = union(enum) {
         };
     }
 
+    /// Execute SQL with the active adapter without returning a result.
+    pub fn executeVoid(
+        self: *Adapter,
+        repo: *jetquery.Repo,
+        sql: []const u8,
+        values: anytype,
+        caller_info: ?jetquery.debug.CallerInfo,
+    ) !void {
+        var result = try self.execute(repo, sql, values, caller_info);
+        try result.drain();
+        result.deinit();
+    }
     /// Convert a column type to a database type suitable for the active adapter.
     pub fn columnTypeSql(self: Adapter, column_type: jetquery.Column.Type) []const u8 {
         return switch (self) {
@@ -131,6 +143,42 @@ pub const Adapter = union(enum) {
     pub fn emptyWhereSQL(self: Adapter) []const u8 {
         return switch (self) {
             inline else => |adapter| @TypeOf(adapter).emptyWhereSQL(),
+        };
+    }
+
+    /// Automatically generate an index name from the given table name and columns. Fails if
+    /// generated name is too long for adapter's identifier length limit.
+    pub fn indexName(
+        self: Adapter,
+        comptime table_name: []const u8,
+        comptime column_names: []const []const u8,
+    ) []const u8 {
+        return switch (self) {
+            inline else => |adapter| @TypeOf(adapter).indexName(table_name, column_names),
+        };
+    }
+
+    /// Generate SQL for creating an index with the active adapter.
+    pub fn createIndexSql(
+        self: Adapter,
+        comptime index_name: []const u8,
+        comptime table_name: []const u8,
+        comptime column_names: []const []const u8,
+        comptime options: jetquery.Repo.CreateIndexOptions,
+    ) []const u8 {
+        return switch (self) {
+            inline else => |adapter| &@TypeOf(adapter).createIndexSql(
+                index_name,
+                table_name,
+                column_names,
+                options,
+            ),
+        };
+    }
+
+    pub fn uniqueColumnSql(self: Adapter) []const u8 {
+        return switch (self) {
+            inline else => |adapter| @TypeOf(adapter).uniqueColumnSql(),
         };
     }
 

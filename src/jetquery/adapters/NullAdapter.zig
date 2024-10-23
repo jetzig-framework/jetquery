@@ -97,6 +97,32 @@ pub fn emptyWhereSql() []const u8 {
     return "";
 }
 
+pub fn indexName(
+    comptime table_name: []const u8,
+    comptime column_names: []const []const u8,
+) [0]u8 {
+    _ = table_name;
+    _ = column_names;
+    return .{};
+}
+
+pub fn uniqueColumnSql() []const u8 {
+    return "";
+}
+
+pub fn createIndexSql(
+    comptime index_name: []const u8,
+    comptime table_name: []const u8,
+    comptime column_names: []const []const u8,
+    comptime options: jetquery.Repo.CreateIndexOptions,
+) [0]u8 {
+    _ = index_name;
+    _ = table_name;
+    _ = column_names;
+    _ = options;
+    return .{};
+}
+
 pub fn reflect(
     self: *const NullAdapter,
     allocator: std.mem.Allocator,
