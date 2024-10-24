@@ -39,6 +39,7 @@ pub const Tree = struct {
         pub fn write(self: *Self, bytes: []const u8) !void {
             self.count += bytes.len;
         }
+
         pub fn print(self: *Self, comptime fmt: []const u8, comptime args: anytype) !void {
             self.write(std.fmt.comptimePrint(fmt, args)) catch unreachable;
         }
@@ -63,7 +64,16 @@ pub const Tree = struct {
         if (@typeInfo(@TypeOf(args)) != .@"struct") @compileError(
             "Expected `struct`, found `" ++ @tagName(@typeInfo(@TypeOf(args))) ++ "`",
         );
-        assignValues(args, self.ValuesTuple, &vals, self.ErrorsTuple, &errors, self.values_fields, 0);
+        assignValues(
+            args,
+            self.ValuesTuple,
+            &vals,
+            self.ErrorsTuple,
+            &errors,
+            self.values_fields,
+            0,
+            true,
+        );
         return .{ .values = vals, .errors = errors };
     }
 
@@ -179,10 +189,67 @@ pub const Node = union(enum) {
         };
     };
 
+    pub const SqlString = struct {
+        sql: []const u8,
+        values: []const Node,
+
+        pub fn render(comptime self: SqlString, Adapter: type) []const u8 {
+            var single_quoted = false;
+            var double_quoted = false;
+            var indices: [self.values.len]usize = undefined;
+            var arg_index: usize = 0;
+
+            for (self.sql, 0..) |char, char_index| {
+                switch (char) {
+                    '\'' => single_quoted = !single_quoted,
+                    '"' => double_quoted = !double_quoted,
+                    '?' => if (!double_quoted and !single_quoted) {
+                        if (arg_index < self.values.len) {
+                            indices[arg_index] = char_index;
+                        }
+                        arg_index += 1;
+                    },
+                    else => {},
+                }
+            }
+
+            if (arg_index != self.values.len) {
+                @compileError(std.fmt.comptimePrint(
+                    "Expected {} arguments to string clause, found {}. SQL string: `{s}`",
+                    .{ self.values.len, arg_index, self.sql },
+                ));
+            }
+
+            var size: usize = 0;
+            var cursor: usize = 0;
+            for (indices, self.values) |index, node| {
+                const chunk = self.sql[cursor..index];
+                const output = chunk ++ Adapter.paramSql(node.value.index);
+                cursor += chunk.len + 1;
+                size += output.len;
+            }
+
+            var buf: [size]u8 = undefined;
+            var input_cursor: usize = 0;
+            var output_cursor: usize = 0;
+
+            for (indices, self.values) |index, node| {
+                const chunk = self.sql[input_cursor..index];
+                const output = chunk ++ Adapter.paramSql(node.value.index);
+                @memcpy(buf[output_cursor .. output_cursor + output.len], output);
+                input_cursor += chunk.len + 1;
+                output_cursor += output.len;
+            }
+            const final = buf;
+            return &final;
+        }
+    };
+
     condition: Condition,
     value: Value,
     group: Group,
     triplet: Triplet,
+    sql_string: SqlString,
 
     pub fn render(
         self: Node,
@@ -279,6 +346,9 @@ pub const Node = union(enum) {
                     },
                 }
             },
+            .sql_string => |sql_string| {
+                _ = writer.write(sql_string.render(Adapter)) catch unreachable;
+            },
         }
     }
 
@@ -326,6 +396,17 @@ pub const Node = union(enum) {
                         }
                     },
                     .column => {},
+                }
+            },
+            .sql_string => |sql_string| {
+                for (sql_string.values) |value_node| {
+                    if (@typeInfo(value_node.value.type) == .@"struct") {
+                        @compileError(std.fmt.comptimePrint(
+                            "Unsupported type in SQL string arguments: `struct`. SQL string: `{s}`",
+                            .{sql_string.sql},
+                        ));
+                    }
+                    appendValueType(value_node, len, types, index);
                 }
             },
         }
@@ -400,6 +481,12 @@ pub const Node = union(enum) {
                     .column => {},
                 }
             },
+            .sql_string => |sql_string| {
+                for (sql_string.values) |value_node| {
+                    const value = value_node.value;
+                    appendValueField(value.type, value, len, fields_array, tuple_index);
+                }
+            },
         }
     }
 
@@ -433,6 +520,11 @@ pub const Node = union(enum) {
                     .column => {},
                 }
             },
+            .sql_string => |sql_string| {
+                for (sql_string.values) |value_node| {
+                    countNodeValues(value_node, count);
+                }
+            },
         }
     }
 };
@@ -464,20 +556,40 @@ fn nodeTree(
         }
 
         return switch (@typeInfo(T)) {
-            .@"struct" => |info| blk: {
-                if (isTriplet(T)) {
-                    break :blk .{ .triplet = makeTriplet(
-                        Adapter,
-                        Table,
-                        relations,
-                        T,
-                        field_context,
-                        field_info,
-                        name,
-                        path,
-                        value_index,
-                    ) };
+            .@"struct" => |info| if (isTriplet(T)) blk: {
+                break :blk .{ .triplet = makeTriplet(
+                    Adapter,
+                    Table,
+                    relations,
+                    T,
+                    field_context,
+                    field_info,
+                    name,
+                    path,
+                    value_index,
+                ) };
+            } else if (isSqlString(T)) blk: {
+                const t: T = undefined;
+                const value_fields = std.meta.fields(@TypeOf(t[1]));
+                var nodes: [value_fields.len]Node = undefined;
+                for (value_fields, 0..) |value_field, index| {
+                    nodes[index] = .{
+                        .value = .{
+                            // Name is used for type coercion, for an SQL string arg we don't
+                            // have a target column so name is not useful.
+                            .name = "_",
+                            .type = fields.ComptimeErasedType(value_field.type),
+                            .Table = Table,
+                            .field_info = fields.ComptimeErasedStructField(value_field),
+                            .field_context = field_context,
+                            .index = value_index.*,
+                        },
+                    };
+                    value_index.* += 1;
                 }
+                const final = nodes;
+                break :blk .{ .sql_string = .{ .sql = t[0], .values = &final } };
+            } else blk: {
                 const nodes = childNodes(
                     Adapter,
                     Table,
@@ -581,9 +693,19 @@ fn assignValues(
     errors_tuple: *ErrorsTuple,
     values_fields: []const Field,
     comptime tuple_index: usize,
+    comptime coerce: bool,
 ) void {
     if (comptime coercion.canCoerceDelegate(@TypeOf(arg))) {
-        assignValue(arg, ValuesTuple, values_tuple, ErrorsTuple, errors_tuple, values_fields, tuple_index);
+        assignValue(
+            arg,
+            ValuesTuple,
+            values_tuple,
+            ErrorsTuple,
+            errors_tuple,
+            values_fields,
+            tuple_index,
+            coerce,
+        );
         return;
     }
 
@@ -594,17 +716,31 @@ fn assignValues(
             // XXX: Note that we will always land here first because the first arg to `where` is
             // is always a struct, so we can safely start here for incrementing our index
             // counter.
-            inline for (info.fields) |field| {
+            if (comptime isSqlString(@TypeOf(arg))) {
                 assignValues(
-                    @field(arg, field.name),
+                    arg[1],
                     ValuesTuple,
                     values_tuple,
                     ErrorsTuple,
                     errors_tuple,
                     values_fields,
                     idx,
+                    false,
                 );
-                comptime detectValues(field.type, &idx);
+            } else {
+                inline for (info.fields) |field| {
+                    assignValues(
+                        @field(arg, field.name),
+                        ValuesTuple,
+                        values_tuple,
+                        ErrorsTuple,
+                        errors_tuple,
+                        values_fields,
+                        idx,
+                        coerce,
+                    );
+                    comptime detectValues(field.type, &idx);
+                }
             }
         },
         .type => {},
@@ -619,6 +755,7 @@ fn assignValues(
                 errors_tuple,
                 values_fields,
                 tuple_index,
+                coerce,
             );
         },
     }
@@ -648,6 +785,7 @@ fn assignValue(
     errors_tuple: *ErrorsTuple,
     values_fields: []const Field,
     comptime tuple_index: usize,
+    comptime coerce: bool,
 ) void {
     inline for (
         std.meta.fields(ValuesTuple),
@@ -663,16 +801,23 @@ fn assignValue(
                 value_field.name,
                 value_field.context,
             );
-            const coerced: coercion.CoercedValue(
-                value_field.column_type,
-                @TypeOf(arg),
-            ) = coercion.coerce(
-                value_field.Table,
-                field_info,
-                arg,
-            );
-            @field(values_tuple, tuple_field_name) = coerced.value;
-            @field(errors_tuple, tuple_field_name) = coerced.err;
+            if (comptime coerce) {
+                const coerced: coercion.CoercedValue(
+                    value_field.column_type,
+                    @TypeOf(arg),
+                ) = coercion.coerce(
+                    value_field.Table,
+                    field_info,
+                    arg,
+                );
+                @field(values_tuple, tuple_field_name) = coerced.value;
+                @field(errors_tuple, tuple_field_name) = coerced.err;
+            } else {
+                // When an SQL string is used we don't have a target type to coerce to, so assign
+                // the value directly - user is responsible for coercing to appropriate types.
+                @field(values_tuple, tuple_field_name) = arg;
+                @field(errors_tuple, tuple_field_name) = null;
+            }
         }
     }
 }
@@ -689,6 +834,28 @@ fn isTriplet(T: type) bool {
 
     const t: T = undefined;
     return @hasField(Node.Triplet.Operator, @tagName(t[1]));
+}
+
+// A pair of comptime SQL string and a tuple of values, e.g.:
+// ```zig
+// .{ "foo = ?", .{1} }
+// ```
+fn isSqlString(T: type) bool {
+    const struct_fields = std.meta.fields(T);
+
+    if (struct_fields.len != 2) return false;
+    if (@typeInfo(struct_fields[1].type) != .@"struct") return false;
+    if (!struct_fields[0].is_comptime) return false;
+
+    return switch (@typeInfo(struct_fields[0].type)) {
+        .pointer => |info| switch (@typeInfo(info.child)) {
+            .array => |array_info| blk: {
+                break :blk array_info.child == u8 and (info.size == .Slice or info.size == .One);
+            },
+            else => false,
+        },
+        else => false,
+    };
 }
 
 fn makeTriplet(
@@ -765,16 +932,9 @@ fn makeOperand(
                     const column = columns.translate(Table, relations, .{arg[other_arg_index]})[0];
                     break :enum_blk column.type;
                 },
-                // We're comparing two values, let Zig reconsile the types:
-                else => switch (@typeInfo(@TypeOf(arg[arg_index]))) {
-                    // We need to ensure that we don't store a comptime value otherwise our
-                    // entire data structure needs to be comptime-known. This only occurs when a
-                    // user does, `.where(.{ 1, .eql, 1 })` (e.g.), otherwise we use the other
-                    // side of the triplet's type to coerce to.
-                    .comptime_int => isize,
-                    .comptime_float => f64,
-                    else => @TypeOf(arg[arg_index]),
-                },
+                // We're comparing two values (not a column and a value),
+                // let Zig reconsile the types:
+                else => fields.ComptimeErasedType(@TypeOf(arg[arg_index])),
             };
             const value: Node.Value = .{
                 .field_context = field_context,

@@ -461,14 +461,15 @@ test "runtime field values" {
     };
     var hercules_buf: [8]u8 = undefined;
     const hercules = try std.fmt.bufPrint(&hercules_buf, "{s}", .{"Hercules"});
+    const paws: u16 = std.crypto.random.int(u8);
     var heracles_buf: [8]u8 = undefined;
     const heracles = try std.fmt.bufPrint(&heracles_buf, "{s}", .{"Heracles"});
     const query = Query(Schema, .Cat)
-        .update(.{ .name = heracles, .paws = 2 })
-        .where(.{ .name = hercules });
+        .update(.{ .name = heracles, .paws = paws + 2 })
+        .where(.{ .name = hercules, .paws = paws });
     const values = query.values();
     try std.testing.expectEqualStrings("Heracles", values.@"0");
-    try std.testing.expectEqual(2, values.@"1");
+    try std.testing.expectEqual(paws + 2, values.@"1");
     try std.testing.expectEqualStrings("Hercules", values.@"2");
 }
 
@@ -1276,5 +1277,24 @@ test "default order by (no order clauses, custom primary key not present)" {
     const query = Query(Schema, .Human).select(.{});
     try std.testing.expectEqualStrings(
         \\SELECT "humans"."id" FROM "humans" WHERE (1 = 1)
+    , query.sql);
+}
+
+test "raw whereclause" {
+    const Schema = struct {
+        pub const Human = Table(
+            @This(),
+            "humans",
+            struct { id: i32 },
+            .{ .primary_key = "name" },
+        );
+    };
+    const qux = std.crypto.random.int(u8);
+    const query = Query(Schema, .Human).where(.{
+        "foo = ? and bar = ? or baz = ? and qux = ?",
+        .{ "qux", 100, false, qux },
+    });
+    try std.testing.expectEqualStrings(
+        \\SELECT "humans"."id" FROM "humans" WHERE foo = $1 and bar = $2 or baz = $3 and qux = $4
     , query.sql);
 }

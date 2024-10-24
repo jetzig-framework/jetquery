@@ -144,3 +144,30 @@ pub fn fieldType(T: type, comptime name: []const u8) type {
         else => FT,
     };
 }
+
+// We need to ensure that we don't store a comptime value otherwise our
+// entire data structure needs to be comptime-known. This only occurs when a
+// user does one of the following:
+//
+// Triplet where both sides are values:
+// `.where(.{ 1, .eql, 1 })`
+// SQL string with mixed runtime and comp-time args:
+// `.where(.{ "foo = ?", .{ 1, a_runtime_value } })`
+//
+// Otherwise we have a target type to coerce to, either from the other side of the triplet, or
+// whatever the column type is defined in the schema for column values.
+pub fn ComptimeErasedType(T: type) type {
+    return switch (@typeInfo(T)) {
+        .comptime_int => isize,
+        .comptime_float => f64,
+        else => T,
+    };
+}
+
+pub fn ComptimeErasedStructField(field: std.builtin.Type.StructField) std.builtin.Type.StructField {
+    var modified = field;
+    modified.type = ComptimeErasedType(field.type);
+    modified.is_comptime = false;
+    modified.alignment = @alignOf(modified.type);
+    return modified;
+}
