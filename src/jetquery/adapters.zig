@@ -43,6 +43,19 @@ pub const Adapter = union(enum) {
         try result.drain();
         result.deinit();
     }
+
+    pub fn connect(self: *Adapter) !jetquery.Repo.Connection {
+        return switch (self.*) {
+            inline else => |*adapter| try adapter.connect(),
+        };
+    }
+
+    pub fn release(self: *Adapter, connection: jetquery.Repo.Connection) void {
+        return switch (self.*) {
+            inline else => |*adapter| adapter.release(connection),
+        };
+    }
+
     /// Convert a column type to a database type suitable for the active adapter.
     pub fn columnTypeSql(self: Adapter, column_type: jetquery.Column.Type) []const u8 {
         return switch (self) {

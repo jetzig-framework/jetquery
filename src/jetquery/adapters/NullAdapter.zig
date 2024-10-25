@@ -20,6 +20,21 @@ pub fn deinit(self: *const NullAdapter) void {
     _ = self;
 }
 
+pub fn connect(self: *const NullAdapter) !jetquery.Repo.Connection {
+    _ = self;
+    return error.JetQueryNullAdapterError;
+}
+
+pub fn release(
+    self: *const NullAdapter,
+    connection: jetquery.Repo.Connection,
+) void {
+    // We don't return an error here because `release` is used in defers, but execute/connect
+    // will error before we get here in usual circumstances.
+    _ = self;
+    _ = connection;
+}
+
 pub fn columnTypeSql(self: NullAdapter, column_type: jetquery.Column.Type) []const u8 {
     _ = self;
     _ = column_type;

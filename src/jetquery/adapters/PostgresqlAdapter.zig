@@ -40,7 +40,8 @@ pub const Result = struct {
 
     pub fn deinit(self: *Result) void {
         self.result.deinit();
-        self.connection.release();
+        // TODO
+        // self.connection.release();
     }
 
     pub fn drain(self: *Result) !void {
@@ -206,10 +207,32 @@ pub fn execute(
         self.pool = try initPool(self.allocator, self.options);
     }
 
-    const connection = try self.pool.acquire();
-    errdefer self.pool.release(connection);
+    const connection = try repo.connect();
+    errdefer {
+        repo.connection = null;
+        connection.postgresql.connection.release();
+    }
 
-    return try connectionExecute(repo.allocator, connection, repo, query, values, caller_info);
+    return try connectionExecute(
+        repo.allocator,
+        connection.postgresql.connection,
+        repo,
+        query,
+        values,
+        caller_info,
+    );
+}
+
+pub const Connection = struct {
+    connection: *pg.Conn,
+};
+
+pub fn connect(self: *PostgresqlAdapter) !jetquery.Repo.Connection {
+    return .{ .postgresql = .{ .connection = try self.pool.acquire() } };
+}
+
+pub fn release(self: *PostgresqlAdapter, connection: jetquery.Repo.Connection) void {
+    self.pool.release(connection.postgresql.connection);
 }
 
 /// Output column type as SQL.
@@ -593,7 +616,7 @@ fn connectionExecute(
         } else {
             try repo.eventCallback(.{
                 .sql = query,
-                .err = .{ .message = "Unknown error" },
+                .err = .{ .message = @errorName(err) },
                 .status = .fail,
                 .caller_info = caller_info,
             });

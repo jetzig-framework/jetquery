@@ -6,6 +6,7 @@ allocator: std.mem.Allocator,
 adapter: jetquery.adapters.Adapter,
 result_id: std.atomic.Value(i128) = std.atomic.Value(i128).init(0),
 eventCallback: *const fn (event: jetquery.events.Event) anyerror!void = jetquery.events.defaultCallback,
+connection: ?Connection = null,
 
 const Repo = @This();
 
@@ -100,6 +101,7 @@ pub fn loadConfig(allocator: std.mem.Allocator, global_options: GlobalOptions) !
 
 /// Close connections and free resources.
 pub fn deinit(self: *Repo) void {
+    self.release();
     switch (self.adapter) {
         inline else => |*adapter| adapter.deinit(),
     }
@@ -115,6 +117,24 @@ pub fn execute(self: *Repo, query: anytype) !switch (@TypeOf(query).ResultContex
     defer if (caller_info) |info| info.deinit();
 
     return try self.executeInternal(query, caller_info);
+}
+
+pub const Connection = union(enum) {
+    postgresql: jetquery.adapters.PostgresqlAdapter.Connection,
+};
+
+pub fn connect(self: *Repo) !Connection {
+    if (self.connection == null) {
+        self.connection = try self.adapter.connect();
+    }
+    return self.connection.?;
+}
+
+pub fn release(self: *Repo) void {
+    if (self.connection) |connection| {
+        self.connection = null;
+        self.adapter.release(connection);
+    }
 }
 
 pub fn executeInternal(
@@ -147,10 +167,38 @@ pub fn executeInternal(
         },
         .many => result,
         .none => blk: {
+            try result.drain();
             defer result.deinit();
             break :blk {};
         },
     };
+}
+
+pub fn begin(self: *Repo) !void {
+    try self.adapter.executeVoid(
+        self,
+        "BEGIN",
+        .{},
+        try jetquery.debug.getCallerInfo(@returnAddress()),
+    );
+}
+
+pub fn commit(self: *Repo) !void {
+    try self.adapter.executeVoid(
+        self,
+        "COMMIT",
+        .{},
+        try jetquery.debug.getCallerInfo(@returnAddress()),
+    );
+}
+
+pub fn rollback(self: *Repo) !void {
+    try self.adapter.executeVoid(
+        self,
+        "ROLLBACK",
+        .{},
+        try jetquery.debug.getCallerInfo(@returnAddress()),
+    );
 }
 
 /// Execute a query and return all of its results. Call `repo.free(result)` to free allocated
@@ -943,4 +991,57 @@ test "aggregate count() with HAVING" {
 test "missing config options" {
     const repo = Repo.init(std.testing.allocator, .{ .adapter = .{ .postgresql = .{} } });
     try std.testing.expectError(error.JetQueryConfigError, repo);
+}
+
+test "transactions" {
+    var repo = try Repo.init(
+        std.testing.allocator,
+        .{
+            .adapter = .{
+                .postgresql = .{
+                    .database = "postgres",
+                    .username = "postgres",
+                    .hostname = "127.0.0.1",
+                    .password = "password",
+                    .port = 5432,
+                },
+            },
+        },
+    );
+    defer repo.deinit();
+
+    try repo.dropTable("cats", .{ .if_exists = true });
+    try repo.createTable("cats", &.{
+        jetquery.table.column("name", .string, .{}),
+        jetquery.table.column("paws", .integer, .{}),
+    }, .{ .if_not_exists = true });
+
+    const Schema = struct {
+        pub const Cat = jetquery.Table(
+            @This(),
+            "cats",
+            struct { name: []const u8, paws: i32 },
+            .{},
+        );
+    };
+
+    try repo.begin();
+    try repo.insert(Schema.Cat.init(.{ .name = "Hercules", .paws = 4 }));
+    try repo.rollback();
+
+    const no_cat = try jetquery.Query(Schema, .Cat)
+        .findBy(.{ .name = "Hercules" })
+        .execute(&repo);
+    defer repo.free(no_cat);
+    try std.testing.expect(no_cat == null);
+
+    try repo.begin();
+    try repo.insert(Schema.Cat.init(.{ .name = "Hercules", .paws = 4 }));
+    try repo.commit();
+
+    const yes_cat = try jetquery.Query(Schema, .Cat)
+        .findBy(.{ .name = "Hercules" })
+        .execute(&repo);
+    defer repo.free(yes_cat);
+    try std.testing.expect(yes_cat != null);
 }
