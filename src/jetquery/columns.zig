@@ -8,9 +8,16 @@ pub const Column = struct {
     table: type,
     function: ?sql.FunctionContext = null,
     alias: ?[]const u8 = null,
+    sql: ?[]const u8 = null,
 
     pub fn ResultType(comptime self: Column, Adapter: type) type {
         return if (self.function) |function| Adapter.Aggregate(function) else self.type;
+    }
+
+    pub fn as(comptime self: Column, comptime alias: anytype) Column {
+        var column = self;
+        column.alias = @tagName(alias);
+        return column;
     }
 };
 
@@ -28,6 +35,16 @@ pub fn translate(
         var index: usize = 0;
 
         for (args) |arg| {
+            if (@TypeOf(arg) == Column) {
+                if (arg.alias == null) @compileError(std.fmt.comptimePrint(
+                    \\Custom SQL columns must be aliased. Call `as("...")` to specify an alias. Failed for column `{?s}`,
+                ,
+                    .{arg.sql},
+                ));
+                fields[index] = arg;
+                index += 1;
+                continue;
+            }
             switch (@typeInfo(@TypeOf(arg))) {
                 .enum_literal, .@"enum" => {
                     fields[index] = primaryColumn(Table, @tagName(arg));
@@ -77,18 +94,23 @@ fn sizeOf(
         var size: usize = 0;
         for (args) |arg| {
             if (@TypeOf(arg) == sql.Function) {
-                _ = primaryColumn(Table, arg.column_name);
+                _ = primaryColumn(Table, arg.column_name); // validate column
+                size += 1;
+                continue;
+            }
+
+            if (@TypeOf(arg) == Column) {
                 size += 1;
                 continue;
             }
 
             switch (@typeInfo(@TypeOf(arg))) {
                 .enum_literal, .@"enum" => {
-                    _ = primaryColumn(Table, @tagName(arg));
+                    _ = primaryColumn(Table, @tagName(arg)); // validate column
                     size += 1;
                 },
                 .pointer => {
-                    _ = primaryColumn(Table, arg);
+                    _ = primaryColumn(Table, arg); // validate column
                     size += 1;
                 },
                 .@"struct" => {

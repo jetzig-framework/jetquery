@@ -515,8 +515,10 @@ test "Repo" {
     try jetquery.Query(Schema, .Cat).insert(.{ .name = "Hercules", .paws = 4 }).execute(&repo);
     try jetquery.Query(Schema, .Cat).insert(.{ .name = "Princes", .paws = 4 }).execute(&repo);
 
+    const coalesced_paws = jetquery.sql.column(i32, "coalesce(cats.paws, 3)").as(.coalesced_paws);
+
     const query = jetquery.Query(Schema, .Cat)
-        .select(.{ .name, .paws })
+        .select(.{ .name, .paws, coalesced_paws })
         .where(.{ .paws = 4 });
 
     const cats = try repo.all(query);
@@ -525,6 +527,7 @@ test "Repo" {
     for (cats) |cat| {
         try std.testing.expectEqualStrings("Hercules", cat.name);
         try std.testing.expectEqual(4, cat.paws);
+        try std.testing.expectEqual(4, cat.coalesced_paws);
         break;
     } else {
         try std.testing.expect(false);

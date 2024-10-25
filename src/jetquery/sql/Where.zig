@@ -845,17 +845,25 @@ fn isSqlString(T: type) bool {
 
     if (struct_fields.len != 2) return false;
     if (@typeInfo(struct_fields[1].type) != .@"struct") return false;
-    if (!struct_fields[0].is_comptime) return false;
 
-    return switch (@typeInfo(struct_fields[0].type)) {
+    const is_string = switch (@typeInfo(struct_fields[0].type)) {
         .pointer => |info| switch (@typeInfo(info.child)) {
-            .array => |array_info| blk: {
-                break :blk array_info.child == u8 and (info.size == .Slice or info.size == .One);
-            },
+            .array => |array_info| info.is_volatile == false and
+                array_info.child == u8 and
+                (info.size == .Slice or info.size == .One),
+            .int => |int_info| info.is_volatile == false and
+                int_info.signedness == .unsigned and
+                int_info.bits == 8,
             else => false,
         },
         else => false,
     };
+
+    if (!is_string) return false;
+
+    return if (!struct_fields[0].is_comptime) @compileError(
+        "Custom string clauses must be comptime-known.",
+    ) else true;
 }
 
 fn makeTriplet(

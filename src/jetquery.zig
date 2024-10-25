@@ -1286,15 +1286,35 @@ test "raw whereclause" {
             @This(),
             "humans",
             struct { id: i32 },
-            .{ .primary_key = "name" },
+            .{},
         );
     };
     const qux = std.crypto.random.int(u8);
+    var buf: [4]u8 = undefined;
+    const quux = try std.fmt.bufPrint(&buf, "{s}", .{"quux"});
     const query = Query(Schema, .Human).where(.{
-        "foo = ? and bar = ? or baz = ? and qux = ?",
-        .{ "qux", 100, false, qux },
+        "foo = ? and bar = ? or baz = ? and qux = ? and quux = ? and a = ? and b = ? and c = ? and d = ? and e = ? and f = ? and g = ? and h = ? and i = ? and j = ? and k = ?",
+        .{ "qux", 100, false, qux, quux, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 },
     });
     try std.testing.expectEqualStrings(
-        \\SELECT "humans"."id" FROM "humans" WHERE foo = $1 and bar = $2 or baz = $3 and qux = $4
+        \\SELECT "humans"."id" FROM "humans" WHERE foo = $1 and bar = $2 or baz = $3 and qux = $4 and quux = $5 and a = $6 and b = $7 and c = $8 and d = $9 and e = $10 and f = $11 and g = $12 and h = $13 and i = $14 and j = $15 and k = $16 ORDER BY "humans"."id" ASC
+    , query.sql);
+}
+
+test "raw select column" {
+    const Schema = struct {
+        pub const Human = Table(
+            @This(),
+            "humans",
+            struct { id: i32 },
+            .{},
+        );
+    };
+    const query = Query(Schema, .Human).select(.{
+        sql.column(u32, "foo(bar + baz)").as(.foo),
+        sql.column([]const u8, "qux(quux, corge)").as(.bar),
+    });
+    try std.testing.expectEqualStrings(
+        \\SELECT foo(bar + baz), qux(quux, corge) FROM "humans" WHERE (1 = 1) ORDER BY "humans"."id" ASC
     , query.sql);
 }

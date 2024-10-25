@@ -123,12 +123,12 @@ fn resolvedValue(
         ?i16,
         i32,
         ?i32,
+        i64,
+        ?i64,
         f32,
         ?f32,
         []u8,
         ?[]u8,
-        i64,
-        ?i64,
         bool,
         ?bool,
         []const u8,
@@ -250,6 +250,8 @@ pub fn columnSql(Table: type, comptime column: jetquery.columns.Column) []const 
             Table.name,
             column.name,
         })
+    else if (column.sql) |sql|
+        sql
     else
         std.fmt.comptimePrint(
             \\"{s}"."{s}"
