@@ -7,6 +7,7 @@ adapter: jetquery.adapters.Adapter,
 result_id: std.atomic.Value(i128) = std.atomic.Value(i128).init(0),
 eventCallback: *const fn (event: jetquery.events.Event) anyerror!void = jetquery.events.defaultCallback,
 connection: ?Connection = null,
+result: ?jetquery.Result = null,
 
 const Repo = @This();
 
@@ -156,7 +157,9 @@ pub fn executeInternal(
             // TODO: Create a new ResultContext `.unary` instead of hacking it in here.
             if (query.query_context == .count) {
                 defer result.deinit();
-                return try result.unary(@TypeOf(query).ResultType);
+                const unary = try result.unary(@TypeOf(query).ResultType);
+                try result.drain();
+                return unary;
             }
             // TODO: Switch this back to `next()` if/when relation mapping is added there
             const rows = try result.all(query);
@@ -584,7 +587,10 @@ test "Repo" {
     const count_all = try query.count().execute(&repo);
     try std.testing.expectEqual(2, count_all);
 
-    const count_distinct = try jetquery.Query(Schema, .Cat).distinct(.{.paws}).count().execute(&repo);
+    const count_distinct = try jetquery.Query(Schema, .Cat)
+        .distinct(.{.paws})
+        .count()
+        .execute(&repo);
     try std.testing.expectEqual(1, count_distinct);
 }
 

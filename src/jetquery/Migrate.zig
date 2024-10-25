@@ -60,18 +60,11 @@ pub fn run(self: Migrate) !void {
 }
 
 fn isMigrated(self: Migrate, migration: Migration) !bool {
-    const query = jetquery.Query(Schema, .Migrations)
+    const result = try jetquery.Query(Schema, .Migrations)
         .select(.{.version})
-        .where(.{ .version = migration.version });
+        .findBy(.{ .version = migration.version }).execute(self.repo);
 
-    var result = try self.repo.execute(query);
-    defer result.deinit();
-
-    while (try result.next(query)) |_| {
-        return true;
-    }
-
-    return false;
+    return result != null;
 }
 
 fn createMigrationsTable(self: Migrate) !void {
@@ -120,6 +113,7 @@ test "migrate" {
     } else {
         try std.testing.expect(false);
     }
+    try result1.drain();
 
     const TestSchema = struct {
         pub const Cat = jetquery.Table(@This(), "cats", struct {
@@ -132,6 +126,7 @@ test "migrate" {
     const query2 = jetquery.Query(TestSchema, .Cat)
         .select(.{ .name, .paws, .created_at, .updated_at });
     var result2 = try repo.execute(query2);
+    try result2.drain();
     defer result2.deinit();
 
     try repo.dropTable("jetquery_migrations", .{ .if_exists = true });
