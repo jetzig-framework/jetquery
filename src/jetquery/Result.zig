@@ -45,7 +45,8 @@ pub const Result = union(enum) {
                     primary_key,
                 );
 
-                var id_array = IdArray(@TypeOf(query), primary_key).init(adapted_result.allocator);
+                const PK = PrimaryKey(@TypeOf(query), primary_key);
+                var id_array = std.ArrayList(PK).init(adapted_result.allocator);
                 defer id_array.deinit();
 
                 var id_map = IdMap(@TypeOf(query), primary_key).init(adapted_result.allocator);
@@ -76,41 +77,19 @@ pub const Result = union(enum) {
                     rows[index] = adapted_row;
                 }
 
-                const ids = id_array.items;
-
                 inline for (query.auxiliary_queries) |aux_query| {
                     const foreign_key = comptime aux_query.relation.foreign_key orelse
                         @TypeOf(query).info.Table.defaultForeignKey();
-                    const Args = comptime args_blk: {
-                        var fields: [1]std.builtin.Type.StructField = .{jetquery.fields.structField(
-                            foreign_key,
-                            []const jetquery.fields.fieldType(
-                                aux_query.relation.Source.Definition,
-                                foreign_key,
-                            ),
-                        )};
-                        break :args_blk jetquery.fields.structType(&fields);
-                    };
+
+                    const Args = WhereArgs(aux_query, foreign_key);
                     var args: Args = undefined;
 
                     if (comptime primary_key_present) {
-                        @field(args, foreign_key) = ids;
+                        @field(args, foreign_key) = id_array.items;
                     }
-
-                    const q = aux_query.query.where(args);
-                    // Order args are a dynamic type so we can't easily use an optional here like
-                    // we can with `limit()`.
-                    const q_order = if (comptime @TypeOf(aux_query.relation.order_by) != @TypeOf(null))
-                        q.orderBy(aux_query.relation.order_by)
-                    else
-                        q;
-                    const q_limit = if (aux_query.relation.limit) |limit|
-                        q_order.limit(limit)
-                    else
-                        q_order;
-
+                    const q = aux_query.baseQuery().where(args);
                     var aux_result = try adapted_result.repo.executeInternal(
-                        q_limit,
+                        q,
                         adapted_result.caller_info,
                     );
                     defer aux_result.deinit();
@@ -237,12 +216,11 @@ pub const Result = union(enum) {
         };
     }
 
-    fn IdArray(Query: type, comptime primary_key: []const u8) type {
-        const PK = if (comptime @hasField(Query.info.Table.Definition, primary_key))
+    fn PrimaryKey(Query: type, comptime primary_key: []const u8) type {
+        return if (comptime @hasField(Query.info.Table.Definition, primary_key))
             jetquery.fields.fieldType(Query.info.Table.Definition, primary_key)
         else
             void;
-        return std.ArrayList(PK);
     }
 };
 
@@ -275,3 +253,16 @@ pub const AuxiliaryResult = struct {
     result: jetquery.Result,
     relation: type,
 };
+
+fn WhereArgs(aux_query: AuxiliaryQuery, comptime foreign_key: []const u8) type {
+    comptime {
+        var fields: [1]std.builtin.Type.StructField = .{jetquery.fields.structField(
+            foreign_key,
+            []const jetquery.fields.fieldType(
+                aux_query.relation.Source.Definition,
+                foreign_key,
+            ),
+        )};
+        return jetquery.fields.structType(&fields);
+    }
+}

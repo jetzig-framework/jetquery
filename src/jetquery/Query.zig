@@ -281,6 +281,38 @@ fn defaultResultContext(query_context: sql.QueryContext) ResultContext {
 pub const AuxiliaryQuery = struct {
     query: type,
     relation: type,
+
+    pub fn baseQuery(comptime self: AuxiliaryQuery) self.BaseQuery() {
+        const q = self.query.select(.{});
+        // Order args are a dynamic type so we can't easily use an optional here like
+        // we can with `limit()`.
+        const q_order = if (comptime @TypeOf(self.relation.order_by) != @TypeOf(null))
+            q.orderBy(self.relation.order_by)
+        else
+            q;
+
+        const q_limit = if (self.relation.limit) |limit|
+            q_order.limit(limit)
+        else
+            q_order;
+
+        return q_limit;
+    }
+
+    fn BaseQuery(comptime self: AuxiliaryQuery) type {
+        const q = self.query.select(.{});
+        const q_order = if (comptime @TypeOf(self.relation.order_by) != @TypeOf(null))
+            q.orderBy(self.relation.order_by)
+        else
+            q;
+
+        const q_limit = if (self.relation.limit) |limit|
+            q_order.limit(limit)
+        else
+            q_order;
+
+        return @TypeOf(q_limit);
+    }
 };
 
 fn Statement(
