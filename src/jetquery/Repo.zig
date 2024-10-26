@@ -267,12 +267,40 @@ pub fn save(self: *Repo, value: anytype) !void {
     try self.executeInternal(query, try jetquery.debug.getCallerInfo(@returnAddress()));
 }
 
+/// Insert a model instance into the database. Use `Schema.Model.init` to create a new record.
+/// ```zig
+/// const cat = Schema.Cat.init(.{ .name = "Hercules", .paws  = 4 });
+/// try repo.insert(cat);
+/// ```
 pub fn insert(self: *Repo, value: anytype) !void {
     const query = jetquery.Query(
         value.__jetquery_schema,
         value.__jetquery_model,
     ).insert(value.__jetquery.args);
 
+    try self.executeInternal(query, try jetquery.debug.getCallerInfo(@returnAddress()));
+}
+
+/// Delete a fetched record from the database. Record must have a primary key.
+/// ```zig
+/// const maybe_cat = try Query(Schema, .Cat).findBy(.{ .name = "Heracles" }).execute(repo);
+/// if (maybe_cat) |cat| try repo.delete(cat);
+/// ```
+pub fn delete(self: *Repo, value: anytype) !void {
+    const primary_key_field_name = value.__jetquery_model.primary_key;
+    const Args = jetquery.fields.structType(
+        &.{jetquery.fields.structField(
+            primary_key_field_name,
+            jetquery.fields.fieldType(@TypeOf(value), primary_key_field_name),
+        )},
+    );
+    var args: Args = undefined;
+    @field(args, primary_key_field_name) = @field(value, primary_key_field_name);
+
+    const query = jetquery.Query(
+        value.__jetquery_schema,
+        value.__jetquery_model,
+    ).delete().where(args);
     try self.executeInternal(query, try jetquery.debug.getCallerInfo(@returnAddress()));
 }
 
@@ -379,7 +407,7 @@ pub fn generateId(self: *Repo) i128 {
 pub fn createTable(
     self: *Repo,
     comptime name: []const u8,
-    comptime columns: []const jetquery.Column,
+    comptime columns: []const jetquery.schema.Column,
     comptime options: CreateTableOptions,
 ) !void {
     var buf = std.ArrayList(u8).init(self.allocator);
@@ -392,28 +420,28 @@ pub fn createTable(
     , .{ if (options.if_not_exists) " IF NOT EXISTS" else "", self.adapter.identifier(name) });
 
     inline for (columns, 0..) |column, index| {
-        if (column.timestamps) {
-            try writer.print(
-                \\{s}{s}{s}, {s}{s}{s}{s}
-            , .{
-                self.adapter.identifier(jetquery.default_column_names.created_at),
-                self.adapter.columnTypeSql(.datetime),
-                self.adapter.notNullSql(),
-                self.adapter.identifier(jetquery.default_column_names.updated_at),
-                self.adapter.columnTypeSql(.datetime),
-                self.adapter.notNullSql(),
-                if (index < columns.len - 1) ", " else "",
-            });
+        if (column.timestamps) |timestamps| {
+            try timestamps.toSql(writer, self.adapter);
+            if (index < columns.len - 1) try writer.print(", ", .{});
         } else {
             try writer.print(
                 \\{s}{s}{s}{s}{s}{s}{s}
             , .{
                 self.adapter.identifier(column.name),
-                if (column.primary_key) "" else self.adapter.columnTypeSql(column.type),
-                if (!column.primary_key and column.options.not_null) self.adapter.notNullSql() else "",
-                if (column.primary_key) self.adapter.primaryKeySql() else "",
+                if (column.primary_key)
+                    ""
+                else
+                    self.adapter.columnTypeSql(column),
+                if (!column.primary_key and column.options.not_null)
+                    self.adapter.notNullSql()
+                else
+                    "",
+                if (column.primary_key) self.adapter.primaryKeySql(column) else "",
                 if (column.options.unique) self.adapter.uniqueColumnSql() else "",
-                if (column.options.reference) |reference| self.adapter.referenceSql(reference) else "",
+                if (column.options.reference) |reference|
+                    self.adapter.referenceSql(reference)
+                else
+                    "",
                 if (index < columns.len - 1) ", " else "",
             });
         }
@@ -433,9 +461,14 @@ pub fn createTable(
     }
 
     inline for (columns) |column| {
-        if (comptime !column.timestamps) continue;
-        try self.createIndex(name, &.{jetquery.default_column_names.created_at}, .{});
-        try self.createIndex(name, &.{jetquery.default_column_names.updated_at}, .{});
+        if (comptime column.timestamps) |timestamps| {
+            if (timestamps.created_at) {
+                try self.createIndex(name, &.{jetquery.default_column_names.created_at}, .{});
+            }
+            if (timestamps.updated_at) {
+                try self.createIndex(name, &.{jetquery.default_column_names.updated_at}, .{});
+            }
+        }
     }
 }
 
@@ -528,12 +561,14 @@ pub fn createIndex(
 }
 
 test "Repo" {
+    try resetDatabase();
+
     var repo = try Repo.init(
         std.testing.allocator,
         .{
             .adapter = .{
                 .postgresql = .{
-                    .database = "postgres",
+                    .database = "repo_test",
                     .username = "postgres",
                     .hostname = "127.0.0.1",
                     .password = "password",
@@ -553,12 +588,11 @@ test "Repo" {
         );
     };
 
-    try repo.dropTable("cats", .{ .if_exists = true });
     try repo.createTable(
         "cats",
         &.{
-            jetquery.table.column("name", .string, .{}),
-            jetquery.table.column("paws", .integer, .{}),
+            jetquery.schema.table.column("name", .string, .{}),
+            jetquery.schema.table.column("paws", .integer, .{}),
         },
         .{ .if_not_exists = true },
     );
@@ -595,6 +629,8 @@ test "Repo" {
 }
 
 test "Repo.loadConfig" {
+    try resetDatabase();
+
     // Loads default config file: `jetquery.config.zig`
     var repo = try Repo.loadConfig(std.testing.allocator, .{});
     defer repo.deinit();
@@ -602,12 +638,14 @@ test "Repo.loadConfig" {
 }
 
 test "relations" {
+    try resetDatabase();
+
     var repo = try Repo.init(
         std.testing.allocator,
         .{
             .adapter = .{
                 .postgresql = .{
-                    .database = "postgres",
+                    .database = "repo_test",
                     .username = "postgres",
                     .hostname = "127.0.0.1",
                     .password = "password",
@@ -634,16 +672,13 @@ test "relations" {
         );
     };
 
-    try repo.dropTable("cats", .{ .if_exists = true });
-    try repo.dropTable("humans", .{ .if_exists = true });
-
     try repo.createTable(
         "cats",
         &.{
-            jetquery.table.column("id", .integer, .{}),
-            jetquery.table.column("human_id", .integer, .{}),
-            jetquery.table.column("name", .string, .{}),
-            jetquery.table.column("paws", .integer, .{}),
+            jetquery.schema.table.column("id", .integer, .{}),
+            jetquery.schema.table.column("human_id", .integer, .{}),
+            jetquery.schema.table.column("name", .string, .{}),
+            jetquery.schema.table.column("paws", .integer, .{}),
         },
         .{ .if_not_exists = true },
     );
@@ -651,8 +686,8 @@ test "relations" {
     try repo.createTable(
         "humans",
         &.{
-            jetquery.table.column("id", .integer, .{}),
-            jetquery.table.column("name", .string, .{}),
+            jetquery.schema.table.column("id", .integer, .{}),
+            jetquery.schema.table.column("name", .string, .{}),
         },
         .{ .if_not_exists = true },
     );
@@ -773,12 +808,14 @@ test "relations" {
 }
 
 test "timestamps" {
+    try resetDatabase();
+
     var repo = try Repo.init(
         std.testing.allocator,
         .{
             .adapter = .{
                 .postgresql = .{
-                    .database = "postgres",
+                    .database = "repo_test",
                     .username = "postgres",
                     .hostname = "127.0.0.1",
                     .password = "password",
@@ -804,16 +841,14 @@ test "timestamps" {
         );
     };
 
-    try repo.dropTable("cats", .{ .if_exists = true });
-
     try repo.createTable(
         "cats",
         &.{
-            jetquery.table.primaryKey("id", .{}),
-            jetquery.table.column("name", .string, .{}),
-            jetquery.table.column("paws", .integer, .{}),
-            jetquery.table.column("created_at", .datetime, .{}),
-            jetquery.table.column("updated_at", .datetime, .{}),
+            jetquery.schema.table.primaryKey("id", .{}),
+            jetquery.schema.table.column("name", .string, .{}),
+            jetquery.schema.table.column("paws", .integer, .{}),
+            jetquery.schema.table.column("created_at", .datetime, .{}),
+            jetquery.schema.table.column("updated_at", .datetime, .{}),
         },
         .{},
     );
@@ -834,12 +869,14 @@ test "timestamps" {
 }
 
 test "save" {
+    try resetDatabase();
+
     var repo = try Repo.init(
         std.testing.allocator,
         .{
             .adapter = .{
                 .postgresql = .{
-                    .database = "postgres",
+                    .database = "repo_test",
                     .username = "postgres",
                     .hostname = "127.0.0.1",
                     .password = "password",
@@ -859,11 +896,10 @@ test "save" {
         );
     };
 
-    try repo.dropTable("cats", .{ .if_exists = true });
     try repo.createTable("cats", &.{
-        jetquery.table.column("id", .integer, .{}),
-        jetquery.table.column("name", .string, .{}),
-        jetquery.table.column("paws", .integer, .{}),
+        jetquery.schema.table.column("id", .integer, .{}),
+        jetquery.schema.table.column("name", .string, .{}),
+        jetquery.schema.table.column("paws", .integer, .{}),
     }, .{ .if_not_exists = true });
 
     try jetquery.Query(Schema, .Cat)
@@ -886,12 +922,14 @@ test "save" {
 }
 
 test "aggregate max()" {
+    try resetDatabase();
+
     var repo = try Repo.init(
         std.testing.allocator,
         .{
             .adapter = .{
                 .postgresql = .{
-                    .database = "postgres",
+                    .database = "repo_test",
                     .username = "postgres",
                     .hostname = "127.0.0.1",
                     .password = "password",
@@ -902,10 +940,9 @@ test "aggregate max()" {
     );
     defer repo.deinit();
 
-    try repo.dropTable("cats", .{ .if_exists = true });
     try repo.createTable("cats", &.{
-        jetquery.table.column("name", .string, .{}),
-        jetquery.table.column("paws", .integer, .{}),
+        jetquery.schema.table.column("name", .string, .{}),
+        jetquery.schema.table.column("paws", .integer, .{}),
     }, .{ .if_not_exists = true });
 
     const Schema = struct {
@@ -939,12 +976,14 @@ test "aggregate max()" {
 }
 
 test "aggregate count() with HAVING" {
+    try resetDatabase();
+
     var repo = try Repo.init(
         std.testing.allocator,
         .{
             .adapter = .{
                 .postgresql = .{
-                    .database = "postgres",
+                    .database = "repo_test",
                     .username = "postgres",
                     .hostname = "127.0.0.1",
                     .password = "password",
@@ -955,10 +994,9 @@ test "aggregate count() with HAVING" {
     );
     defer repo.deinit();
 
-    try repo.dropTable("cats", .{ .if_exists = true });
     try repo.createTable("cats", &.{
-        jetquery.table.column("name", .string, .{}),
-        jetquery.table.column("paws", .integer, .{}),
+        jetquery.schema.table.column("name", .string, .{}),
+        jetquery.schema.table.column("paws", .integer, .{}),
     }, .{ .if_not_exists = true });
 
     const Schema = struct {
@@ -995,17 +1033,21 @@ test "aggregate count() with HAVING" {
 }
 
 test "missing config options" {
+    try resetDatabase();
+
     const repo = Repo.init(std.testing.allocator, .{ .adapter = .{ .postgresql = .{} } });
     try std.testing.expectError(error.JetQueryConfigError, repo);
 }
 
 test "transactions" {
+    try resetDatabase();
+
     var repo = try Repo.init(
         std.testing.allocator,
         .{
             .adapter = .{
                 .postgresql = .{
-                    .database = "postgres",
+                    .database = "repo_test",
                     .username = "postgres",
                     .hostname = "127.0.0.1",
                     .password = "password",
@@ -1016,10 +1058,9 @@ test "transactions" {
     );
     defer repo.deinit();
 
-    try repo.dropTable("cats", .{ .if_exists = true });
     try repo.createTable("cats", &.{
-        jetquery.table.column("name", .string, .{}),
-        jetquery.table.column("paws", .integer, .{}),
+        jetquery.schema.table.column("name", .string, .{}),
+        jetquery.schema.table.column("paws", .integer, .{}),
     }, .{ .if_not_exists = true });
 
     const Schema = struct {
@@ -1050,4 +1091,24 @@ test "transactions" {
         .execute(&repo);
     defer repo.free(yes_cat);
     try std.testing.expect(yes_cat != null);
+}
+
+fn resetDatabase() !void {
+    var repo = try Repo.init(
+        std.testing.allocator,
+        .{
+            .adapter = .{
+                .postgresql = .{
+                    .database = "postgres",
+                    .username = "postgres",
+                    .hostname = "127.0.0.1",
+                    .password = "password",
+                    .port = 5432,
+                },
+            },
+        },
+    );
+    defer repo.deinit();
+    try repo.dropDatabase("repo_test", .{ .if_exists = true });
+    try repo.createDatabase("repo_test", .{});
 }

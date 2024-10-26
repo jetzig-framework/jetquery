@@ -302,24 +302,24 @@ test "reflect" {
     defer repo.deinit();
 
     try repo.createTable("cats", &.{
-        jetquery.table.primaryKey("id", .{}),
-        jetquery.table.column("name", .string, .{ .not_null = true }),
-        jetquery.table.column("human_id", .integer, .{}),
-        jetquery.table.timestamps(.{}),
+        jetquery.schema.table.primaryKey("id", .{}),
+        jetquery.schema.table.column("name", .string, .{ .not_null = true }),
+        jetquery.schema.table.column("human_id", .integer, .{}),
+        jetquery.schema.table.timestamps(.{}),
     }, .{});
     try repo.createTable("humans", &.{
-        jetquery.table.primaryKey("id", .{}),
-        jetquery.table.column("name", .string, .{ .not_null = true }),
-        jetquery.table.timestamps(.{}),
+        jetquery.schema.table.primaryKey("id", .{}),
+        jetquery.schema.table.column("name", .string, .{ .not_null = true }),
+        jetquery.schema.table.timestamps(.{}),
     }, .{});
     try repo.createTable("dogs", &.{
-        jetquery.table.primaryKey("id", .{}),
-        jetquery.table.column("name", .string, .{ .not_null = true }),
-        jetquery.table.column("is_woofy", .boolean, .{}),
-        jetquery.table.column("description", .text, .{}),
-        jetquery.table.column("bark_rating", .float, .{}),
-        jetquery.table.column("food_budget", .decimal, .{}),
-        jetquery.table.timestamps(.{}),
+        jetquery.schema.table.primaryKey("id", .{}),
+        jetquery.schema.table.column("name", .string, .{ .not_null = true }),
+        jetquery.schema.table.column("is_woofy", .boolean, .{}),
+        jetquery.schema.table.column("description", .text, .{}),
+        jetquery.schema.table.column("bark_rating", .float, .{}),
+        jetquery.schema.table.column("food_budget", .decimal, .{}),
+        jetquery.schema.table.timestamps(.{}),
     }, .{});
 
     const Schema = struct {

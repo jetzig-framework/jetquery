@@ -1,6 +1,6 @@
 const std = @import("std");
 const jetquery = @import("jetquery");
-const t = jetquery.table;
+const t = jetquery.schema.table;
 
 pub fn up(repo: *jetquery.Repo) !void {
     try repo.createTable(
@@ -9,25 +9,15 @@ pub fn up(repo: *jetquery.Repo) !void {
             t.primaryKey("id", .{}),
             t.column("name", .string, .{ .not_null = true, .unique = true }),
             t.column("paws", .integer, .{ .index = true }),
+            t.column("human_id", .integer, .{ .reference = .{ "humans", "id" } }),
             t.timestamps(.{}),
         },
         .{},
     );
 
     try repo.createIndex("cats", &.{ "name", "paws" }, .{});
-
-    try repo.createTable(
-        "humans",
-        &.{
-            t.primaryKey("id", .{}),
-            t.column("name", .string, .{ .not_null = true, .unique = true }),
-            t.column("cat_id", .integer, .{ .reference = .{ "cats", "id" } }),
-            t.timestamps(.{}),
-        },
-        .{},
-    );
 }
 
 pub fn down(repo: *jetquery.Repo) !void {
-    _ = repo;
+    try repo.dropTable("cats", .{});
 }

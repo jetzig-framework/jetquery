@@ -53,7 +53,7 @@ pub fn Relation(
             else
                 null;
             pub const primary_key = options.primary_key orelse "id";
-            pub const foreign_key = options.foreign_key orelse switch (relation_type) {
+            pub const foreign_key: ?[]const u8 = options.foreign_key orelse switch (relation_type) {
                 .belongs_to => relation_name ++ "_id",
                 .has_many => null, // We have to infer this from the source table later.
             };

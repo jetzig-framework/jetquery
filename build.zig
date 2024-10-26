@@ -137,7 +137,12 @@ fn findMigrations(allocator: std.mem.Allocator, path: []const u8) ![][]const u8 
         try migrations.append(try std.fs.path.join(allocator, &.{ absolute_path, entry.name }));
     }
 
+    std.mem.sort([]const u8, migrations.items, {}, cmpString);
     return try migrations.toOwnedSlice();
+}
+
+fn cmpString(_: void, lhs: []const u8, rhs: []const u8) bool {
+    return std.mem.order(u8, lhs, rhs).compare(.lt);
 }
 
 fn fileExist(path: []const u8) !bool {

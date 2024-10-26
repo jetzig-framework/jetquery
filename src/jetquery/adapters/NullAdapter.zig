@@ -35,9 +35,8 @@ pub fn release(
     _ = connection;
 }
 
-pub fn columnTypeSql(self: NullAdapter, column_type: jetquery.Column.Type) []const u8 {
-    _ = self;
-    _ = column_type;
+pub fn columnTypeSql(comptime column: jetquery.schema.Column) []const u8 {
+    _ = column;
     return "";
 }
 
@@ -57,7 +56,8 @@ pub fn columnSql(Table: type, comptime column: jetquery.columnsColumn) []const u
     return "";
 }
 
-pub fn primaryKeySql() []const u8 {
+pub fn primaryKeySql(comptime column: jetquery.schema.Column) []const u8 {
+    _ = column;
     return "";
 }
 
@@ -125,7 +125,7 @@ pub fn uniqueColumnSql() []const u8 {
     return "";
 }
 
-pub fn referenceSql(comptime reference: jetquery.Column.Reference) []const u8 {
+pub fn referenceSql(comptime reference: jetquery.schema.Column.Reference) []const u8 {
     _ = reference;
     return "";
 }

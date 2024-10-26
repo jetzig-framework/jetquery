@@ -91,10 +91,6 @@ pub const Result = struct {
         return try array.toOwnedSlice();
     }
 
-    pub fn first(self: *Result, query: anytype) !?@TypeOf(query).Definition {
-        return try self.next(query);
-    }
-
     pub fn execute(
         self: *Result,
         query: []const u8,
@@ -236,10 +232,9 @@ pub fn release(self: *PostgresqlAdapter, connection: jetquery.Repo.Connection) v
 }
 
 /// Output column type as SQL.
-pub fn columnTypeSql(self: PostgresqlAdapter, column_type: jetquery.Column.Type) []const u8 {
-    _ = self;
-    return switch (column_type) {
-        .string => " VARCHAR(255)",
+pub fn columnTypeSql(comptime column: jetquery.schema.Column) []const u8 {
+    return switch (column.type) {
+        .string => " VARCHAR" ++ std.fmt.comptimePrint("({})", .{column.options.length orelse 255}),
         .integer => " INTEGER",
         .boolean => " BOOLEAN",
         .float => " REAL",
@@ -257,8 +252,7 @@ pub fn identifier(comptime name: []const u8) []const u8 {
 }
 
 /// SQL fragment used to represent a column bound to a table, e.g. `"foo"."bar"`
-pub fn columnSql(Table: type, comptime column: jetquery.columns.Column) []const u8 {
-    // TODO: Table is redundant as column contains the table already.
+pub fn columnSql(comptime column: jetquery.columns.Column) []const u8 {
     return if (column.function) |function|
         std.fmt.comptimePrint(
             \\{s}("{s}"."{s}")
@@ -270,7 +264,7 @@ pub fn columnSql(Table: type, comptime column: jetquery.columns.Column) []const 
                 .avg => "AVG",
                 .sum => "SUM",
             },
-            Table.name,
+            column.table.name,
             column.name,
         })
     else if (column.sql) |sql|
@@ -278,12 +272,15 @@ pub fn columnSql(Table: type, comptime column: jetquery.columns.Column) []const 
     else
         std.fmt.comptimePrint(
             \\"{s}"."{s}"
-        , .{ Table.name, column.name });
+        , .{ column.table.name, column.name });
 }
 
 /// SQL fragment used to indicate a primary key.
-pub fn primaryKeySql() []const u8 {
-    return " SERIAL PRIMARY KEY";
+pub fn primaryKeySql(comptime column: jetquery.schema.Column) []const u8 {
+    return switch (column.type) {
+        .integer => " SERIAL PRIMARY KEY",
+        else => comptime columnTypeSql(column) ++ " PRIMARY KEY",
+    };
 }
 
 /// SQL fragment used to indicate a column whose value cannot be `NULL`.
@@ -309,7 +306,7 @@ pub fn orderSql(comptime order_clause: jetquery.sql.OrderClause) []const u8 {
 
     return std.fmt.comptimePrint(
         "{s} {s}",
-        .{ columnSql(order_clause.column.table, order_clause.column), direction },
+        .{ columnSql(order_clause.column), direction },
     );
 }
 
@@ -487,7 +484,7 @@ pub fn uniqueColumnSql() []const u8 {
     return " UNIQUE";
 }
 
-pub fn referenceSql(comptime reference: jetquery.Column.Reference) []const u8 {
+pub fn referenceSql(comptime reference: jetquery.schema.Column.Reference) []const u8 {
     return std.fmt.comptimePrint(
         " REFERENCES {s}({s})",
         .{ comptime identifier(reference[0]), comptime identifier(reference[1]) },
@@ -551,17 +548,17 @@ pub fn reflectColumns(
     return try columns.toOwnedSlice();
 }
 
-fn translateColumnType(name: []const u8) jetquery.Column.Type {
+fn translateColumnType(name: []const u8) jetquery.schema.Column.Type {
     // TODO
-    const types = std.StaticStringMap(jetquery.Column.Type).initComptime(.{
-        .{ "integer", jetquery.Column.Type.integer },
-        .{ "real", jetquery.Column.Type.float },
-        .{ "boolean", jetquery.Column.Type.boolean },
-        .{ "numeric", jetquery.Column.Type.decimal },
-        .{ "character varying", jetquery.Column.Type.string },
-        .{ "text", jetquery.Column.Type.text },
-        .{ "timestamp without time zone", jetquery.Column.Type.datetime },
-        .{ "timestamp with time zone", jetquery.Column.Type.datetime },
+    const types = std.StaticStringMap(jetquery.schema.Column.Type).initComptime(.{
+        .{ "integer", jetquery.schema.Column.Type.integer },
+        .{ "real", jetquery.schema.Column.Type.float },
+        .{ "boolean", jetquery.schema.Column.Type.boolean },
+        .{ "numeric", jetquery.schema.Column.Type.decimal },
+        .{ "character varying", jetquery.schema.Column.Type.string },
+        .{ "text", jetquery.schema.Column.Type.text },
+        .{ "timestamp without time zone", jetquery.schema.Column.Type.datetime },
+        .{ "timestamp with time zone", jetquery.schema.Column.Type.datetime },
     });
     return types.get(name) orelse {
         std.log.err("Unsupported column type: `{s}`\n", .{name});

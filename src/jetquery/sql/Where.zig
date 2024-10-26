@@ -320,7 +320,7 @@ pub const Node = union(enum) {
                         writer.print("{s}", .{Adapter.paramSql(value.index)}) catch unreachable;
                     },
                     .column => |column| {
-                        writer.print("{s}", .{Adapter.columnSql(column.table, column)}) catch unreachable;
+                        writer.print("{s}", .{Adapter.columnSql(column)}) catch unreachable;
                     },
                 }
 
@@ -342,7 +342,7 @@ pub const Node = union(enum) {
                         writer.print("{s}", .{Adapter.paramSql(value.index)}) catch unreachable;
                     },
                     .column => |column| {
-                        writer.print("{s}", .{Adapter.columnSql(column.table, column)}) catch unreachable;
+                        writer.print("{s}", .{Adapter.columnSql(column)}) catch unreachable;
                     },
                 }
             },

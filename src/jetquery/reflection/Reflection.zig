@@ -9,7 +9,7 @@ pub const TableInfo = struct {
 pub const ColumnInfo = struct {
     name: []const u8,
     table: []const u8,
-    type: jetquery.Column.Type,
+    type: jetquery.schema.Column.Type,
     null: bool,
 
     pub fn zigType(self: ColumnInfo) []const u8 {

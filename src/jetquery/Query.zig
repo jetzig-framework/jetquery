@@ -16,7 +16,7 @@ fn Adapter() type {
 
 /// Create a new query by passing a table definition.
 /// ```zig
-/// const query = Query(Schema.Cats).init(allocator);
+/// const query = Query(Schema, .Cat);
 /// ```
 pub fn Query(Schema: type, comptime table: anytype) type {
     const Table = switch (@typeInfo(@TypeOf(table))) {
@@ -44,9 +44,9 @@ pub fn Query(Schema: type, comptime table: anytype) type {
         /// ```zig
         /// Query(Schema, .MyTable).select(.{}).where(.{ .foo = "qux" });
         /// ```
-        pub fn select(comptime columns: anytype) Statement(.select, Schema, Table, .{
-            .columns = &jetquery.columns.translate(Table, &.{}, columns),
-        }) {
+        pub fn select(
+            comptime columns: anytype,
+        ) @TypeOf(InitialStatement(Schema, Table).select(columns)) {
             return InitialStatement(Schema, Table).select(columns);
         }
 
@@ -58,13 +58,7 @@ pub fn Query(Schema: type, comptime table: anytype) type {
         /// ```zig
         /// Query(Schema, .MyTable).select(.{}).where(.{ .foo = "bar" })
         /// ```
-        pub fn where(args: anytype) Statement(.select, Schema, Table, .{
-            .field_infos = &jetquery.fields.fieldInfos(Adapter(), Table, &.{}, @TypeOf(args), .where),
-            .columns = &Table.columns(),
-            .default_select = true,
-            .where_clauses = &.{sql.Where.tree(Adapter(), Table, &.{}, @TypeOf(args), .where, 0)},
-            .result_context = defaultResultContext(.select),
-        }) {
+        pub fn where(args: anytype) @TypeOf(InitialStatement(Schema, Table).where(args)) {
             return InitialStatement(Schema, Table).where(args);
         }
 
@@ -72,15 +66,7 @@ pub fn Query(Schema: type, comptime table: anytype) type {
         /// ```zig
         /// Query(Schema, .MyTable).update(.{ .foo = "bar", .baz = "qux" }).where(.{ .quux = "corge" });
         /// ```
-        pub fn update(args: anytype) Statement(.update, Schema, Table, .{
-            .field_infos = &(jetquery.fields.fieldInfos(
-                Adapter(),
-                Table,
-                &.{},
-                @TypeOf(args),
-                .update,
-            ) ++ timestampsFields(Table, .update)),
-        }) {
+        pub fn update(args: anytype) @TypeOf(InitialStatement(Schema, Table).update(args)) {
             return InitialStatement(Schema, Table).update(args);
         }
 
@@ -88,15 +74,7 @@ pub fn Query(Schema: type, comptime table: anytype) type {
         /// ```zig
         /// Query(Schema, .MyTable).insert(.{ .foo = "bar", .baz = "qux" });
         /// ```
-        pub fn insert(args: anytype) Statement(.insert, Schema, Table, .{
-            .field_infos = &(jetquery.fields.fieldInfos(
-                Adapter(),
-                Table,
-                &.{},
-                @TypeOf(args),
-                .insert,
-            ) ++ timestampsFields(Table, .insert)),
-        }) {
+        pub fn insert(args: anytype) @TypeOf(InitialStatement(Schema, Table).insert(args)) {
             return InitialStatement(Schema, Table).insert(args);
         }
 
@@ -106,7 +84,7 @@ pub fn Query(Schema: type, comptime table: anytype) type {
         /// ```zig
         /// Query(Schema, .MyTable).delete().where(.{ .foo = "bar" });
         /// ```
-        pub fn delete() Statement(.delete, Schema, Table, .{}) {
+        pub fn delete() @TypeOf(InitialStatement(Schema, Table).delete()) {
             return InitialStatement(Schema, Table).delete();
         }
 
@@ -115,7 +93,7 @@ pub fn Query(Schema: type, comptime table: anytype) type {
         /// ```zig
         /// Query(Schema, .MyTable).deleteAll();
         /// ```
-        pub fn deleteAll() Statement(.delete_all, Schema, Table, .{}) {
+        pub fn deleteAll() @TypeOf(InitialStatement(Schema, Table).deleteAll()) {
             return InitialStatement(Schema, Table).deleteAll();
         }
 
@@ -127,21 +105,7 @@ pub fn Query(Schema: type, comptime table: anytype) type {
         /// ```zig
         /// Query(Schema, .MyTable).select(.{}).where(.{ .id = id }).limit(1);
         /// ```
-        pub fn find(id: anytype) Statement(.select, Schema, Table, .{
-            .field_infos = &(jetquery.fields.fieldInfos(
-                Adapter(),
-                Table,
-                &.{},
-                @TypeOf(.{ .id = id }),
-                .where,
-            ) ++
-                jetquery.fields.fieldInfos(Adapter(), Table, &.{}, @TypeOf(.{1}), .limit)),
-            .where_clauses = &.{
-                sql.Where.tree(Adapter(), Table, &.{}, @TypeOf(.{ .id = id }), .where, 0),
-            },
-            .columns = &Table.columns(),
-            .result_context = .one,
-        }) {
+        pub fn find(id: anytype) @TypeOf(InitialStatement(Schema, Table).find(id)) {
             return InitialStatement(Schema, Table).find(id);
         }
 
@@ -153,20 +117,28 @@ pub fn Query(Schema: type, comptime table: anytype) type {
         /// ```zig
         /// Query(Schema, .MyTable).select(.{}).where(args).limit(1);
         /// ```
-        pub fn findBy(args: anytype) Statement(.select, Schema, Table, .{
-            .field_infos = &(jetquery.fields.fieldInfos(
-                Adapter(),
-                Table,
-                &.{},
-                @TypeOf(args),
-                .where,
-            ) ++
-                jetquery.fields.fieldInfos(Adapter(), Table, &.{}, @TypeOf(.{1}), .limit)),
-            .columns = &Table.columns(),
-            .result_context = .one,
-            .where_clauses = &.{sql.Where.tree(Adapter(), Table, &.{}, @TypeOf(args), .where, 0)},
-        }) {
+        pub fn findBy(args: anytype) @TypeOf(InitialStatement(Schema, Table).findBy(args)) {
             return InitialStatement(Schema, Table).findBy(args);
+        }
+
+        /// Return all records from the current table.
+        /// ```zig
+        /// try Query(Schema, .MyTable).all(repo);
+        /// ```
+        pub fn all(
+            repo: *jetquery.Repo,
+        ) @TypeOf(InitialStatement(Schema, Table).select(.{}).all(repo)) {
+            return InitialStatement(Schema, Table).select(.{}).all(repo);
+        }
+
+        /// Return the first record from the current table.
+        /// ```zig
+        /// try Query(Schema, .MyTable).first(repo);
+        /// ```
+        pub fn first(
+            repo: *jetquery.Repo,
+        ) @TypeOf(InitialStatement(Schema, Table).select(.{}).first(repo)) {
+            return InitialStatement(Schema, Table).select(.{}).first(repo);
         }
 
         /// Indicate that a relation should be fetched with this query. Pass options to control
@@ -190,13 +162,7 @@ pub fn Query(Schema: type, comptime table: anytype) type {
         pub fn include(
             comptime name: jetquery.relation.RelationsEnum(Table),
             comptime include_options: anytype,
-        ) Statement(.select, Schema, Table, .{
-            .relations = &.{
-                jetquery.relation.Relation(Schema, Table, name, include_options, .include),
-            },
-            .default_select = true,
-            .columns = &Table.columns(),
-        }) {
+        ) @TypeOf(InitialStatement(Schema, Table).include(name, include_options)) {
             return InitialStatement(Schema, Table).include(name, include_options);
         }
 
@@ -214,17 +180,7 @@ pub fn Query(Schema: type, comptime table: anytype) type {
         pub fn join(
             comptime join_context: jetquery.relation.JoinContext,
             comptime name: jetquery.relation.RelationsEnum(Table),
-        ) Statement(.select, Schema, Table, .{
-            .relations = &.{jetquery.relation.Relation(
-                Schema,
-                Table,
-                name,
-                .{ .select = null },
-                join_context,
-            )},
-            .default_select = true,
-            .columns = &Table.columns(),
-        }) {
+        ) @TypeOf(InitialStatement(Schema, Table).join(join_context, name)) {
             return InitialStatement(Schema, Table).join(join_context, name);
         }
 
@@ -238,27 +194,32 @@ pub fn Query(Schema: type, comptime table: anytype) type {
         ///     .include(.my_relation)
         ///     .distinct(.{ .foo, .{ .my_relation = .{.bar} });
         /// ```
-        pub fn distinct(comptime columns: anytype) Statement(
-            .select,
-            Schema,
-            Table,
-            .{
-                .distinct = &jetquery.columns.translate(Table, &.{}, columns),
-                .result_context = .many,
-            },
-        ) {
+        pub fn distinct(
+            comptime columns: anytype,
+        ) @TypeOf(InitialStatement(Schema, Table).distinct(columns)) {
             return InitialStatement(Schema, Table).distinct(columns);
         }
 
-        pub fn init() Statement(.none, Schema, Table, .{ .default_select = true }) {
-            return InitialStatement(Schema, Table);
+        /// Apply a `GROUP BY` clause to the query, e.g.:
+        /// ```zig
+        /// Query(Schema, .MyTable).groupBy(.{ .foo, .{ .my_relation = .{.bar} })
+        /// ```
+        pub fn groupBy(
+            comptime args: anytype,
+        ) @TypeOf(InitialStatement(Schema, Table).groupBy(args)) {
+            return InitialStatement(Schema, Table).groupBy(args);
         }
 
-        pub fn groupBy(comptime columns: anytype) Statement(.select, Schema, Table, .{
-            .result_context = .many,
-            .group_by = &jetquery.columns.translate(Table, &.{}, columns),
-        }) {
-            return InitialStatement(Schema, Table).groupBy(columns);
+        /// Apply an `ORDER BY` clause to the query, e.g.:
+        /// ```zig
+        /// Query(Schema, .MyTable).orderBy(.{.foo});
+        /// Query(Schema, .MyTable).orderBy(.{ .foo = .descending });
+        /// Query(Schema, .MyTable).orderBy(.{ .foo, .{ .my_relattion = .{.bar} } });
+        ///
+        pub fn orderBy(
+            comptime args: anytype,
+        ) @TypeOf(InitialStatement(Schema, Table).orderBy(args)) {
+            return InitialStatement(Schema, Table).orderBy(args);
         }
     };
 }
@@ -399,9 +360,7 @@ fn Statement(
                 statement.field_errors[field_index] = err;
             }
 
-            if (comptime hasTimestamps(Table)) {
-                updateTimestamps(S, &statement, statement.query_context);
-            }
+            updateTimestamps(S, &statement, statement.query_context);
 
             return statement;
         }
@@ -706,26 +665,54 @@ fn Statement(
             return self.extend(S, .{bound}, .offset);
         }
 
-        pub fn orderBy(self: Self, comptime args: anytype) Statement(query_context, Schema, Table, .{
-            .relations = options.relations,
-            .field_infos = options.field_infos,
-            .columns = options.columns,
-            .order_clauses = &sql.translateOrderBy(Table, options.relations, args),
-            .result_context = options.result_context,
-            .where_clauses = options.where_clauses,
-            .group_by = options.group_by,
-            .having_clauses = options.having_clauses,
-        }) {
-            const S = Statement(query_context, Schema, Table, .{
+        pub fn orderBy(self: Self, comptime args: anytype) Statement(
+            switch (query_context) {
+                .none => .select,
+                else => query_context,
+            },
+            Schema,
+            Table,
+            .{
                 .relations = options.relations,
                 .field_infos = options.field_infos,
-                .columns = options.columns,
+                .columns = switch (query_context) {
+                    .none => &Table.columns(),
+                    else => options.columns,
+                },
                 .order_clauses = &sql.translateOrderBy(Table, options.relations, args),
-                .result_context = options.result_context,
+                .result_context = switch (options.result_context) {
+                    .none => .many,
+                    else => options.result_context,
+                },
                 .where_clauses = options.where_clauses,
                 .group_by = options.group_by,
                 .having_clauses = options.having_clauses,
-            });
+            },
+        ) {
+            const S = Statement(
+                switch (query_context) {
+                    .none => .select,
+                    else => query_context,
+                },
+                Schema,
+                Table,
+                .{
+                    .relations = options.relations,
+                    .field_infos = options.field_infos,
+                    .columns = switch (query_context) {
+                        .none => &Table.columns(),
+                        else => options.columns,
+                    },
+                    .order_clauses = &sql.translateOrderBy(Table, options.relations, args),
+                    .result_context = switch (options.result_context) {
+                        .none => .many,
+                        else => options.result_context,
+                    },
+                    .where_clauses = options.where_clauses,
+                    .group_by = options.group_by,
+                    .having_clauses = options.having_clauses,
+                },
+            );
             return self.extend(S, .{}, .order);
         }
 
@@ -929,6 +916,17 @@ fn Statement(
                 try jetquery.debug.getCallerInfo(@returnAddress()),
             );
             return try result.all(self);
+        }
+
+        pub fn first(self: Self, repo: *jetquery.Repo) !?ResultType {
+            const query = self.limit(1);
+            var result = try repo.executeInternal(
+                query,
+                try jetquery.debug.getCallerInfo(@returnAddress()),
+            );
+            const rows = try result.all(query);
+            defer repo.allocator.free(rows);
+            return if (rows.len == 0) return null else rows[0];
         }
 
         pub fn values(self: Self) jetquery.fields.FieldValues(Table, options.relations, options.field_infos) {
@@ -1143,46 +1141,62 @@ fn timestampsFields(
     Table: type,
     comptime query_context: jetquery.fields.FieldContext,
 ) [timestampsSize(Table, query_context)]jetquery.fields.FieldInfo {
-    return if (comptime hasTimestamps(Table)) switch (query_context) {
-        .update => .{
-            jetquery.fields.fieldInfo(
-                jetquery.fields.structField("updated_at", i64),
-                Table,
-                "updated_at",
-                query_context,
-            ),
-        },
-        .insert => .{
-            jetquery.fields.fieldInfo(
-                jetquery.fields.structField("created_at", i64),
-                Table,
-                "created_at",
-                query_context,
-            ),
-            jetquery.fields.fieldInfo(
-                jetquery.fields.structField("updated_at", i64),
-                Table,
-                "updated_at",
-                query_context,
-            ),
-        },
+    const timestamps = detectTimestamps(Table);
+    const has_created_at = std.mem.containsAtLeast(TimestampType, timestamps, 1, &.{.created_at});
+    const has_updated_at = std.mem.containsAtLeast(TimestampType, timestamps, 1, &.{.updated_at});
+    const updated_at = jetquery.fields.fieldInfo(
+        jetquery.fields.structField(jetquery.default_column_names.updated_at, i64),
+        Table,
+        jetquery.default_column_names.updated_at,
+        query_context,
+    );
+    const created_at = jetquery.fields.fieldInfo(
+        jetquery.fields.structField(jetquery.default_column_names.created_at, i64),
+        Table,
+        jetquery.default_column_names.created_at,
+        query_context,
+    );
+
+    return switch (query_context) {
+        .update => if (has_updated_at) .{updated_at} else .{},
+        .insert => if (has_created_at and has_updated_at)
+            .{ created_at, updated_at }
+        else if (has_created_at)
+            .{created_at}
+        else if (has_updated_at)
+            .{updated_at}
+        else
+            .{},
         else => @compileError(
             "Timestamps detection not relevant for `" ++ @tagName(query_context) ++ "` query. (This is a bug).",
         ),
-    } else .{};
+    };
 }
 
-fn hasTimestamps(Table: type) bool {
-    return @hasField(Table.Definition, jetquery.default_column_names.created_at) and
-        @hasField(Table.Definition, jetquery.default_column_names.updated_at);
+const TimestampType = enum { created_at, updated_at };
+
+fn detectTimestamps(Table: type) []const TimestampType {
+    const has_created_at = @hasField(Table.Definition, jetquery.default_column_names.created_at);
+    const has_updated_at = @hasField(Table.Definition, jetquery.default_column_names.updated_at);
+
+    return if (has_created_at and has_updated_at)
+        &.{ .created_at, .updated_at }
+    else if (has_created_at)
+        &.{.created_at}
+    else if (has_updated_at)
+        &.{.updated_at}
+    else
+        &.{};
 }
 
 fn timestampsSize(Table: type, comptime query_context: jetquery.fields.FieldContext) u2 {
-    if (!hasTimestamps(Table)) return 0;
+    const timestamps = detectTimestamps(Table);
+
+    const has_updated_at = std.mem.containsAtLeast(TimestampType, timestamps, 1, &.{.updated_at});
 
     return switch (query_context) {
-        .update => 1,
-        .insert => 2,
+        .update => if (has_updated_at) 1 else 0,
+        .insert => timestamps.len,
         else => @compileError(
             "Timestamps detection not relevant for `" ++ @tagName(query_context) ++ "` query. (This is a bug).",
         ),
@@ -1230,7 +1244,7 @@ fn updateTimestamps(
                 )) {
                     @field(
                         statement.field_values,
-                        std.fmt.comptimePrint("{}", .{index}),
+                        std.fmt.comptimePrint("{d}", .{index}),
                     ) = timestamp;
                     statement.field_errors[index] = null;
                 }
@@ -1246,7 +1260,7 @@ fn updateTimestamps(
                 )) {
                     @field(
                         statement.field_values,
-                        std.fmt.comptimePrint("{}", .{index}),
+                        std.fmt.comptimePrint("{d}", .{index}),
                     ) = timestamp;
                     statement.field_errors[index] = null;
                 } else if (comptime std.mem.eql(
@@ -1256,7 +1270,7 @@ fn updateTimestamps(
                 )) {
                     @field(
                         statement.field_values,
-                        std.fmt.comptimePrint("{}", .{index}),
+                        std.fmt.comptimePrint("{d}", .{index}),
                     ) = timestamp;
                     statement.field_errors[index] = null;
                 }

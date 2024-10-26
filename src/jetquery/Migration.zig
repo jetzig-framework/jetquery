@@ -32,7 +32,7 @@ pub fn save(self: Migration) !void {
     try writer.writeAll(
         \\const std = @import("std");
         \\const jetquery = @import("jetquery");
-        \\const t = jetquery.table;
+        \\const t = jetquery.schema.table;
         \\
         \\pub fn up(repo: *jetquery.Repo) !void {
         \\    try repo.createTable(

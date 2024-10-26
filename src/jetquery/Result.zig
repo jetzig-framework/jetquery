@@ -240,7 +240,10 @@ pub const Result = union(enum) {
             jetquery.fields.fieldType(Query.info.Table.Definition, primary_key)
         else
             void;
-        return std.AutoHashMap(PK, usize);
+        return switch (PK) {
+            []const u8 => std.StringHashMap(usize),
+            else => std.AutoHashMap(PK, usize),
+        };
     }
 
     fn IdArray(Query: type, comptime primary_key: []const u8) type {

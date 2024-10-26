@@ -57,9 +57,9 @@ pub const Adapter = union(enum) {
     }
 
     /// Convert a column type to a database type suitable for the active adapter.
-    pub fn columnTypeSql(self: Adapter, column_type: jetquery.Column.Type) []const u8 {
+    pub fn columnTypeSql(self: Adapter, comptime column: jetquery.schema.Column) []const u8 {
         return switch (self) {
-            inline else => |*adapter| adapter.columnTypeSql(column_type),
+            inline else => |adapter| @TypeOf(adapter).columnTypeSql(column),
         };
     }
 
@@ -73,18 +73,17 @@ pub const Adapter = union(enum) {
     /// Quote a column bound to a table suitable for the active adapter.
     pub fn columnSql(
         self: Adapter,
-        Table: type,
         comptime column: jetquery.columns.Column,
     ) []const u8 {
         return switch (self) {
-            inline else => |adapter| @TypeOf(adapter).columnSql(Table, column),
+            inline else => |adapter| @TypeOf(adapter).columnSql(column),
         };
     }
 
     /// SQL fragment used to indicate a primary key.
-    pub fn primaryKeySql(self: Adapter) []const u8 {
+    pub fn primaryKeySql(self: Adapter, comptime column: jetquery.schema.Column) []const u8 {
         return switch (self) {
-            inline else => |adapter| @TypeOf(adapter).primaryKeySql(),
+            inline else => |adapter| @TypeOf(adapter).primaryKeySql(column),
         };
     }
 
@@ -197,7 +196,10 @@ pub const Adapter = union(enum) {
     }
 
     /// SQL fragment used to denote a foreign key.
-    pub fn referenceSql(self: Adapter, comptime reference: jetquery.Column.Reference) []const u8 {
+    pub fn referenceSql(
+        self: Adapter,
+        comptime reference: jetquery.schema.Column.Reference,
+    ) []const u8 {
         return switch (self) {
             inline else => |adapter| @TypeOf(adapter).referenceSql(reference),
         };

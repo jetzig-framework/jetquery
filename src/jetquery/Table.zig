@@ -2,6 +2,8 @@ const std = @import("std");
 
 const jetquery = @import("../jetquery.zig");
 
+// TODO: Rename this to `Model`
+
 /// Abstraction of a database table. Define a schema with:
 /// ```zig
 /// const Schema = struct {
@@ -23,7 +25,7 @@ pub fn Table(Schema: type, table_name: []const u8, T: type, options: anytype) ty
         pub const primary_key = if (@hasField(
             @TypeOf(options),
             "primary_key",
-        )) options.primary_key else "id";
+        )) jetquery.util.stringMaybeEnum(options.primary_key) else "id";
 
         pub fn init(args: anytype) RecordType(@TypeOf(args)) {
             var record: RecordType(@TypeOf(args)) = undefined;

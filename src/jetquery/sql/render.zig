@@ -229,7 +229,7 @@ fn renderGroupBy(
 
     for (group_by, 0..) |column, index| {
         const separator = if (index + 1 < group_by.len) ", " else "";
-        const column_sql = Adapter.columnSql(column.table, column) ++ separator;
+        const column_sql = Adapter.columnSql(column) ++ separator;
         size += column_sql.len;
     }
 
@@ -246,7 +246,7 @@ fn renderGroupBy(
 
     for (group_by, 0..) |column, index| {
         const separator = if (index + 1 < group_by.len) ", " else "";
-        const column_sql = Adapter.columnSql(column.table, column) ++ separator;
+        const column_sql = Adapter.columnSql(column) ++ separator;
         @memcpy(buf[cursor .. cursor + column_sql.len], column_sql);
         cursor += column_sql.len;
     }
@@ -326,10 +326,31 @@ fn renderJoins(Adapter: type, Table: type, relations: []const type) []const u8 {
 }
 
 fn renderInnerJoin(Adapter: type, Table: type, Relation: type) []const u8 {
-    const PrimaryKey = std.meta.FieldEnum(Relation.Source.Definition);
-    const ForeignKey = std.meta.FieldEnum(Table.Definition);
-    const primary_key: PrimaryKey = std.enums.nameCast(PrimaryKey, Relation.primary_key);
-    const foreign_key: ForeignKey = std.enums.nameCast(ForeignKey, Relation.foreign_key);
+    const PrimaryKey = switch (Relation.relation_type) {
+        .belongs_to => std.meta.FieldEnum(Relation.Source.Definition),
+        .has_many => std.meta.FieldEnum(Relation.Source.Definition),
+    };
+    const ForeignKey = switch (Relation.relation_type) {
+        .belongs_to => std.meta.FieldEnum(Table.Definition),
+        .has_many => std.meta.FieldEnum(Table.Definition),
+    };
+    // const ForeignKey = std.meta.FieldEnum(Table.Definition);
+    // const primary_key: PrimaryKey = std.enums.nameCast(PrimaryKey, Relation.primary_key);
+    // const foreign_key: ForeignKey = std.enums.nameCast(ForeignKey, Relation.foreign_key orelse Relation.Source.defaultForeignKey());
+    const primary_key: PrimaryKey = std.enums.nameCast(
+        PrimaryKey,
+        switch (Relation.relation_type) {
+            .belongs_to => Relation.primary_key,
+            .has_many => Table.defaultForeignKey(),
+        },
+    );
+    const foreign_key: ForeignKey = std.enums.nameCast(
+        ForeignKey,
+        Relation.foreign_key orelse switch (Relation.relation_type) {
+            .belongs_to => Table.primary_key,
+            .has_many => Relation.Source.primary_key,
+        },
+    );
 
     return Adapter.innerJoinSql(
         Table,
@@ -342,8 +363,13 @@ fn renderInnerJoin(Adapter: type, Table: type, Relation: type) []const u8 {
 fn renderOuterJoin(Adapter: type, Table: type, Relation: type) []const u8 {
     const PrimaryKey = std.meta.FieldEnum(Relation.Source.Definition);
     const ForeignKey = std.meta.FieldEnum(Table.Definition);
+    // const primary_key: PrimaryKey = std.enums.nameCast(PrimaryKey, Relation.primary_key);
+    // const foreign_key: ForeignKey = std.enums.nameCast(
+    //     ForeignKey,
+    //     Relation.foreign_key orelse Relation.Source.defaultForeignKey(),
+    // );
     const primary_key: PrimaryKey = std.enums.nameCast(PrimaryKey, Relation.primary_key);
-    const foreign_key: ForeignKey = std.enums.nameCast(ForeignKey, Relation.foreign_key);
+    const foreign_key: ForeignKey = std.enums.nameCast(ForeignKey, Relation.foreign_key orelse Relation.Source.defaultForeignKey());
 
     return Adapter.outerJoinSql(
         Table,
@@ -371,7 +397,6 @@ fn renderSelectColumns(
         for (columns, 0..) |column, index| {
             columns_buf_len += renderSelectColumn(
                 Adapter,
-                column.table,
                 column,
                 index,
                 total_columns,
@@ -387,7 +412,6 @@ fn renderSelectColumns(
             for (Relation.select_columns, start..) |column, index| {
                 columns_buf_len += renderSelectColumn(
                     Adapter,
-                    Relation.Source,
                     column,
                     index,
                     total_columns,
@@ -401,7 +425,6 @@ fn renderSelectColumns(
         for (columns, 0..) |column, index| {
             const column_tag = renderSelectColumn(
                 Adapter,
-                column.table,
                 column,
                 index,
                 total_columns,
@@ -419,7 +442,6 @@ fn renderSelectColumns(
             for (Relation.select_columns, start..) |column, index| {
                 const column_tag = renderSelectColumn(
                     Adapter,
-                    Relation.Source,
                     column,
                     index,
                     total_columns,
@@ -435,7 +457,6 @@ fn renderSelectColumns(
 
 fn renderSelectColumn(
     Adapter: type,
-    Table: type,
     comptime column: jetquery.columns.Column,
     comptime index: usize,
     comptime total: usize,
@@ -443,7 +464,7 @@ fn renderSelectColumn(
     comptime {
         return std.fmt.comptimePrint(
             " {s}{s}",
-            .{ Adapter.columnSql(Table, column), if (index + 1 < total) "," else "" },
+            .{ Adapter.columnSql(column), if (index + 1 < total) "," else "" },
         );
     }
 }
@@ -477,7 +498,7 @@ fn paramsBufSize(
             .column => .{
                 switch (context) {
                     .insert => Adapter.identifier(field.name),
-                    else => Adapter.columnSql(field.Table, field),
+                    else => Adapter.columnSql(field),
                 },
                 if (index < last_param_index) separator else "",
             },
@@ -492,7 +513,7 @@ fn paramsBufSize(
                     if (index < last_param_index) separator else "",
                 },
                 else => .{
-                    Adapter.columnSql(field.Table, field),
+                    Adapter.columnSql(field),
                     Adapter.paramSql(index),
                     if (index < last_param_index) separator else "",
                 },
@@ -534,7 +555,7 @@ fn renderParams(
             .column => .{
                 switch (context) {
                     .insert => Adapter.identifier(field.name),
-                    else => Adapter.columnSql(field.Table, field),
+                    else => Adapter.columnSql(field),
                 },
                 if (index < last_param_index) separator else "",
             },
@@ -549,7 +570,7 @@ fn renderParams(
                     if (index < last_param_index) separator else "",
                 },
                 else => .{
-                    Adapter.columnSql(field.Table, field),
+                    Adapter.columnSql(field),
                     Adapter.paramSql(index),
                     if (index < last_param_index) separator else "",
                 },
