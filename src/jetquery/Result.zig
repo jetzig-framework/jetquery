@@ -45,23 +45,15 @@ pub const Result = union(enum) {
                     primary_key,
                 );
 
-                const PK = PrimaryKey(@TypeOf(query), primary_key);
-                const IM = IdMap(@TypeOf(query), primary_key);
-                var id_array = std.ArrayList(PK).init(adapted_result.allocator);
-                defer id_array.deinit();
-
-                var id_map = IM.init(adapted_result.allocator);
-                defer id_map.deinit();
-
-                const AM = std.AutoHashMap(usize, MergedRow);
-                var aux_map = AM.init(adapted_result.allocator);
-                defer aux_map.deinit();
+                var map = Map(@TypeOf(query), MergedRow, primary_key)
+                    .init(adapted_result.allocator);
+                defer map.deinit();
 
                 for (rows, 0..) |row, index| {
                     if (comptime primary_key_present) {
                         const id = @field(row, primary_key);
-                        try id_map.put(id, index);
-                        try id_array.append(id);
+                        try map.id_map.put(id, index);
+                        try map.id_array.append(id);
                     }
                     var adapted_row = row;
                     self.extendInternalFields(@TypeOf(query), &adapted_row);
@@ -74,7 +66,7 @@ pub const Result = union(enum) {
                             init_aux_query.relation.relation_name,
                         ) = std.ArrayList(aux_type).init(adapted_result.allocator);
                     }
-                    const aux_values = try aux_map.getOrPut(index);
+                    const aux_values = try map.aux_map.getOrPut(index);
                     aux_values.value_ptr.* = merged_row;
                     rows[index] = adapted_row;
                 }
@@ -87,7 +79,7 @@ pub const Result = union(enum) {
                     var args: Args = undefined;
 
                     const q = if (comptime primary_key_present) q_blk: {
-                        @field(args, foreign_key) = id_array.items;
+                        @field(args, foreign_key) = map.id_array.items;
                         break :q_blk aux_query.baseQuery().where(args);
                     } else @compileError(std.fmt.comptimePrint(
                         "Unable to fetch relation records for `{s}` without primary key.",
@@ -103,25 +95,28 @@ pub const Result = union(enum) {
                     const aux_type = AuxType(ResultType, aux_query.relation);
 
                     while (try aux_result.next(q)) |aux_row| {
-                        try self.mergeAux(
-                            aux_query,
+                        const adapted_aux_row = self.mergeAux(
                             aux_type,
                             q,
                             @TypeOf(aux_row),
                             aux_row,
+                        );
+
+                        if (comptime primary_key_present) try mapAux(
+                            aux_query,
+                            aux_type,
+                            adapted_aux_row,
+                            @TypeOf(aux_row),
+                            aux_row,
                             foreign_key,
-                            primary_key_present,
-                            IM,
-                            id_map,
-                            AM,
-                            aux_map,
+                            @TypeOf(map),
+                            &map,
                         );
                     }
-
                     try aux_result.drain();
                 }
 
-                var it = aux_map.iterator();
+                var it = map.aux_map.iterator();
                 while (it.next()) |entry| {
                     inline for (std.meta.fields(@TypeOf(entry.value_ptr.*))) |field| {
                         @field(rows[entry.key_ptr.*], field.name) = try @field(
@@ -190,20 +185,7 @@ pub const Result = union(enum) {
         };
     }
 
-    fn mergeAux(
-        self: Result,
-        aux_query: AuxiliaryQuery,
-        aux_type: type,
-        q: anytype,
-        T: type,
-        aux_row: T,
-        comptime foreign_key: []const u8,
-        comptime primary_key_present: bool,
-        IM: type,
-        id_map: IM,
-        AM: type,
-        aux_map: AM,
-    ) !void {
+    fn mergeAux(self: Result, aux_type: type, q: anytype, T: type, aux_row: T) aux_type {
         var extended_aux_row = aux_row;
         self.extendInternalFields(@TypeOf(q), &extended_aux_row);
 
@@ -217,45 +199,37 @@ pub const Result = union(enum) {
                 field.name,
             ) = @field(aux_row, field.name);
         }
-
-        if (comptime primary_key_present) {
-            const foreign_key_value = @field(aux_row, foreign_key);
-            const maybe_row_index = switch (@typeInfo(@TypeOf(foreign_key_value))) {
-                .optional => if (foreign_key_value) |value|
-                    id_map.get(value)
-                else
-                    null,
-                else => id_map.get(foreign_key_value),
-            };
-
-            if (maybe_row_index) |row_index| {
-                // We pre-fill the map with an empty `MergedRow` so this is
-                // guaranteed to exist (or we have a bug).
-                const aux_values = aux_map.getEntry(row_index).?;
-                try @field(
-                    aux_values.value_ptr.*,
-                    aux_query.relation.relation_name,
-                ).append(adapted_aux_row);
-            }
-        }
+        return adapted_aux_row;
     }
 
-    fn IdMap(Query: type, comptime primary_key: []const u8) type {
-        const PK = if (comptime @hasField(Query.info.Table.Definition, primary_key))
-            jetquery.fields.fieldType(Query.info.Table.Definition, primary_key)
-        else
-            void;
-        return switch (PK) {
-            []const u8 => std.StringHashMap(usize),
-            else => std.AutoHashMap(PK, usize),
+    fn mapAux(
+        aux_query: anytype,
+        aux_type: type,
+        adapted_aux_row: aux_type,
+        T: type,
+        aux_row: T,
+        comptime foreign_key: []const u8,
+        MapType: type,
+        map: *MapType,
+    ) !void {
+        const foreign_key_value = @field(aux_row, foreign_key);
+        const maybe_row_index = switch (@typeInfo(@TypeOf(foreign_key_value))) {
+            .optional => if (foreign_key_value) |value|
+                map.id_map.get(value)
+            else
+                null,
+            else => map.id_map.get(foreign_key_value),
         };
-    }
 
-    fn PrimaryKey(Query: type, comptime primary_key: []const u8) type {
-        return if (comptime @hasField(Query.info.Table.Definition, primary_key))
-            jetquery.fields.fieldType(Query.info.Table.Definition, primary_key)
-        else
-            void;
+        if (maybe_row_index) |row_index| {
+            // We pre-fill the map with an empty `MergedRow` so this is
+            // guaranteed to exist (or we have a bug).
+            const aux_values = map.aux_map.getEntry(row_index).?;
+            try @field(
+                aux_values.value_ptr.*,
+                aux_query.relation.relation_name,
+            ).append(adapted_aux_row);
+        }
     }
 };
 
@@ -300,4 +274,47 @@ fn WhereArgs(aux_query: AuxiliaryQuery, comptime foreign_key: []const u8) type {
         )};
         return jetquery.fields.structType(&fields);
     }
+}
+
+fn IdMap(Query: type, comptime primary_key: []const u8) type {
+    const PK = if (comptime @hasField(Query.info.Table.Definition, primary_key))
+        jetquery.fields.fieldType(Query.info.Table.Definition, primary_key)
+    else
+        void;
+    return switch (PK) {
+        []const u8 => std.StringHashMap(usize),
+        else => std.AutoHashMap(PK, usize),
+    };
+}
+
+fn PrimaryKey(Query: type, comptime primary_key: []const u8) type {
+    return if (comptime @hasField(Query.info.Table.Definition, primary_key))
+        jetquery.fields.fieldType(Query.info.Table.Definition, primary_key)
+    else
+        void;
+}
+
+fn Map(QueryType: type, MergedRow: type, comptime primary_key: []const u8) type {
+    return struct {
+        id_array: std.ArrayList(PrimaryKey(QueryType, primary_key)),
+        id_map: IdMap(QueryType, primary_key),
+        aux_map: std.AutoHashMap(usize, MergedRow),
+
+        pub fn init(allocator: std.mem.Allocator) @This() {
+            const PK = PrimaryKey(QueryType, primary_key);
+            const IM = IdMap(QueryType, primary_key);
+            const AM = std.AutoHashMap(usize, MergedRow);
+            return .{
+                .id_array = std.ArrayList(PK).init(allocator),
+                .id_map = IM.init(allocator),
+                .aux_map = AM.init(allocator),
+            };
+        }
+
+        pub fn deinit(self: *@This()) void {
+            defer self.id_array.deinit();
+            defer self.id_map.deinit();
+            defer self.aux_map.deinit();
+        }
+    };
 }
