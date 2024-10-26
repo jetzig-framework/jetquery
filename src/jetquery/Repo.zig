@@ -122,13 +122,54 @@ pub fn execute(self: *Repo, query: anytype) !switch (@TypeOf(query).ResultContex
 
 pub const Connection = union(enum) {
     postgresql: jetquery.adapters.PostgresqlAdapter.Connection,
+
+    pub fn execute(self: Connection, query: anytype) !switch (@TypeOf(query).ResultContext) {
+        .one => ?@TypeOf(query).ResultType,
+        .many => jetquery.Result,
+        .none => void,
+    } {
+        return switch (self) {
+            .postgresql => |*connection| result_blk: {
+                try query.validateValues();
+                try query.validateDelete();
+                var result = try connection.execute(query.sql, query.values);
+                break :result_blk switch (@TypeOf(query).ResultContext) {
+                    .one => blk: {
+                        // TODO: Create a new ResultContext `.unary` instead of hacking it in here.
+                        if (query.query_context == .count) {
+                            defer result.deinit();
+                            const unary = try result.unary(@TypeOf(query).ResultType);
+                            try result.drain();
+                            return unary;
+                        }
+                        // TODO: Switch this back to `next()` if/when relation mapping is added there
+                        const rows = try result.all(query);
+                        defer self.allocator.free(rows);
+                        // We should only ever get here where `LIMIT 1` is applied
+                        std.debug.assert(rows.len <= 1);
+                        break :blk if (rows.len > 0) rows[0] else null;
+                    },
+                    .many => result,
+                    .none => blk: {
+                        try result.drain();
+                        defer result.deinit();
+                        break :blk {};
+                    },
+                };
+            },
+        };
+    }
 };
 
 pub fn connect(self: *Repo) !Connection {
     if (self.connection == null) {
-        self.connection = try self.adapter.connect();
+        self.connection = try self.connectUnmanaged();
     }
     return self.connection.?;
+}
+
+pub fn connectUnmanaged(self: *Repo) !Connection {
+    return try self.adapter.connect(self);
 }
 
 pub fn release(self: *Repo) void {

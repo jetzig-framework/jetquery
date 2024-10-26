@@ -44,9 +44,9 @@ pub const Adapter = union(enum) {
         result.deinit();
     }
 
-    pub fn connect(self: *Adapter) !jetquery.Repo.Connection {
+    pub fn connect(self: *Adapter, repo: *jetquery.Repo) !jetquery.Repo.Connection {
         return switch (self.*) {
-            inline else => |*adapter| try adapter.connect(),
+            inline else => |*adapter| try adapter.connect(repo),
         };
     }
 

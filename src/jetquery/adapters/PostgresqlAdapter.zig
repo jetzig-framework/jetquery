@@ -221,10 +221,16 @@ pub fn execute(
 
 pub const Connection = struct {
     connection: *pg.Conn,
+    repo: *jetquery.Repo,
+
+    pub fn execute(self: Connection, comptime sql: []const u8, values: anytype) !jetquery.Result {
+        // TODO caller info
+        return try connectionExecute(self.repo.allocator, self.connection, sql, values, null);
+    }
 };
 
-pub fn connect(self: *PostgresqlAdapter) !jetquery.Repo.Connection {
-    return .{ .postgresql = .{ .connection = try self.pool.acquire() } };
+pub fn connect(self: *PostgresqlAdapter, repo: *jetquery.Repo) !jetquery.Repo.Connection {
+    return .{ .postgresql = .{ .connection = try self.pool.acquire(), .repo = repo } };
 }
 
 pub fn release(self: *PostgresqlAdapter, connection: jetquery.Repo.Connection) void {

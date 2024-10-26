@@ -20,19 +20,62 @@ pub const Result = union(enum) {
     }
 
     pub fn next(self: *Result, query: anytype) !?@TypeOf(query).ResultType {
-        // TODO: Fetch auxiliary queries and merge.
+        const ResultType = @TypeOf(query).ResultType;
+
         return switch (self.*) {
             inline else => |*adapted_result| blk: {
                 var row = try adapted_result.next(query) orelse break :blk null;
 
                 self.extendInternalFields(@TypeOf(query), &row);
+
+                const primary_key = @TypeOf(query).info.Table.primary_key;
+                const primary_key_present = @hasField(
+                    @TypeOf(query).info.Table.Definition,
+                    primary_key,
+                );
+
+                inline for (query.auxiliary_queries) |aux_query| {
+                    const foreign_key = comptime aux_query.relation.foreign_key orelse
+                        @TypeOf(query).info.Table.defaultForeignKey();
+
+                    const Args = WhereArgs(aux_query, foreign_key);
+                    var args: Args = undefined;
+
+                    const q = if (comptime primary_key_present) q_blk: {
+                        @field(args, foreign_key) = @field(row, primary_key);
+                        break :q_blk aux_query.baseQuery().where(args);
+                    } else @compileError(std.fmt.comptimePrint(
+                        "Unable to fetch relation records for `{s}` without primary key.",
+                        .{aux_query.relation.relation_name},
+                    ));
+
+                    // TODO: Establish new connection
+                    var aux_result = try adapted_result.repo.executeInternal(
+                        q,
+                        adapted_result.caller_info,
+                    );
+                    defer aux_result.deinit();
+
+                    const aux_type = AuxType(ResultType, aux_query.relation);
+
+                    var aux_rows = std.ArrayList(aux_type).init(adapted_result.allocator);
+                    while (try aux_result.next(q)) |aux_row| {
+                        try aux_rows.append(self.mergeAux(
+                            aux_type,
+                            q,
+                            @TypeOf(aux_row),
+                            aux_row,
+                        ));
+                    }
+                    @field(row, aux_query.relation.relation_name) = try aux_rows.toOwnedSlice();
+                    try aux_result.drain();
+                }
                 break :blk row;
             },
         };
     }
 
     pub fn all(self: *Result, query: anytype) ![]@TypeOf(query).ResultType {
-        // TODO: Eat the spaghetti
         const ResultType = @TypeOf(query).ResultType;
 
         return switch (self.*) {
@@ -71,6 +114,9 @@ pub const Result = union(enum) {
                     rows[index] = adapted_row;
                 }
 
+                // Execute secondary queries (hasMany relations when `include` is used) where
+                // foreign keys match the primary keys returned by the primary query, then merge
+                // the results together.
                 inline for (query.auxiliary_queries) |aux_query| {
                     const foreign_key = comptime aux_query.relation.foreign_key orelse
                         @TypeOf(query).info.Table.defaultForeignKey();
