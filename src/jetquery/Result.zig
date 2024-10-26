@@ -46,13 +46,15 @@ pub const Result = union(enum) {
                 );
 
                 const PK = PrimaryKey(@TypeOf(query), primary_key);
+                const IM = IdMap(@TypeOf(query), primary_key);
                 var id_array = std.ArrayList(PK).init(adapted_result.allocator);
                 defer id_array.deinit();
 
-                var id_map = IdMap(@TypeOf(query), primary_key).init(adapted_result.allocator);
+                var id_map = IM.init(adapted_result.allocator);
                 defer id_map.deinit();
 
-                var aux_map = std.AutoHashMap(usize, MergedRow).init(adapted_result.allocator);
+                const AM = std.AutoHashMap(usize, MergedRow);
+                var aux_map = AM.init(adapted_result.allocator);
                 defer aux_map.deinit();
 
                 for (rows, 0..) |row, index| {
@@ -101,40 +103,19 @@ pub const Result = union(enum) {
                     const aux_type = AuxType(ResultType, aux_query.relation);
 
                     while (try aux_result.next(q)) |aux_row| {
-                        var extended_aux_row = aux_row;
-                        self.extendInternalFields(@TypeOf(q), &extended_aux_row);
-
-                        var adapted_aux_row: aux_type = undefined;
-
-                        inline for (std.meta.fields(aux_type)) |field| {
-                            if (comptime std.mem.startsWith(u8, field.name, "__jetquery")) continue;
-                            @field(adapted_aux_row, field.name) = @field(aux_row, field.name);
-                            @field(
-                                adapted_aux_row.__jetquery.original_values,
-                                field.name,
-                            ) = @field(aux_row, field.name);
-                        }
-
-                        if (comptime primary_key_present) {
-                            const foreign_key_value = @field(aux_row, foreign_key);
-                            const maybe_row_index = switch (@typeInfo(@TypeOf(foreign_key_value))) {
-                                .optional => if (foreign_key_value) |value|
-                                    id_map.get(value)
-                                else
-                                    null,
-                                else => id_map.get(foreign_key_value),
-                            };
-
-                            if (maybe_row_index) |row_index| {
-                                // We pre-fill the map with an empty `MergedRow` so this is
-                                // guaranteed to exist (or we have a bug).
-                                const aux_values = aux_map.getEntry(row_index).?;
-                                try @field(
-                                    aux_values.value_ptr.*,
-                                    aux_query.relation.relation_name,
-                                ).append(adapted_aux_row);
-                            }
-                        }
+                        try self.mergeAux(
+                            aux_query,
+                            aux_type,
+                            q,
+                            @TypeOf(aux_row),
+                            aux_row,
+                            foreign_key,
+                            primary_key_present,
+                            IM,
+                            id_map,
+                            AM,
+                            aux_map,
+                        );
                     }
 
                     try aux_result.drain();
@@ -176,8 +157,8 @@ pub const Result = union(enum) {
         };
     }
 
-    fn extendInternalFields(self: *Result, Query: type, result: *Query.ResultType) void {
-        result.__jetquery.id = switch (self.*) {
+    fn extendInternalFields(self: Result, Query: type, result: *Query.ResultType) void {
+        result.__jetquery.id = switch (self) {
             inline else => |*adapted_result| adapted_result.repo.generateId(),
         };
         result.__jetquery_model = Query.info.Table;
@@ -207,6 +188,56 @@ pub const Result = union(enum) {
         return switch (self) {
             inline else => |adapted_result| adapted_result.duration,
         };
+    }
+
+    fn mergeAux(
+        self: Result,
+        aux_query: AuxiliaryQuery,
+        aux_type: type,
+        q: anytype,
+        T: type,
+        aux_row: T,
+        comptime foreign_key: []const u8,
+        comptime primary_key_present: bool,
+        IM: type,
+        id_map: IM,
+        AM: type,
+        aux_map: AM,
+    ) !void {
+        var extended_aux_row = aux_row;
+        self.extendInternalFields(@TypeOf(q), &extended_aux_row);
+
+        var adapted_aux_row: aux_type = undefined;
+
+        inline for (std.meta.fields(aux_type)) |field| {
+            if (comptime std.mem.startsWith(u8, field.name, "__jetquery")) continue;
+            @field(adapted_aux_row, field.name) = @field(aux_row, field.name);
+            @field(
+                adapted_aux_row.__jetquery.original_values,
+                field.name,
+            ) = @field(aux_row, field.name);
+        }
+
+        if (comptime primary_key_present) {
+            const foreign_key_value = @field(aux_row, foreign_key);
+            const maybe_row_index = switch (@typeInfo(@TypeOf(foreign_key_value))) {
+                .optional => if (foreign_key_value) |value|
+                    id_map.get(value)
+                else
+                    null,
+                else => id_map.get(foreign_key_value),
+            };
+
+            if (maybe_row_index) |row_index| {
+                // We pre-fill the map with an empty `MergedRow` so this is
+                // guaranteed to exist (or we have a bug).
+                const aux_values = aux_map.getEntry(row_index).?;
+                try @field(
+                    aux_values.value_ptr.*,
+                    aux_query.relation.relation_name,
+                ).append(adapted_aux_row);
+            }
+        }
     }
 
     fn IdMap(Query: type, comptime primary_key: []const u8) type {
