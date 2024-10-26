@@ -223,9 +223,20 @@ pub const Connection = struct {
     connection: *pg.Conn,
     repo: *jetquery.Repo,
 
-    pub fn execute(self: Connection, comptime sql: []const u8, values: anytype) !jetquery.Result {
-        // TODO caller info
-        return try connectionExecute(self.repo.allocator, self.connection, sql, values, null);
+    pub fn execute(
+        self: Connection,
+        comptime sql: []const u8,
+        values: anytype,
+        caller_info: ?jetquery.debug.CallerInfo,
+    ) !jetquery.Result {
+        return try connectionExecute(
+            self.repo.allocator,
+            self.connection,
+            self.repo,
+            sql,
+            values,
+            caller_info,
+        );
     }
 };
 

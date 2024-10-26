@@ -123,7 +123,11 @@ pub fn execute(self: *Repo, query: anytype) !switch (@TypeOf(query).ResultContex
 pub const Connection = union(enum) {
     postgresql: jetquery.adapters.PostgresqlAdapter.Connection,
 
-    pub fn execute(self: Connection, query: anytype) !switch (@TypeOf(query).ResultContext) {
+    pub fn execute(
+        self: Connection,
+        query: anytype,
+        caller_info: ?jetquery.debug.CallerInfo,
+    ) !switch (@TypeOf(query).ResultContext) {
         .one => ?@TypeOf(query).ResultType,
         .many => jetquery.Result,
         .none => void,
@@ -132,7 +136,7 @@ pub const Connection = union(enum) {
             .postgresql => |*connection| result_blk: {
                 try query.validateValues();
                 try query.validateDelete();
-                var result = try connection.execute(query.sql, query.values);
+                var result = try connection.execute(query.sql, query.field_values, caller_info);
                 break :result_blk switch (@TypeOf(query).ResultContext) {
                     .one => blk: {
                         // TODO: Create a new ResultContext `.unary` instead of hacking it in here.
@@ -144,7 +148,7 @@ pub const Connection = union(enum) {
                         }
                         // TODO: Switch this back to `next()` if/when relation mapping is added there
                         const rows = try result.all(query);
-                        defer self.allocator.free(rows);
+                        defer connection.repo.allocator.free(rows);
                         // We should only ever get here where `LIMIT 1` is applied
                         std.debug.assert(rows.len <= 1);
                         break :blk if (rows.len > 0) rows[0] else null;
@@ -188,34 +192,35 @@ pub fn executeInternal(
     .many => jetquery.Result,
     .none => void,
 } {
+    var connection = try self.connect();
     try query.validateValues();
     try query.validateDelete();
 
-    var result = try self.adapter.execute(self, query.sql, query.field_values, caller_info);
-
-    return switch (@TypeOf(query).ResultContext) {
-        .one => blk: {
-            // TODO: Create a new ResultContext `.unary` instead of hacking it in here.
-            if (query.query_context == .count) {
-                defer result.deinit();
-                const unary = try result.unary(@TypeOf(query).ResultType);
-                try result.drain();
-                return unary;
-            }
-            // TODO: Switch this back to `next()` if/when relation mapping is added there
-            const rows = try result.all(query);
-            defer self.allocator.free(rows);
-            // We should only ever get here where `LIMIT 1` is applied
-            std.debug.assert(rows.len <= 1);
-            break :blk if (rows.len > 0) rows[0] else null;
-        },
-        .many => result,
-        .none => blk: {
-            try result.drain();
-            defer result.deinit();
-            break :blk {};
-        },
-    };
+    return try connection.execute(query, caller_info);
+    //
+    // return switch (@TypeOf(query).ResultContext) {
+    //     .one => blk: {
+    //         // TODO: Create a new ResultContext `.unary` instead of hacking it in here.
+    //         if (query.query_context == .count) {
+    //             defer result.deinit();
+    //             const unary = try result.unary(@TypeOf(query).ResultType);
+    //             try result.drain();
+    //             return unary;
+    //         }
+    //         // TODO: Switch this back to `next()` if/when relation mapping is added there
+    //         const rows = try result.all(query);
+    //         defer self.allocator.free(rows);
+    //         // We should only ever get here where `LIMIT 1` is applied
+    //         std.debug.assert(rows.len <= 1);
+    //         break :blk if (rows.len > 0) rows[0] else null;
+    //     },
+    //     .many => result,
+    //     .none => blk: {
+    //         try result.drain();
+    //         defer result.deinit();
+    //         break :blk {};
+    //     },
+    // };
 }
 
 pub fn begin(self: *Repo) !void {

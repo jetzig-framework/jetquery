@@ -50,7 +50,8 @@ pub const Result = union(enum) {
                     ));
 
                     // TODO: Establish new connection
-                    var aux_result = try adapted_result.repo.executeInternal(
+                    var connection = try adapted_result.repo.connectUnmanaged();
+                    var aux_result = try connection.execute(
                         q,
                         adapted_result.caller_info,
                     );
