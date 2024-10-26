@@ -84,10 +84,14 @@ pub const Result = union(enum) {
                     const Args = WhereArgs(aux_query, foreign_key);
                     var args: Args = undefined;
 
-                    if (comptime primary_key_present) {
+                    const q = if (comptime primary_key_present) q_blk: {
                         @field(args, foreign_key) = id_array.items;
-                    }
-                    const q = aux_query.baseQuery().where(args);
+                        break :q_blk aux_query.baseQuery().where(args);
+                    } else @compileError(std.fmt.comptimePrint(
+                        "Unable to fetch relation records for `{s}` without primary key.",
+                        .{aux_query.relation.relation_name},
+                    ));
+
                     var aux_result = try adapted_result.repo.executeInternal(
                         q,
                         adapted_result.caller_info,
