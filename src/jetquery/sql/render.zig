@@ -314,7 +314,7 @@ fn renderJoins(Adapter: type, Table: type, relations: []const type) []const u8 {
                 .outer => renderOuterJoin(Adapter, Table, Relation),
                 .include => switch (Relation.relation_type) {
                     .belongs_to => renderInnerJoin(Adapter, Table, Relation),
-                    .has_many => "",
+                    .has_many => "", // We issue separate queries for has_many
                 },
             };
             @memcpy(buf[cursor .. cursor + sql.len], sql);
@@ -326,17 +326,8 @@ fn renderJoins(Adapter: type, Table: type, relations: []const type) []const u8 {
 }
 
 fn renderInnerJoin(Adapter: type, Table: type, Relation: type) []const u8 {
-    const PrimaryKey = switch (Relation.relation_type) {
-        .belongs_to => std.meta.FieldEnum(Relation.Source.Definition),
-        .has_many => std.meta.FieldEnum(Relation.Source.Definition),
-    };
-    const ForeignKey = switch (Relation.relation_type) {
-        .belongs_to => std.meta.FieldEnum(Table.Definition),
-        .has_many => std.meta.FieldEnum(Table.Definition),
-    };
-    // const ForeignKey = std.meta.FieldEnum(Table.Definition);
-    // const primary_key: PrimaryKey = std.enums.nameCast(PrimaryKey, Relation.primary_key);
-    // const foreign_key: ForeignKey = std.enums.nameCast(ForeignKey, Relation.foreign_key orelse Relation.Source.defaultForeignKey());
+    const PrimaryKey = std.meta.FieldEnum(Relation.Source.Definition);
+    const ForeignKey = std.meta.FieldEnum(Table.Definition);
     const primary_key: PrimaryKey = std.enums.nameCast(
         PrimaryKey,
         switch (Relation.relation_type) {
@@ -363,13 +354,20 @@ fn renderInnerJoin(Adapter: type, Table: type, Relation: type) []const u8 {
 fn renderOuterJoin(Adapter: type, Table: type, Relation: type) []const u8 {
     const PrimaryKey = std.meta.FieldEnum(Relation.Source.Definition);
     const ForeignKey = std.meta.FieldEnum(Table.Definition);
-    // const primary_key: PrimaryKey = std.enums.nameCast(PrimaryKey, Relation.primary_key);
-    // const foreign_key: ForeignKey = std.enums.nameCast(
-    //     ForeignKey,
-    //     Relation.foreign_key orelse Relation.Source.defaultForeignKey(),
-    // );
-    const primary_key: PrimaryKey = std.enums.nameCast(PrimaryKey, Relation.primary_key);
-    const foreign_key: ForeignKey = std.enums.nameCast(ForeignKey, Relation.foreign_key orelse Relation.Source.defaultForeignKey());
+    const primary_key: PrimaryKey = std.enums.nameCast(
+        PrimaryKey,
+        switch (Relation.relation_type) {
+            .belongs_to => Relation.primary_key,
+            .has_many => Table.defaultForeignKey(),
+        },
+    );
+    const foreign_key: ForeignKey = std.enums.nameCast(
+        ForeignKey,
+        Relation.foreign_key orelse switch (Relation.relation_type) {
+            .belongs_to => Table.primary_key,
+            .has_many => Relation.Source.primary_key,
+        },
+    );
 
     return Adapter.outerJoinSql(
         Table,

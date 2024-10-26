@@ -1093,7 +1093,7 @@ test "inner join" {
             .{
                 .relations = .{
                     .cat = relation.belongsTo(.Cat, .{}),
-                    .family = relation.belongsTo(.Family, .{}),
+                    .computers = relation.hasMany(.Computer, .{}),
                 },
             },
         );
@@ -1104,13 +1104,21 @@ test "inner join" {
             struct { id: i32, name: []const u8, paws: i32, created_at: i64, updated_at: i64 },
             .{},
         );
+
+        pub const Computer = Table(
+            @This(),
+            "computers",
+            struct { id: i32, human_id: i32 },
+            .{},
+        );
     };
 
     const query = Query(Schema, .Human)
         .join(.inner, .cat)
+        .join(.inner, .computers)
         .select(.{.name});
     try std.testing.expectEqualStrings(
-        \\SELECT "humans"."name" FROM "humans" INNER JOIN "cats" ON "humans"."cat_id" = "cats"."id" WHERE (1 = 1) ORDER BY "humans"."id" ASC
+        \\SELECT "humans"."name" FROM "humans" INNER JOIN "cats" ON "humans"."cat_id" = "cats"."id" INNER JOIN "computers" ON "humans"."id" = "computers"."human_id" WHERE (1 = 1) ORDER BY "humans"."id" ASC
     , query.sql);
 }
 
@@ -1123,7 +1131,7 @@ test "outer join" {
             .{
                 .relations = .{
                     .cat = relation.belongsTo(.Cat, .{}),
-                    .family = relation.belongsTo(.Family, .{}),
+                    .computers = relation.hasMany(.Computer, .{}),
                 },
             },
         );
@@ -1134,13 +1142,21 @@ test "outer join" {
             struct { id: i32, name: []const u8, paws: i32, created_at: i64, updated_at: i64 },
             .{},
         );
+
+        pub const Computer = Table(
+            @This(),
+            "computers",
+            struct { id: i32, human_id: i32 },
+            .{},
+        );
     };
 
     const query = Query(Schema, .Human)
         .join(.outer, .cat)
+        .join(.outer, .computers)
         .select(.{.name});
     try std.testing.expectEqualStrings(
-        \\SELECT "humans"."name" FROM "humans" LEFT OUTER JOIN "cats" ON "humans"."cat_id" = "cats"."id" WHERE (1 = 1) ORDER BY "humans"."id" ASC
+        \\SELECT "humans"."name" FROM "humans" LEFT OUTER JOIN "cats" ON "humans"."cat_id" = "cats"."id" LEFT OUTER JOIN "computers" ON "humans"."id" = "computers"."human_id" WHERE (1 = 1) ORDER BY "humans"."id" ASC
     , query.sql);
 }
 

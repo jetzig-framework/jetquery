@@ -167,6 +167,7 @@ test "migrate" {
     }
 
     try migrate.rollback();
+
     {
         const humans = jetquery.Query(TestSchema, .Human).all(&repo);
         try std.testing.expectError(error.PG, humans);
