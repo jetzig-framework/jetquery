@@ -123,7 +123,7 @@ pub fn execute(self: *Repo, query: anytype) !switch (@TypeOf(query).ResultContex
 /// Execute SQL with the active adapter and return a result (same as `execute` but accepts an SQL
 /// string and values instead of a generated query).
 pub fn executeSql(self: *Repo, sql: []const u8, values: anytype) !jetquery.Result {
-    const connection = try self.connect();
+    const connection = try self.connectManaged();
     const caller_info = try jetquery.debug.getCallerInfo(@returnAddress());
     return try connection.executeSql(sql, values, caller_info);
 }
@@ -154,12 +154,10 @@ pub const Connection = union(enum) {
                             try result.drain();
                             return unary;
                         }
-                        // TODO: Switch this back to `next()` if/when relation mapping is added there
-                        const rows = try result.all(query);
-                        defer connection.repo.allocator.free(rows);
-                        // We should only ever get here where `LIMIT 1` is applied
-                        std.debug.assert(rows.len <= 1);
-                        break :blk if (rows.len > 0) rows[0] else null;
+                        const row = try result.next(query);
+                        defer result.deinit();
+                        try result.drain();
+                        break :blk row;
                     },
                     .many => result,
                     .none => blk: {
@@ -180,7 +178,7 @@ pub const Connection = union(enum) {
         caller_info: ?jetquery.debug.CallerInfo,
     ) !void {
         var result = switch (self) {
-            .postgresql => |*connection| try connection.execute(sql, values, caller_info),
+            inline else => |connection| try connection.execute(sql, values, caller_info),
         };
         try result.drain();
         result.deinit();
@@ -195,22 +193,41 @@ pub const Connection = union(enum) {
         caller_info: ?jetquery.debug.CallerInfo,
     ) !jetquery.Result {
         return switch (self) {
-            .postgresql => |*connection| try connection.execute(sql, values, caller_info),
+            inline else => |connection| try connection.execute(sql, values, caller_info),
         };
+    }
+
+    /// Release connection to the pool.
+    pub fn release(self: Connection) void {
+        switch (self) {
+            inline else => |connection| connection.release(),
+        }
     }
 };
 
+/// Establish a new connection. Caller is responsible for calling `connection.release()` when
+/// connection can be returned to the pool. Only use this function if a new connection is
+/// specifically required, otherwise use `repo.execute()` which will automatically assign a
+/// connection and release it on `repo.deinit()`.
+///
+/// The returned `Connection` implements `execute`, `executeSql`, and `executeVoid` to provide
+/// parity with the same member functions in `Repo`. Use `execute` to execute a generated query,
+/// use `executeSql` and `executeVoid` to execute SQL and a values tuple (e.g. when using
+/// handwritten SQL statements).
 pub fn connect(self: *Repo) !Connection {
+    return try self.adapter.connect(self);
+}
+
+/// Used internally to create a managed connection which is released on `repo.deinit()`.
+pub fn connectManaged(self: *Repo) !Connection {
     if (self.connection == null) {
-        self.connection = try self.connectUnmanaged();
+        self.connection = try self.connect();
     }
     return self.connection.?;
 }
 
-pub fn connectUnmanaged(self: *Repo) !Connection {
-    return try self.adapter.connect(self);
-}
-
+/// Release the repo's connection to the pool. If no connection is currently acquired then this
+/// is a no-op.
 pub fn release(self: *Repo) void {
     if (self.connection) |connection| {
         self.connection = null;
@@ -227,7 +244,9 @@ pub fn executeInternal(
     .many => jetquery.Result,
     .none => void,
 } {
-    const connection = try self.connect();
+    const connection = try self.connectManaged();
+    errdefer self.release();
+
     try query.validateValues();
     try query.validateDelete();
 
@@ -235,7 +254,7 @@ pub fn executeInternal(
 }
 
 pub fn begin(self: *Repo) !void {
-    const connection = try self.connect();
+    const connection = try self.connectManaged();
     try connection.executeVoid(
         "BEGIN",
         .{},
@@ -244,7 +263,7 @@ pub fn begin(self: *Repo) !void {
 }
 
 pub fn commit(self: *Repo) !void {
-    const connection = try self.connect();
+    const connection = try self.connectManaged();
     try connection.executeVoid(
         "COMMIT",
         .{},
@@ -253,7 +272,7 @@ pub fn commit(self: *Repo) !void {
 }
 
 pub fn rollback(self: *Repo) !void {
-    const connection = try self.connect();
+    const connection = try self.connectManaged();
     try connection.executeVoid(
         "ROLLBACK",
         .{},
@@ -505,7 +524,7 @@ pub fn createTable(
     }
 
     try writer.print(")", .{});
-    const connection = try self.connect();
+    const connection = try self.connectManaged();
     try connection.executeVoid(
         buf.items,
         &.{},
@@ -541,7 +560,7 @@ pub fn dropTable(self: *Repo, comptime name: []const u8, options: DropTableOptio
         \\DROP TABLE{s} {s}
     , .{ if (options.if_exists) " IF EXISTS" else "", self.adapter.identifier(name) });
 
-    const connection = try self.connect();
+    const connection = try self.connectManaged();
     try connection.executeVoid(
         buf.items,
         &.{},
@@ -562,7 +581,7 @@ pub fn createDatabase(self: *Repo, comptime name: []const u8, options: struct {}
         \\CREATE DATABASE {s}
     , .{self.adapter.identifier(name)});
 
-    const connection = try self.connect();
+    const connection = try self.connectManaged();
     try connection.executeVoid(
         buf.items,
         &.{},
@@ -582,7 +601,7 @@ pub fn dropDatabase(self: *Repo, comptime name: []const u8, options: DropDatabas
         \\DROP DATABASE{s} {s}
     , .{ if (options.if_exists) " IF EXISTS" else "", self.adapter.identifier(name) });
 
-    const connection = try self.connect();
+    const connection = try self.connectManaged();
     try connection.executeVoid(
         buf.items,
         &.{},
@@ -609,7 +628,7 @@ pub fn createIndex(
         column_names,
     );
     const sql = comptime adapter.createIndexSql(index_name, table_name, column_names, options);
-    const connection = try self.connect();
+    const connection = try self.connectManaged();
     try connection.executeVoid(
         sql,
         .{},

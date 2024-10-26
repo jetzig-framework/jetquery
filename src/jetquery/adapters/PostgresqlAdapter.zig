@@ -40,8 +40,6 @@ pub const Result = struct {
 
     pub fn deinit(self: *Result) void {
         self.result.deinit();
-        // TODO
-        // self.connection.release();
     }
 
     pub fn drain(self: *Result) !void {
@@ -190,11 +188,6 @@ pub const Connection = struct {
         values: anytype,
         caller_info: ?jetquery.debug.CallerInfo,
     ) !jetquery.Result {
-        errdefer {
-            self.repo.connection = null;
-            self.connection.release();
-        }
-
         const start_time = std.time.nanoTimestamp();
 
         const result = self.connection.queryOpts(sql, values, .{}) catch |err| {
@@ -235,6 +228,10 @@ pub const Connection = struct {
                 .duration = duration,
             },
         };
+    }
+
+    pub fn release(self: Connection) void {
+        self.connection.release();
     }
 };
 

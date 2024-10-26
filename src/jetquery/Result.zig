@@ -34,11 +34,20 @@ pub const Result = union(enum) {
                     primary_key,
                 );
 
+                // Create a secondary connection for fetching relations if needed. This allows us
+                // to continue iterating over the primary query and fetching relations on each
+                // iteration. Since these connections are backed by a pool (in pg.zig) we should
+                // be okay acquiring a new connection for each call to `next()`.
+                var connection = if (query.auxiliary_queries.len > 0)
+                    try adapted_result.repo.connect()
+                else {};
+                defer if (query.auxiliary_queries.len > 0) connection.release();
+
                 inline for (query.auxiliary_queries) |aux_query| {
                     const foreign_key = comptime aux_query.relation.foreign_key orelse
                         @TypeOf(query).info.Table.defaultForeignKey();
 
-                    const Args = WhereArgs(aux_query, foreign_key);
+                    const Args = WhereArgs(aux_query, foreign_key, .one);
                     var args: Args = undefined;
 
                     const q = if (comptime primary_key_present) q_blk: {
@@ -49,8 +58,6 @@ pub const Result = union(enum) {
                         .{aux_query.relation.relation_name},
                     ));
 
-                    // TODO: Establish new connection
-                    var connection = try adapted_result.repo.connectUnmanaged();
                     var aux_result = try connection.execute(
                         q,
                         adapted_result.caller_info,
@@ -69,7 +76,6 @@ pub const Result = union(enum) {
                         ));
                     }
                     @field(row, aux_query.relation.relation_name) = try aux_rows.toOwnedSlice();
-                    try aux_result.drain();
                 }
                 break :blk row;
             },
@@ -122,7 +128,7 @@ pub const Result = union(enum) {
                     const foreign_key = comptime aux_query.relation.foreign_key orelse
                         @TypeOf(query).info.Table.defaultForeignKey();
 
-                    const Args = WhereArgs(aux_query, foreign_key);
+                    const Args = WhereArgs(aux_query, foreign_key, .many);
                     var args: Args = undefined;
 
                     const q = if (comptime primary_key_present) q_blk: {
@@ -310,14 +316,22 @@ pub const AuxiliaryResult = struct {
     relation: type,
 };
 
-fn WhereArgs(aux_query: AuxiliaryQuery, comptime foreign_key: []const u8) type {
+fn WhereArgs(
+    aux_query: AuxiliaryQuery,
+    comptime foreign_key: []const u8,
+    arg_context: enum { one, many },
+) type {
+    const field_type = jetquery.fields.fieldType(
+        aux_query.relation.Source.Definition,
+        foreign_key,
+    );
     comptime {
         var fields: [1]std.builtin.Type.StructField = .{jetquery.fields.structField(
             foreign_key,
-            []const jetquery.fields.fieldType(
-                aux_query.relation.Source.Definition,
-                foreign_key,
-            ),
+            switch (arg_context) {
+                .one => field_type,
+                .many => []const field_type,
+            },
         )};
         return jetquery.fields.structType(&fields);
     }
