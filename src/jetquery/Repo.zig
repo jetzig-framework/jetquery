@@ -120,6 +120,14 @@ pub fn execute(self: *Repo, query: anytype) !switch (@TypeOf(query).ResultContex
     return try self.executeInternal(query, caller_info);
 }
 
+/// Execute SQL with the active adapter and return a result (same as `execute` but accepts an SQL
+/// string and values instead of a generated query).
+pub fn executeSql(self: *Repo, sql: []const u8, values: anytype) !jetquery.Result {
+    const connection = try self.connect();
+    const caller_info = try jetquery.debug.getCallerInfo(@returnAddress());
+    return try connection.executeSql(sql, values, caller_info);
+}
+
 pub const Connection = union(enum) {
     postgresql: jetquery.adapters.PostgresqlAdapter.Connection,
 
@@ -163,6 +171,33 @@ pub const Connection = union(enum) {
             },
         };
     }
+
+    /// Execute SQL with the active adapter without returning a result.
+    pub fn executeVoid(
+        self: Connection,
+        sql: []const u8,
+        values: anytype,
+        caller_info: ?jetquery.debug.CallerInfo,
+    ) !void {
+        var result = switch (self) {
+            .postgresql => |*connection| try connection.execute(sql, values, caller_info),
+        };
+        try result.drain();
+        result.deinit();
+    }
+
+    /// Execute SQL with the active adapter and return a result (same as `execute` but accepts an
+    /// SQL string and values instead of a generated query).
+    pub fn executeSql(
+        self: Connection,
+        sql: []const u8,
+        values: anytype,
+        caller_info: ?jetquery.debug.CallerInfo,
+    ) !jetquery.Result {
+        return switch (self) {
+            .postgresql => |*connection| try connection.execute(sql, values, caller_info),
+        };
+    }
 };
 
 pub fn connect(self: *Repo) !Connection {
@@ -192,40 +227,16 @@ pub fn executeInternal(
     .many => jetquery.Result,
     .none => void,
 } {
-    var connection = try self.connect();
+    const connection = try self.connect();
     try query.validateValues();
     try query.validateDelete();
 
     return try connection.execute(query, caller_info);
-    //
-    // return switch (@TypeOf(query).ResultContext) {
-    //     .one => blk: {
-    //         // TODO: Create a new ResultContext `.unary` instead of hacking it in here.
-    //         if (query.query_context == .count) {
-    //             defer result.deinit();
-    //             const unary = try result.unary(@TypeOf(query).ResultType);
-    //             try result.drain();
-    //             return unary;
-    //         }
-    //         // TODO: Switch this back to `next()` if/when relation mapping is added there
-    //         const rows = try result.all(query);
-    //         defer self.allocator.free(rows);
-    //         // We should only ever get here where `LIMIT 1` is applied
-    //         std.debug.assert(rows.len <= 1);
-    //         break :blk if (rows.len > 0) rows[0] else null;
-    //     },
-    //     .many => result,
-    //     .none => blk: {
-    //         try result.drain();
-    //         defer result.deinit();
-    //         break :blk {};
-    //     },
-    // };
 }
 
 pub fn begin(self: *Repo) !void {
-    try self.adapter.executeVoid(
-        self,
+    const connection = try self.connect();
+    try connection.executeVoid(
         "BEGIN",
         .{},
         try jetquery.debug.getCallerInfo(@returnAddress()),
@@ -233,8 +244,8 @@ pub fn begin(self: *Repo) !void {
 }
 
 pub fn commit(self: *Repo) !void {
-    try self.adapter.executeVoid(
-        self,
+    const connection = try self.connect();
+    try connection.executeVoid(
         "COMMIT",
         .{},
         try jetquery.debug.getCallerInfo(@returnAddress()),
@@ -242,8 +253,8 @@ pub fn commit(self: *Repo) !void {
 }
 
 pub fn rollback(self: *Repo) !void {
-    try self.adapter.executeVoid(
-        self,
+    const connection = try self.connect();
+    try connection.executeVoid(
         "ROLLBACK",
         .{},
         try jetquery.debug.getCallerInfo(@returnAddress()),
@@ -494,8 +505,8 @@ pub fn createTable(
     }
 
     try writer.print(")", .{});
-    try self.adapter.executeVoid(
-        self,
+    const connection = try self.connect();
+    try connection.executeVoid(
         buf.items,
         &.{},
         try jetquery.debug.getCallerInfo(@returnAddress()),
@@ -530,8 +541,8 @@ pub fn dropTable(self: *Repo, comptime name: []const u8, options: DropTableOptio
         \\DROP TABLE{s} {s}
     , .{ if (options.if_exists) " IF EXISTS" else "", self.adapter.identifier(name) });
 
-    try self.adapter.executeVoid(
-        self,
+    const connection = try self.connect();
+    try connection.executeVoid(
         buf.items,
         &.{},
         try jetquery.debug.getCallerInfo(@returnAddress()),
@@ -551,8 +562,8 @@ pub fn createDatabase(self: *Repo, comptime name: []const u8, options: struct {}
         \\CREATE DATABASE {s}
     , .{self.adapter.identifier(name)});
 
-    try self.adapter.executeVoid(
-        self,
+    const connection = try self.connect();
+    try connection.executeVoid(
         buf.items,
         &.{},
         try jetquery.debug.getCallerInfo(@returnAddress()),
@@ -571,8 +582,8 @@ pub fn dropDatabase(self: *Repo, comptime name: []const u8, options: DropDatabas
         \\DROP DATABASE{s} {s}
     , .{ if (options.if_exists) " IF EXISTS" else "", self.adapter.identifier(name) });
 
-    try self.adapter.executeVoid(
-        self,
+    const connection = try self.connect();
+    try connection.executeVoid(
         buf.items,
         &.{},
         try jetquery.debug.getCallerInfo(@returnAddress()),
@@ -598,8 +609,8 @@ pub fn createIndex(
         column_names,
     );
     const sql = comptime adapter.createIndexSql(index_name, table_name, column_names, options);
-    try self.adapter.executeVoid(
-        self,
+    const connection = try self.connect();
+    try connection.executeVoid(
         sql,
         .{},
         try jetquery.debug.getCallerInfo(@returnAddress()),

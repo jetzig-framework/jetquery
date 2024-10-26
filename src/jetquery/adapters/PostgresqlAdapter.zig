@@ -91,19 +91,8 @@ pub const Result = struct {
         return try array.toOwnedSlice();
     }
 
-    pub fn execute(
-        self: *Result,
-        query: []const u8,
-        values: anytype,
-    ) !jetquery.Result {
-        return try connectionExecute(
-            self.allocator,
-            self.connection,
-            self.repo,
-            query,
-            values,
-            self.caller_info,
-        );
+    pub fn execute(self: *Result, sql: []const u8, values: anytype) !jetquery.Result {
+        return try self.connection.execute(sql, values, self.caller_info);
     }
 };
 
@@ -191,52 +180,61 @@ pub fn deinit(self: *PostgresqlAdapter) void {
     self.pool.deinit();
 }
 
-/// Execute the given query with a pooled connection.
-pub fn execute(
-    self: *PostgresqlAdapter,
-    repo: *jetquery.Repo,
-    query: []const u8,
-    values: anytype,
-    caller_info: ?jetquery.debug.CallerInfo,
-) !jetquery.Result {
-    if (!self.connected and self.lazy_connect) {
-        self.pool = try initPool(self.allocator, self.options);
-    }
-
-    const connection = try repo.connect();
-    errdefer {
-        repo.connection = null;
-        connection.postgresql.connection.release();
-    }
-
-    return try connectionExecute(
-        repo.allocator,
-        connection.postgresql.connection,
-        repo,
-        query,
-        values,
-        caller_info,
-    );
-}
-
 pub const Connection = struct {
     connection: *pg.Conn,
     repo: *jetquery.Repo,
 
     pub fn execute(
         self: Connection,
-        comptime sql: []const u8,
+        sql: []const u8,
         values: anytype,
         caller_info: ?jetquery.debug.CallerInfo,
     ) !jetquery.Result {
-        return try connectionExecute(
-            self.repo.allocator,
-            self.connection,
-            self.repo,
-            sql,
-            values,
-            caller_info,
-        );
+        errdefer {
+            self.repo.connection = null;
+            self.connection.release();
+        }
+
+        const start_time = std.time.nanoTimestamp();
+
+        const result = self.connection.queryOpts(sql, values, .{}) catch |err| {
+            if (self.connection.err) |connection_error| {
+                try self.repo.eventCallback(.{
+                    .sql = sql,
+                    .err = .{ .message = connection_error.message },
+                    .status = .fail,
+                    .caller_info = caller_info,
+                });
+            } else {
+                try self.repo.eventCallback(.{
+                    .sql = sql,
+                    .err = .{ .message = @errorName(err) },
+                    .status = .fail,
+                    .caller_info = caller_info,
+                });
+            }
+
+            return err;
+        };
+
+        const duration: i64 = @intCast(std.time.nanoTimestamp() - start_time);
+
+        try self.repo.eventCallback(.{
+            .sql = sql,
+            .caller_info = caller_info,
+            .duration = duration,
+        });
+
+        return .{
+            .postgresql = .{
+                .allocator = self.repo.allocator,
+                .result = result,
+                .repo = self.repo,
+                .connection = self.connection,
+                .caller_info = caller_info,
+                .duration = duration,
+            },
+        };
     }
 };
 
@@ -523,10 +521,12 @@ pub fn reflectTables(
     allocator: std.mem.Allocator,
     repo: *jetquery.Repo,
 ) ![]const jetquery.Reflection.TableInfo {
+    _ = self;
+
     const sql =
         \\SELECT "table_name" FROM "information_schema"."tables" WHERE "table_schema" = 'public' AND "table_name" <> 'jetquery_migrations' ORDER BY "table_name"
     ;
-    var result = try self.execute(repo, sql, .{}, null);
+    var result = try repo.executeSql(sql, .{});
     defer result.deinit();
 
     var tables = std.ArrayList(jetquery.Reflection.TableInfo).init(allocator);
@@ -545,10 +545,12 @@ pub fn reflectColumns(
     allocator: std.mem.Allocator,
     repo: *jetquery.Repo,
 ) ![]const jetquery.Reflection.ColumnInfo {
+    _ = self;
+
     const sql =
         \\SELECT "table_name", "column_name", "data_type", "is_nullable" FROM "information_schema"."columns" WHERE "table_schema" = 'public' ORDER BY "table_name", "ordinal_position"
     ;
-    var result = try self.execute(repo, sql, .{}, null);
+    var result = try repo.executeSql(sql, .{});
     defer result.deinit();
 
     var columns = std.ArrayList(jetquery.Reflection.ColumnInfo).init(allocator);
@@ -607,50 +609,4 @@ fn configError(comptime name: []const u8) error{JetQueryConfigError} {
         std.log.err(message, .{});
     }
     return error.JetQueryConfigError;
-}
-
-fn connectionExecute(
-    allocator: std.mem.Allocator,
-    connection: *pg.Conn,
-    repo: *jetquery.Repo,
-    query: []const u8,
-    values: anytype,
-    caller_info: ?jetquery.debug.CallerInfo,
-) !jetquery.Result {
-    const start_time = std.time.nanoTimestamp();
-
-    const result = connection.queryOpts(query, values, .{}) catch |err| {
-        if (connection.err) |connection_error| {
-            try repo.eventCallback(.{
-                .sql = query,
-                .err = .{ .message = connection_error.message },
-                .status = .fail,
-                .caller_info = caller_info,
-            });
-        } else {
-            try repo.eventCallback(.{
-                .sql = query,
-                .err = .{ .message = @errorName(err) },
-                .status = .fail,
-                .caller_info = caller_info,
-            });
-        }
-
-        return err;
-    };
-
-    const duration: i64 = @intCast(std.time.nanoTimestamp() - start_time);
-
-    try repo.eventCallback(.{ .sql = query, .caller_info = caller_info, .duration = duration });
-
-    return .{
-        .postgresql = .{
-            .allocator = allocator,
-            .result = result,
-            .repo = repo,
-            .connection = connection,
-            .caller_info = caller_info,
-            .duration = duration,
-        },
-    };
 }

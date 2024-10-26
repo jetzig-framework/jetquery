@@ -18,32 +18,6 @@ pub const Adapter = union(enum) {
     postgresql: PostgresqlAdapter,
     null: NullAdapter,
 
-    /// Execute SQL with the active adapter.
-    pub fn execute(
-        self: *Adapter,
-        repo: *jetquery.Repo,
-        sql: []const u8,
-        values: anytype,
-        caller_info: ?jetquery.debug.CallerInfo,
-    ) !jetquery.Result {
-        return switch (self.*) {
-            inline else => |*adapter| try adapter.execute(repo, sql, values, caller_info),
-        };
-    }
-
-    /// Execute SQL with the active adapter without returning a result.
-    pub fn executeVoid(
-        self: *Adapter,
-        repo: *jetquery.Repo,
-        sql: []const u8,
-        values: anytype,
-        caller_info: ?jetquery.debug.CallerInfo,
-    ) !void {
-        var result = try self.execute(repo, sql, values, caller_info);
-        try result.drain();
-        result.deinit();
-    }
-
     pub fn connect(self: *Adapter, repo: *jetquery.Repo) !jetquery.Repo.Connection {
         return switch (self.*) {
             inline else => |*adapter| try adapter.connect(repo),
