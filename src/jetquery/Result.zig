@@ -1,6 +1,7 @@
 const std = @import("std");
 
 const jetquery = @import("../jetquery.zig");
+const AuxiliaryQuery = @import("Query.zig").AuxiliaryQuery;
 
 /// A result of an executed query.
 pub const Result = union(enum) {
@@ -32,22 +33,12 @@ pub const Result = union(enum) {
 
     pub fn all(self: *Result, query: anytype) ![]@TypeOf(query).ResultType {
         // TODO: Eat the spaghetti
-        const RT = @TypeOf(query).ResultType;
+        const ResultType = @TypeOf(query).ResultType;
 
         return switch (self.*) {
             inline else => |*adapted_result| blk: {
                 var rows = try adapted_result.all(query);
-                const MergedRow = comptime t_blk: {
-                    var fields: [query.auxiliary_queries.len]std.builtin.Type.StructField = undefined;
-                    for (query.auxiliary_queries, 0..) |aux_query, index| {
-                        fields[index] = jetquery.fields.structField(
-                            aux_query.relation.relation_name,
-                            std.ArrayList(AuxType(RT, aux_query.relation)),
-                        );
-                    }
-                    break :t_blk jetquery.fields.structType(&fields);
-                };
-
+                const MergedRow = MergedRowType(query.auxiliary_queries, ResultType);
                 const primary_key = @TypeOf(query).info.Table.primary_key;
                 const primary_key_present = @hasField(
                     @TypeOf(query).info.Table.Definition,
@@ -74,7 +65,7 @@ pub const Result = union(enum) {
 
                     var merged_row: MergedRow = undefined;
                     inline for (query.auxiliary_queries) |init_aux_query| {
-                        const aux_type = AuxType(RT, init_aux_query.relation);
+                        const aux_type = AuxType(ResultType, init_aux_query.relation);
                         @field(
                             merged_row,
                             init_aux_query.relation.relation_name,
@@ -124,7 +115,7 @@ pub const Result = union(enum) {
                     );
                     defer aux_result.deinit();
 
-                    const aux_type = AuxType(RT, aux_query.relation);
+                    const aux_type = AuxType(ResultType, aux_query.relation);
 
                     while (try aux_result.next(q)) |aux_row| {
                         var extended_aux_row = aux_row;
@@ -254,6 +245,17 @@ pub const Result = union(enum) {
         return std.ArrayList(PK);
     }
 };
+
+fn MergedRowType(auxiliary_queries: []const AuxiliaryQuery, ResultType: type) type {
+    var fields: [auxiliary_queries.len]std.builtin.Type.StructField = undefined;
+    for (auxiliary_queries, 0..) |aux_query, index| {
+        fields[index] = jetquery.fields.structField(
+            aux_query.relation.relation_name,
+            std.ArrayList(AuxType(ResultType, aux_query.relation)),
+        );
+    }
+    return jetquery.fields.structType(&fields);
+}
 
 fn AuxType(ResultType: type, Relation: type) type {
     const field_name = std.enums.nameCast(
