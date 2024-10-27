@@ -14,13 +14,13 @@ pub fn Repo(adapter_name: jetquery.adapters.Name) type {
         connection: ?Connection = null,
         result: ?jetquery.Result = null,
 
-        pub const InitOptions = struct {
-            adapter: union(enum) {
-                postgresql: jetquery.adapters.PostgresqlAdapter.Options,
-                null,
+        pub const InitOptions = switch (adapter_name) {
+            .postgresql => struct {
+                adapter: jetquery.adapters.PostgresqlAdapter.Options,
+                eventCallback: *const fn (event: jetquery.events.Event) anyerror!void = jetquery.events.defaultCallback,
+                lazy_connect: bool = false,
             },
-            eventCallback: *const fn (event: jetquery.events.Event) anyerror!void = jetquery.events.defaultCallback,
-            lazy_connect: bool = false,
+            .null => null,
         };
 
         pub const CreateTableOptions = struct { if_not_exists: bool = false };
@@ -32,19 +32,22 @@ pub fn Repo(adapter_name: jetquery.adapters.Name) type {
             var env = try std.process.getEnvMap(allocator);
             defer env.deinit();
 
-            return .{
-                .allocator = allocator,
-                .adapter = switch (options.adapter) {
-                    .postgresql => |adapter_options| .{
+            return switch (comptime adapter_name) {
+                .postgresql => .{
+                    .allocator = allocator,
+                    .eventCallback = options.eventCallback,
+                    .adapter = .{
                         .postgresql = try jetquery.adapters.PostgresqlAdapter.init(
                             allocator,
-                            try applyDefaultOptions(@TypeOf(adapter_options), adapter_options, env),
+                            try applyDefaultOptions(@TypeOf(options.adapter), options.adapter, env),
                             options.lazy_connect,
                         ),
                     },
-                    .null => .{ .null = jetquery.adapters.NullAdapter{} },
                 },
-                .eventCallback = options.eventCallback,
+                .null => .{
+                    .allococator = allocator,
+                    .adapter = .{ .null = jetquery.adapters.NullAdapter{} },
+                },
             };
         }
 
@@ -93,7 +96,7 @@ pub fn Repo(adapter_name: jetquery.adapters.Name) type {
                 }
             }
             var init_options: InitOptions = switch (jetquery.adapter) {
-                .postgresql => .{ .adapter = .{ .postgresql = options } },
+                .postgresql => .{ .adapter = options },
                 .null => .{ .adapter = .null },
             };
 
@@ -648,13 +651,11 @@ test "Repo" {
         std.testing.allocator,
         .{
             .adapter = .{
-                .postgresql = .{
-                    .database = "repo_test",
-                    .username = "postgres",
-                    .hostname = "127.0.0.1",
-                    .password = "password",
-                    .port = 5432,
-                },
+                .database = "repo_test",
+                .username = "postgres",
+                .hostname = "127.0.0.1",
+                .password = "password",
+                .port = 5432,
             },
         },
     );
@@ -725,13 +726,11 @@ test "relations" {
         std.testing.allocator,
         .{
             .adapter = .{
-                .postgresql = .{
-                    .database = "repo_test",
-                    .username = "postgres",
-                    .hostname = "127.0.0.1",
-                    .password = "password",
-                    .port = 5432,
-                },
+                .database = "repo_test",
+                .username = "postgres",
+                .hostname = "127.0.0.1",
+                .password = "password",
+                .port = 5432,
             },
         },
     );
@@ -895,13 +894,11 @@ test "timestamps" {
         std.testing.allocator,
         .{
             .adapter = .{
-                .postgresql = .{
-                    .database = "repo_test",
-                    .username = "postgres",
-                    .hostname = "127.0.0.1",
-                    .password = "password",
-                    .port = 5432,
-                },
+                .database = "repo_test",
+                .username = "postgres",
+                .hostname = "127.0.0.1",
+                .password = "password",
+                .port = 5432,
             },
         },
     );
@@ -956,13 +953,11 @@ test "save" {
         std.testing.allocator,
         .{
             .adapter = .{
-                .postgresql = .{
-                    .database = "repo_test",
-                    .username = "postgres",
-                    .hostname = "127.0.0.1",
-                    .password = "password",
-                    .port = 5432,
-                },
+                .database = "repo_test",
+                .username = "postgres",
+                .hostname = "127.0.0.1",
+                .password = "password",
+                .port = 5432,
             },
         },
     );
@@ -1009,13 +1004,11 @@ test "aggregate max()" {
         std.testing.allocator,
         .{
             .adapter = .{
-                .postgresql = .{
-                    .database = "repo_test",
-                    .username = "postgres",
-                    .hostname = "127.0.0.1",
-                    .password = "password",
-                    .port = 5432,
-                },
+                .database = "repo_test",
+                .username = "postgres",
+                .hostname = "127.0.0.1",
+                .password = "password",
+                .port = 5432,
             },
         },
     );
@@ -1063,13 +1056,11 @@ test "aggregate count() with HAVING" {
         std.testing.allocator,
         .{
             .adapter = .{
-                .postgresql = .{
-                    .database = "repo_test",
-                    .username = "postgres",
-                    .hostname = "127.0.0.1",
-                    .password = "password",
-                    .port = 5432,
-                },
+                .database = "repo_test",
+                .username = "postgres",
+                .hostname = "127.0.0.1",
+                .password = "password",
+                .port = 5432,
             },
         },
     );
@@ -1116,7 +1107,7 @@ test "aggregate count() with HAVING" {
 test "missing config options" {
     try resetDatabase();
 
-    const repo = Repo(.postgresql).init(std.testing.allocator, .{ .adapter = .{ .postgresql = .{} } });
+    const repo = Repo(.postgresql).init(std.testing.allocator, .{ .adapter = .{} });
     try std.testing.expectError(error.JetQueryConfigError, repo);
 }
 
@@ -1127,13 +1118,11 @@ test "transactions" {
         std.testing.allocator,
         .{
             .adapter = .{
-                .postgresql = .{
-                    .database = "repo_test",
-                    .username = "postgres",
-                    .hostname = "127.0.0.1",
-                    .password = "password",
-                    .port = 5432,
-                },
+                .database = "repo_test",
+                .username = "postgres",
+                .hostname = "127.0.0.1",
+                .password = "password",
+                .port = 5432,
             },
         },
     );
@@ -1179,13 +1168,11 @@ fn resetDatabase() !void {
         std.testing.allocator,
         .{
             .adapter = .{
-                .postgresql = .{
-                    .database = "postgres",
-                    .username = "postgres",
-                    .hostname = "127.0.0.1",
-                    .password = "password",
-                    .port = 5432,
-                },
+                .database = "postgres",
+                .username = "postgres",
+                .hostname = "127.0.0.1",
+                .password = "password",
+                .port = 5432,
             },
         },
     );

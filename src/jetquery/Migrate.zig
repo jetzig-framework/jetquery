@@ -108,13 +108,11 @@ test "migrate" {
         std.testing.allocator,
         .{
             .adapter = .{
-                .postgresql = .{
-                    .database = "migrate_test",
-                    .username = "postgres",
-                    .hostname = "127.0.0.1",
-                    .password = "password",
-                    .port = 5432,
-                },
+                .database = "migrate_test",
+                .username = "postgres",
+                .hostname = "127.0.0.1",
+                .password = "password",
+                .port = 5432,
             },
         },
     );
@@ -179,13 +177,11 @@ fn resetDatabase() !void {
         std.testing.allocator,
         .{
             .adapter = .{
-                .postgresql = .{
-                    .database = "postgres",
-                    .username = "postgres",
-                    .hostname = "127.0.0.1",
-                    .password = "password",
-                    .port = 5432,
-                },
+                .database = "postgres",
+                .username = "postgres",
+                .hostname = "127.0.0.1",
+                .password = "password",
+                .port = 5432,
             },
         },
     );

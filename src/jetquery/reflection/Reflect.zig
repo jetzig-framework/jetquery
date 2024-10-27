@@ -267,17 +267,15 @@ fn translateTableName(
 }
 
 test "reflect" {
-    var admin_repo = try jetquery.Repo(jetquery.adapter).init(
+    var admin_repo = try jetquery.Repo(.postgresql).init(
         std.testing.allocator,
         .{
             .adapter = .{
-                .postgresql = .{
-                    .database = "postgres",
-                    .username = "postgres",
-                    .hostname = "127.0.0.1",
-                    .password = "password",
-                    .port = 5432,
-                },
+                .database = "postgres",
+                .username = "postgres",
+                .hostname = "127.0.0.1",
+                .password = "password",
+                .port = 5432,
             },
         },
     );
@@ -285,17 +283,15 @@ test "reflect" {
     try admin_repo.dropDatabase("reflection_test", .{ .if_exists = true });
     try admin_repo.createDatabase("reflection_test", .{});
 
-    var repo = try jetquery.Repo(jetquery.adapter).init(
+    var repo = try jetquery.Repo(.postgresql).init(
         std.testing.allocator,
         .{
             .adapter = .{
-                .postgresql = .{
-                    .database = "reflection_test",
-                    .username = "postgres",
-                    .hostname = "127.0.0.1",
-                    .password = "password",
-                    .port = 5432,
-                },
+                .database = "reflection_test",
+                .username = "postgres",
+                .hostname = "127.0.0.1",
+                .password = "password",
+                .port = 5432,
             },
         },
     );
