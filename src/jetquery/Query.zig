@@ -947,7 +947,7 @@ fn Statement(
 
         pub fn execute(self: Self, repo: anytype) !switch (options.result_context) {
             .one => ?ResultType,
-            .many => jetquery.Result,
+            .many => jetquery.Result(@TypeOf(repo.*)),
             .none => void,
         } {
             const caller_info = try jetquery.debug.getCallerInfo(@returnAddress());

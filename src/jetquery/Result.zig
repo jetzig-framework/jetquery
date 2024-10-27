@@ -298,11 +298,6 @@ fn AuxType(ResultType: type, Relation: type) type {
     };
 }
 
-pub const AuxiliaryResult = struct {
-    result: jetquery.Result,
-    relation: type,
-};
-
 fn WhereArgs(
     aux_query: AuxiliaryQuery,
     comptime foreign_key: []const u8,

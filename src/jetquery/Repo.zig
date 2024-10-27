@@ -460,21 +460,7 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
                 self,
             );
 
-            inline for (columns) |column| {
-                if (comptime !column.options.index) continue;
-                try self.createIndex(name, &.{column.name}, .{ .name = column.options.index_name });
-            }
-
-            inline for (columns) |column| {
-                if (comptime column.timestamps) |timestamps| {
-                    if (timestamps.created_at) {
-                        try self.createIndex(name, &.{jetquery.default_column_names.created_at}, .{});
-                    }
-                    if (timestamps.updated_at) {
-                        try self.createIndex(name, &.{jetquery.default_column_names.updated_at}, .{});
-                    }
-                }
-            }
+            try self.createIndexes(name, columns);
         }
 
         /// Drop a database table named `name`. Pass `.{ .if_exists = true }` to use
@@ -529,16 +515,16 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
             }
 
             if (options.columns.rename) |rename_column| {
-                try writer.print(" RENAME {s} TO {s}{s}", .{
+                try writer.print(" RENAME {s} TO {s}", .{
                     self.adapter.identifier(rename_column.from),
                     self.adapter.identifier(rename_column.to),
                 });
             }
 
-            for (options.columns.drop, 0..) |column_name, index| {
+            inline for (options.columns.drop, 0..) |column_name, index| {
                 try writer.print(" DROP COLUMN {s}{s}", .{
                     self.adapter.identifier(column_name),
-                    if (index + 1 < options.columns.drop) "," else "",
+                    if (index + 1 < options.columns.drop.len) "," else "",
                 });
             }
 
@@ -553,6 +539,8 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
                 try jetquery.debug.getCallerInfo(@returnAddress()),
                 self,
             );
+
+            try self.createIndexes(options.rename orelse name, options.columns.add);
         }
 
         /// Create a new database in the current repo. Repo must be initialized with the appropriate user
@@ -631,6 +619,36 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
                 try jetquery.debug.getCallerInfo(@returnAddress()),
                 self,
             );
+        }
+
+        fn createIndexes(
+            self: *AdaptedRepo,
+            comptime name: []const u8,
+            comptime columns: []const jetquery.schema.Column,
+        ) !void {
+            inline for (columns) |column| {
+                if (comptime !column.options.index) continue;
+                try self.createIndex(name, &.{column.name}, .{ .name = column.options.index_name });
+            }
+
+            inline for (columns) |column| {
+                if (comptime column.timestamps) |timestamps| {
+                    if (timestamps.created_at) {
+                        try self.createIndex(
+                            name,
+                            &.{jetquery.default_column_names.created_at},
+                            .{},
+                        );
+                    }
+                    if (timestamps.updated_at) {
+                        try self.createIndex(
+                            name,
+                            &.{jetquery.default_column_names.updated_at},
+                            .{},
+                        );
+                    }
+                }
+            }
         }
     };
 }
@@ -862,20 +880,36 @@ test "relations" {
     try std.testing.expectEqualStrings("Felix", humans[1].cats[2].name);
 
     const jane_two_cats = try repo.Query(.Human).findBy(.{ .name = "Jane" })
-        .include(.cats, .{ .limit = 2, .order_by = .{.name} })
+        .include(.cats, .{ .limit = 2, .order_by = .name })
         .execute(&repo);
     defer repo.free(jane_two_cats);
     try std.testing.expect(jane_two_cats.?.cats.len == 2);
     try std.testing.expectEqualStrings("Cindy", jane_two_cats.?.cats[0].name);
     try std.testing.expectEqualStrings("Felix", jane_two_cats.?.cats[1].name);
-    // TODO: Merge rows on `next()`
-    // const iterating_query = jetquery.Query(Schema, .Human).include(.cats, .{});
-    // var humans_iterated = try iterating_query.execute(&repo);
-    // defer humans_iterated.deinit();
-    // while (try humans_iterated.next(iterating_query)) |human| {
-    //     defer repo.free(human);
-    //     std.debug.print("{s}\n", .{human.name});
-    // }
+
+    const iterating_query = repo.Query(.Human)
+        .include(.cats, .{ .order_by = .name })
+        .orderBy(.name);
+    var humans_iterated = try iterating_query.execute(&repo);
+    defer humans_iterated.deinit();
+    var index: usize = 0;
+    while (try humans_iterated.next(iterating_query)) |human| : (index += 1) {
+        defer repo.free(human);
+        switch (index) {
+            0 => {
+                try std.testing.expectEqualStrings("Bob", human.name);
+                try std.testing.expectEqualStrings("Hercules", human.cats[0].name);
+                try std.testing.expectEqualStrings("Princes", human.cats[1].name);
+            },
+            1 => {
+                try std.testing.expectEqualStrings("Jane", human.name);
+                try std.testing.expectEqualStrings("Cindy", human.cats[0].name);
+                try std.testing.expectEqualStrings("Felix", human.cats[1].name);
+                try std.testing.expectEqualStrings("Garfield", human.cats[2].name);
+            },
+            else => try std.testing.expect(false),
+        }
+    }
 }
 
 test "timestamps" {
@@ -1162,11 +1196,13 @@ test "alterTable" {
             @This(),
             "cats",
             struct { name: []const u8, paws: i32 },
+            .{},
         );
         pub const Dog = jetquery.Table(
             @This(),
             "dogs",
-            struct { name: []const u8, paws: i32 },
+            struct { name: []const u8, identifier: []const u8, paws: i32 },
+            .{},
         );
     };
 
@@ -1182,14 +1218,51 @@ test "alterTable" {
     defer repo.deinit();
 
     try repo.createTable("cats", &.{}, .{});
+
+    try std.testing.expectError(
+        error.PG,
+        repo.Query(.Cat).select(.{ .name, .paws }).all(&repo),
+    );
+
     try repo.alterTable("cats", .{
         .columns = .{
             .add = &.{
                 jetquery.schema.table.column("name", .string, .{}),
-                jetquery.schema.table.column("paws", .integer, .{}),
+                jetquery.schema.table.column("paws", .integer, .{ .index = true }),
             },
         },
     });
+
+    const cats = try repo.Query(.Cat).select(.{ .name, .paws }).all(&repo);
+    try std.testing.expect(cats.len == 0); // Empty table but valid select columns.
+
+    try std.testing.expectError(
+        error.PG,
+        repo.Query(.Dog).select(.{ .name, .paws }).all(&repo),
+    );
+
+    try repo.alterTable("cats", .{ .rename = "dogs" });
+
+    try std.testing.expectError(
+        error.PG,
+        repo.Query(.Cat).select(.{ .name, .paws }).all(&repo),
+    );
+
+    const dogs = try repo.Query(.Dog).select(.{ .name, .paws }).all(&repo);
+    try std.testing.expect(dogs.len == 0); // Empty table but valid select columns.
+
+    try repo.alterTable("dogs", .{ .columns = .{ .drop = &.{"paws"} } });
+    try std.testing.expectError(
+        error.PG,
+        repo.Query(.Dog).select(.{ .name, .paws }).all(&repo),
+    );
+
+    try repo.alterTable(
+        "dogs",
+        .{ .columns = .{ .rename = .{ .from = "name", .to = "identifier" } } },
+    );
+    const dogs2 = try repo.Query(.Dog).select(.{.identifier}).all(&repo);
+    try std.testing.expect(dogs2.len == 0); // Empty table but valid select columns.
 }
 
 fn resetDatabase() !void {
