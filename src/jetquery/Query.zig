@@ -15,7 +15,7 @@ const ResultContext = enum { one, many, none };
 /// const query = Query(.postgresql, Schema, .Cat);
 /// ```
 ///
-/// For convenience, use `repo.Query(Schema, .Cat)`.
+/// For convenience, use `repo.Query(.Cat)`.
 pub fn Query(adapter: jetquery.adapters.Name, Schema: type, comptime table: anytype) type {
     const Adapter = jetquery.adapters.Type(adapter);
     const Table = switch (@typeInfo(@TypeOf(table))) {
@@ -1140,10 +1140,8 @@ fn Statement(
                     .is_tuple = false,
                 } });
 
-                const jetquery_fields: [2]std.builtin.Type.StructField = .{
-                    jetquery.fields.structField("id", i128),
+                const jetquery_fields: [1]std.builtin.Type.StructField = .{
                     jetquery.fields.structField("original_values", Originals),
-                    // jetquery.fields.structField("relation_names", [options.relations.len][]const u8),
                 };
 
                 const JQ = @Type(.{ .@"struct" = .{

@@ -14,23 +14,22 @@ pub fn Type(adapter: Name) type {
     };
 }
 
-pub fn Adapter(comptime adapter_name: Name) type {
+pub fn Adapter(comptime adapter_name: Name, AdaptedRepo: type) type {
     const Union = union(enum) {
         postgresql: PostgresqlAdapter,
         null: NullAdapter,
 
         const Self = @This();
-        const AdaptedRepo = jetquery.Repo(adapter_name);
 
         pub const name = adapter_name;
 
-        pub fn connect(self: *Self, repo: *AdaptedRepo) !AdaptedRepo.Connection {
+        pub fn connect(self: *Self) !jetquery.Connection {
             return switch (comptime adapter_name) {
-                inline else => |tag| try @field(self, @tagName(tag)).connect(repo),
+                inline else => |tag| try @field(self, @tagName(tag)).connect(),
             };
         }
 
-        pub fn release(self: *Self, connection: AdaptedRepo.Connection) void {
+        pub fn release(self: *Self, connection: jetquery.Connection) void {
             return switch (comptime adapter_name) {
                 inline else => |tag| @field(self, @tagName(tag)).release(connection),
             };

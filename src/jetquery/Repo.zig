@@ -2,22 +2,21 @@ const std = @import("std");
 
 const jetquery = @import("../jetquery.zig");
 
-pub fn Repo(adapter_name: jetquery.adapters.Name) type {
+pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
     return struct {
         const AdaptedRepo = @This();
         const Adapter = jetquery.adapters.Type(adapter_name);
 
         comptime adapter_name: jetquery.adapters.Name = adapter_name,
         allocator: std.mem.Allocator,
-        adapter: jetquery.adapters.Adapter(adapter_name),
-        result_id: std.atomic.Value(i128) = std.atomic.Value(i128).init(0),
+        adapter: jetquery.adapters.Adapter(adapter_name, @This()),
         eventCallback: *const fn (event: jetquery.events.Event) anyerror!void = jetquery.events.defaultCallback,
-        connection: ?Connection = null,
+        connection: ?jetquery.Connection = null,
         result: ?jetquery.Result = null,
 
         // For convenience, allow users to call `repo.Query(...)` instead of
         // `@TypeOf(repo).Query(...)`
-        comptime Query: fn (type, anytype) type = _Query,
+        comptime Query: fn (anytype) type = _Query,
 
         pub const InitOptions = switch (adapter_name) {
             .postgresql => struct {
@@ -28,13 +27,9 @@ pub fn Repo(adapter_name: jetquery.adapters.Name) type {
             .null => null,
         };
 
-        pub const CreateTableOptions = struct { if_not_exists: bool = false };
-        pub const DropTableOptions = struct { if_exists: bool = false };
-        pub const DropDatabaseOptions = struct { if_exists: bool = false };
-
-        pub fn _Query(Schema: type, Table: anytype) type {
+        pub fn _Query(table: anytype) type {
             comptime {
-                return jetquery.Query(adapter_name, Schema, Table);
+                return jetquery.Query(adapter_name, Schema, table);
             }
         }
 
@@ -149,83 +144,6 @@ pub fn Repo(adapter_name: jetquery.adapters.Name) type {
             return try connection.executeSql(sql, values, caller_info);
         }
 
-        pub const Connection = union(enum) {
-            postgresql: jetquery.adapters.PostgresqlAdapter.Connection,
-
-            pub fn execute(
-                self: Connection,
-                query: anytype,
-                caller_info: ?jetquery.debug.CallerInfo,
-            ) !switch (@TypeOf(query).ResultContext) {
-                .one => ?@TypeOf(query).ResultType,
-                .many => jetquery.Result,
-                .none => void,
-            } {
-                return switch (self) {
-                    .postgresql => |*connection| result_blk: {
-                        try query.validateValues();
-                        try query.validateDelete();
-                        var result = try connection.execute(query.sql, query.field_values, caller_info);
-                        break :result_blk switch (@TypeOf(query).ResultContext) {
-                            .one => blk: {
-                                // TODO: Create a new ResultContext `.unary` instead of hacking it in here.
-                                if (query.query_context == .count) {
-                                    defer result.deinit();
-                                    const unary = try result.unary(@TypeOf(query).ResultType);
-                                    try result.drain();
-                                    return unary;
-                                }
-                                const row = try result.next(query);
-                                defer result.deinit();
-                                try result.drain();
-                                break :blk row;
-                            },
-                            .many => result,
-                            .none => blk: {
-                                try result.drain();
-                                defer result.deinit();
-                                break :blk {};
-                            },
-                        };
-                    },
-                };
-            }
-
-            /// Execute SQL with the active adapter without returning a result.
-            pub fn executeVoid(
-                self: Connection,
-                sql: []const u8,
-                values: anytype,
-                caller_info: ?jetquery.debug.CallerInfo,
-            ) !void {
-                var result = switch (self) {
-                    inline else => |connection| try connection.execute(sql, values, caller_info),
-                };
-                try result.drain();
-                result.deinit();
-            }
-
-            /// Execute SQL with the active adapter and return a result (same as `execute` but accepts an
-            /// SQL string and values instead of a generated query).
-            pub fn executeSql(
-                self: Connection,
-                sql: []const u8,
-                values: anytype,
-                caller_info: ?jetquery.debug.CallerInfo,
-            ) !jetquery.Result {
-                return switch (self) {
-                    inline else => |connection| try connection.execute(sql, values, caller_info),
-                };
-            }
-
-            /// Release connection to the pool.
-            pub fn release(self: Connection) void {
-                switch (self) {
-                    inline else => |connection| connection.release(),
-                }
-            }
-        };
-
         /// Establish a new connection. Caller is responsible for calling `connection.release()` when
         /// connection can be returned to the pool. Only use this function if a new connection is
         /// specifically required, otherwise use `repo.execute()` which will automatically assign a
@@ -235,12 +153,12 @@ pub fn Repo(adapter_name: jetquery.adapters.Name) type {
         /// parity with the same member functions in `Repo`. Use `execute` to execute a generated query,
         /// use `executeSql` and `executeVoid` to execute SQL and a values tuple (e.g. when using
         /// handwritten SQL statements).
-        pub fn connect(self: *AdaptedRepo) !Connection {
-            return try self.adapter.connect(self);
+        pub fn connect(self: *AdaptedRepo) !jetquery.Connection {
+            return try self.adapter.connect();
         }
 
         /// Used internally to create a managed connection which is released on `repo.deinit()`.
-        pub fn connectManaged(self: *AdaptedRepo) !Connection {
+        pub fn connectManaged(self: *AdaptedRepo) !jetquery.Connection {
             if (self.connection == null) {
                 self.connection = try self.connect();
             }
@@ -271,7 +189,7 @@ pub fn Repo(adapter_name: jetquery.adapters.Name) type {
             try query.validateValues();
             try query.validateDelete();
 
-            return try connection.execute(query, caller_info);
+            return try connection.execute(query, caller_info, self);
         }
 
         pub fn begin(self: *AdaptedRepo) !void {
@@ -280,6 +198,7 @@ pub fn Repo(adapter_name: jetquery.adapters.Name) type {
                 "BEGIN",
                 .{},
                 try jetquery.debug.getCallerInfo(@returnAddress()),
+                self,
             );
         }
 
@@ -289,6 +208,7 @@ pub fn Repo(adapter_name: jetquery.adapters.Name) type {
                 "COMMIT",
                 .{},
                 try jetquery.debug.getCallerInfo(@returnAddress()),
+                self,
             );
         }
 
@@ -298,6 +218,7 @@ pub fn Repo(adapter_name: jetquery.adapters.Name) type {
                 "ROLLBACK",
                 .{},
                 try jetquery.debug.getCallerInfo(@returnAddress()),
+                self,
             );
         }
 
@@ -383,7 +304,7 @@ pub fn Repo(adapter_name: jetquery.adapters.Name) type {
 
         /// Delete a fetched record from the database. Record must have a primary key.
         /// ```zig
-        /// const maybe_cat = try repo.Query(Schema, .Cat)
+        /// const maybe_cat = try Repo.Query(.Cat)
         ///     .findBy(.{ .name = "Heracles" })
         ///     .execute(repo);
         /// if (maybe_cat) |cat| try repo.delete(cat);
@@ -500,18 +421,13 @@ pub fn Repo(adapter_name: jetquery.adapters.Name) type {
             }
         }
 
-        pub fn generateId(self: *AdaptedRepo) i128 {
-            // We can probably risk wrapping here if an app loads >i128 records without freeing them
-            return self.result_id.fetchAdd(1, .monotonic);
-        }
-
         /// Create a database table named `nme`. Pass `.{ .if_not_exists = true }` to use
         /// `CREATE TABLE IF NOT EXISTS` syntax.
         pub fn createTable(
             self: *AdaptedRepo,
             comptime name: []const u8,
             comptime columns: []const jetquery.schema.Column,
-            comptime options: CreateTableOptions,
+            comptime options: jetquery.CreateTableOptions,
         ) !void {
             var buf = std.ArrayList(u8).init(self.allocator);
             defer buf.deinit();
@@ -556,6 +472,7 @@ pub fn Repo(adapter_name: jetquery.adapters.Name) type {
                 buf.items,
                 &.{},
                 try jetquery.debug.getCallerInfo(@returnAddress()),
+                self,
             );
 
             inline for (columns) |column| {
@@ -577,7 +494,11 @@ pub fn Repo(adapter_name: jetquery.adapters.Name) type {
 
         /// Drop a database table named `name`. Pass `.{ .if_exists = true }` to use
         /// `DROP TABLE IF EXISTS` syntax.
-        pub fn dropTable(self: *AdaptedRepo, comptime name: []const u8, options: DropTableOptions) !void {
+        pub fn dropTable(
+            self: *AdaptedRepo,
+            comptime name: []const u8,
+            options: jetquery.DropTableOptions,
+        ) !void {
             var buf = std.ArrayList(u8).init(self.allocator);
             defer buf.deinit();
 
@@ -592,6 +513,7 @@ pub fn Repo(adapter_name: jetquery.adapters.Name) type {
                 buf.items,
                 &.{},
                 try jetquery.debug.getCallerInfo(@returnAddress()),
+                self,
             );
         }
 
@@ -613,12 +535,17 @@ pub fn Repo(adapter_name: jetquery.adapters.Name) type {
                 buf.items,
                 &.{},
                 try jetquery.debug.getCallerInfo(@returnAddress()),
+                self,
             );
         }
 
         /// Create a new database in the current repo. Repo must be initialized with the appropriate user
         /// credentials for creating new databases.
-        pub fn dropDatabase(self: *AdaptedRepo, comptime name: []const u8, options: DropDatabaseOptions) !void {
+        pub fn dropDatabase(
+            self: *AdaptedRepo,
+            comptime name: []const u8,
+            options: jetquery.DropDatabaseOptions,
+        ) !void {
             var buf = std.ArrayList(u8).init(self.allocator);
             defer buf.deinit();
 
@@ -633,13 +560,9 @@ pub fn Repo(adapter_name: jetquery.adapters.Name) type {
                 buf.items,
                 &.{},
                 try jetquery.debug.getCallerInfo(@returnAddress()),
+                self,
             );
         }
-
-        pub const CreateIndexOptions = struct {
-            unique: bool = false,
-            name: ?[]const u8 = null,
-        };
 
         /// Create an index on the specified table name and column names. Optionally pass]
         /// `.{ .unique = true }` to create a unique constraint on the index.
@@ -647,7 +570,7 @@ pub fn Repo(adapter_name: jetquery.adapters.Name) type {
             self: *AdaptedRepo,
             comptime table_name: []const u8,
             comptime column_names: []const []const u8,
-            comptime options: CreateIndexOptions,
+            comptime options: jetquery.CreateIndexOptions,
         ) !void {
             const index_name = comptime options.name orelse Adapter.indexName(
                 table_name,
@@ -664,6 +587,7 @@ pub fn Repo(adapter_name: jetquery.adapters.Name) type {
                 sql,
                 .{},
                 try jetquery.debug.getCallerInfo(@returnAddress()),
+                self,
             );
         }
     };
@@ -672,7 +596,16 @@ pub fn Repo(adapter_name: jetquery.adapters.Name) type {
 test "Repo" {
     try resetDatabase();
 
-    var repo = try Repo(.postgresql).init(
+    const Schema = struct {
+        pub const Cat = jetquery.Table(
+            @This(),
+            "cats",
+            struct { name: []const u8, paws: i32 },
+            .{},
+        );
+    };
+
+    var repo = try Repo(.postgresql, Schema).init(
         std.testing.allocator,
         .{
             .adapter = .{
@@ -685,15 +618,6 @@ test "Repo" {
         },
     );
     defer repo.deinit();
-
-    const Schema = struct {
-        pub const Cat = jetquery.Table(
-            @This(),
-            "cats",
-            struct { name: []const u8, paws: i32 },
-            .{},
-        );
-    };
 
     try repo.createTable(
         "cats",
@@ -739,27 +663,13 @@ test "Repo.loadConfig" {
     try resetDatabase();
 
     // Loads default config file: `jetquery.config.zig`
-    var repo = try Repo(.postgresql).loadConfig(std.testing.allocator, .{});
+    var repo = try Repo(.postgresql, void).loadConfig(std.testing.allocator, .{});
     defer repo.deinit();
     try std.testing.expect(repo.adapter == .postgresql);
 }
 
 test "relations" {
     try resetDatabase();
-
-    var repo = try Repo(.postgresql).init(
-        std.testing.allocator,
-        .{
-            .adapter = .{
-                .database = "repo_test",
-                .username = "postgres",
-                .hostname = "127.0.0.1",
-                .password = "password",
-                .port = 5432,
-            },
-        },
-    );
-    defer repo.deinit();
 
     const Schema = struct {
         pub const Cat = jetquery.Table(
@@ -776,6 +686,20 @@ test "relations" {
             .{ .relations = .{ .cats = jetquery.relation.hasMany(.Cat, .{}) } },
         );
     };
+
+    var repo = try Repo(.postgresql, Schema).init(
+        std.testing.allocator,
+        .{
+            .adapter = .{
+                .database = "repo_test",
+                .username = "postgres",
+                .hostname = "127.0.0.1",
+                .password = "password",
+                .port = 5432,
+            },
+        },
+    );
+    defer repo.deinit();
 
     try repo.createTable(
         "cats",
@@ -915,20 +839,6 @@ test "relations" {
 test "timestamps" {
     try resetDatabase();
 
-    var repo = try Repo(.postgresql).init(
-        std.testing.allocator,
-        .{
-            .adapter = .{
-                .database = "repo_test",
-                .username = "postgres",
-                .hostname = "127.0.0.1",
-                .password = "password",
-                .port = 5432,
-            },
-        },
-    );
-    defer repo.deinit();
-
     const Schema = struct {
         pub const Cat = jetquery.Table(
             @This(),
@@ -943,6 +853,20 @@ test "timestamps" {
             .{},
         );
     };
+
+    var repo = try Repo(.postgresql, Schema).init(
+        std.testing.allocator,
+        .{
+            .adapter = .{
+                .database = "repo_test",
+                .username = "postgres",
+                .hostname = "127.0.0.1",
+                .password = "password",
+                .port = 5432,
+            },
+        },
+    );
+    defer repo.deinit();
 
     try repo.createTable(
         "cats",
@@ -974,7 +898,16 @@ test "timestamps" {
 test "save" {
     try resetDatabase();
 
-    var repo = try Repo(.postgresql).init(
+    const Schema = struct {
+        pub const Cat = jetquery.Table(
+            @This(),
+            "cats",
+            struct { id: i32, name: []const u8, paws: i32 },
+            .{},
+        );
+    };
+
+    var repo = try Repo(.postgresql, Schema).init(
         std.testing.allocator,
         .{
             .adapter = .{
@@ -987,15 +920,6 @@ test "save" {
         },
     );
     defer repo.deinit();
-
-    const Schema = struct {
-        pub const Cat = jetquery.Table(
-            @This(),
-            "cats",
-            struct { id: i32, name: []const u8, paws: i32 },
-            .{},
-        );
-    };
 
     try repo.createTable("cats", &.{
         jetquery.schema.table.column("id", .integer, .{}),
@@ -1025,7 +949,16 @@ test "save" {
 test "aggregate max()" {
     try resetDatabase();
 
-    var repo = try Repo(.postgresql).init(
+    const Schema = struct {
+        pub const Cat = jetquery.Table(
+            @This(),
+            "cats",
+            struct { name: []const u8, paws: usize },
+            .{},
+        );
+    };
+
+    var repo = try Repo(.postgresql, Schema).init(
         std.testing.allocator,
         .{
             .adapter = .{
@@ -1044,14 +977,6 @@ test "aggregate max()" {
         jetquery.schema.table.column("paws", .integer, .{}),
     }, .{ .if_not_exists = true });
 
-    const Schema = struct {
-        pub const Cat = jetquery.Table(
-            @This(),
-            "cats",
-            struct { name: []const u8, paws: usize },
-            .{},
-        );
-    };
     const sql = jetquery.sql;
 
     try repo.insert(Schema.Cat.init(.{ .name = "Hercules", .paws = 2 }));
@@ -1077,7 +1002,16 @@ test "aggregate max()" {
 test "aggregate count() with HAVING" {
     try resetDatabase();
 
-    var repo = try Repo(.postgresql).init(
+    const Schema = struct {
+        pub const Cat = jetquery.Table(
+            @This(),
+            "cats",
+            struct { name: []const u8, paws: usize },
+            .{},
+        );
+    };
+
+    var repo = try Repo(.postgresql, Schema).init(
         std.testing.allocator,
         .{
             .adapter = .{
@@ -1095,15 +1029,6 @@ test "aggregate count() with HAVING" {
         jetquery.schema.table.column("name", .string, .{}),
         jetquery.schema.table.column("paws", .integer, .{}),
     }, .{ .if_not_exists = true });
-
-    const Schema = struct {
-        pub const Cat = jetquery.Table(
-            @This(),
-            "cats",
-            struct { name: []const u8, paws: usize },
-            .{},
-        );
-    };
 
     try repo.insert(Schema.Cat.init(.{ .name = "Hercules", .paws = 2 }));
     try repo.insert(Schema.Cat.init(.{ .name = "Hercules", .paws = 8 }));
@@ -1132,14 +1057,23 @@ test "aggregate count() with HAVING" {
 test "missing config options" {
     try resetDatabase();
 
-    const repo = Repo(.postgresql).init(std.testing.allocator, .{ .adapter = .{} });
+    const repo = Repo(.postgresql, struct {}).init(std.testing.allocator, .{ .adapter = .{} });
     try std.testing.expectError(error.JetQueryConfigError, repo);
 }
 
 test "transactions" {
     try resetDatabase();
 
-    var repo = try Repo(.postgresql).init(
+    const Schema = struct {
+        pub const Cat = jetquery.Table(
+            @This(),
+            "cats",
+            struct { name: []const u8, paws: i32 },
+            .{},
+        );
+    };
+
+    var repo = try Repo(.postgresql, Schema).init(
         std.testing.allocator,
         .{
             .adapter = .{
@@ -1157,15 +1091,6 @@ test "transactions" {
         jetquery.schema.table.column("name", .string, .{}),
         jetquery.schema.table.column("paws", .integer, .{}),
     }, .{ .if_not_exists = true });
-
-    const Schema = struct {
-        pub const Cat = jetquery.Table(
-            @This(),
-            "cats",
-            struct { name: []const u8, paws: i32 },
-            .{},
-        );
-    };
 
     try repo.begin();
     try repo.insert(Schema.Cat.init(.{ .name = "Hercules", .paws = 4 }));
@@ -1189,7 +1114,7 @@ test "transactions" {
 }
 
 fn resetDatabase() !void {
-    var repo = try Repo(.postgresql).init(
+    var repo = try Repo(.postgresql, void).init(
         std.testing.allocator,
         .{
             .adapter = .{

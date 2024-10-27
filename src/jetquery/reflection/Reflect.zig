@@ -271,7 +271,7 @@ fn translateTableName(
 }
 
 test "reflect" {
-    var admin_repo = try jetquery.Repo(.postgresql).init(
+    var admin_repo = try jetquery.Repo(.postgresql, void).init(
         std.testing.allocator,
         .{
             .adapter = .{
@@ -287,7 +287,32 @@ test "reflect" {
     try admin_repo.dropDatabase("reflection_test", .{ .if_exists = true });
     try admin_repo.createDatabase("reflection_test", .{});
 
-    var repo = try jetquery.Repo(.postgresql).init(
+    const Schema = struct {
+        pub const Human = jetquery.Table(
+            @This(),
+            "humans",
+            struct { id: i32, name: []const u8 },
+            .{
+                .relations = .{
+                    .cats = jetquery.relation.hasMany(.Cat, .{ .foreign_key = "custom_foreign_key" }),
+                },
+            },
+        );
+
+        pub const Cat = jetquery.Table(
+            @This(),
+            "cats",
+            struct { id: i32, name: []const u8, human_id: i32, paws: i32 },
+            .{
+                .relations = .{
+                    .human = jetquery.relation.belongsTo(.Human, .{}),
+                },
+                .primary_key = "custom_primary_key",
+            },
+        );
+    };
+
+    var repo = try jetquery.Repo(.postgresql, Schema).init(
         std.testing.allocator,
         .{
             .adapter = .{
@@ -321,31 +346,6 @@ test "reflect" {
         jetquery.schema.table.column("food_budget", .decimal, .{}),
         jetquery.schema.table.timestamps(.{}),
     }, .{});
-
-    const Schema = struct {
-        pub const Human = jetquery.Table(
-            @This(),
-            "humans",
-            struct { id: i32, name: []const u8 },
-            .{
-                .relations = .{
-                    .cats = jetquery.relation.hasMany(.Cat, .{ .foreign_key = "custom_foreign_key" }),
-                },
-            },
-        );
-
-        pub const Cat = jetquery.Table(
-            @This(),
-            "cats",
-            struct { id: i32, name: []const u8, human_id: i32, paws: i32 },
-            .{
-                .relations = .{
-                    .human = jetquery.relation.belongsTo(.Human, .{}),
-                },
-                .primary_key = "custom_primary_key",
-            },
-        );
-    };
 
     const reflect = Reflect(.postgresql).init(std.testing.allocator, &repo);
     const schema = try reflect.generateSchema(Schema);

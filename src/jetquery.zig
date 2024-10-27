@@ -5,6 +5,8 @@ pub const jetcommon = @import("jetcommon");
 pub const config = @import("jetquery.config");
 
 pub const Repo = @import("jetquery/Repo.zig").Repo;
+
+pub const Connection = @import("jetquery/Connection.zig").Connection;
 pub const adapters = @import("jetquery/adapters.zig");
 pub const sql = @import("jetquery/sql.zig");
 pub const relation = @import("jetquery/relation.zig");
@@ -23,6 +25,14 @@ pub const DateTime = jetcommon.types.DateTime;
 pub const debug = @import("jetquery/debug.zig");
 pub const Reflection = @import("jetquery/reflection/Reflection.zig");
 pub const util = @import("jetquery/util.zig");
+
+pub const CreateTableOptions = struct { if_not_exists: bool = false };
+pub const DropTableOptions = struct { if_exists: bool = false };
+pub const DropDatabaseOptions = struct { if_exists: bool = false };
+pub const CreateIndexOptions = struct {
+    unique: bool = false,
+    name: ?[]const u8 = null,
+};
 
 pub const original_prefix = "__original_";
 

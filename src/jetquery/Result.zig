@@ -26,7 +26,7 @@ pub const Result = union(enum) {
             inline else => |*adapted_result| blk: {
                 var row = try adapted_result.next(query) orelse break :blk null;
 
-                self.extendInternalFields(@TypeOf(query), &row);
+                extendInternalFields(@TypeOf(query), &row);
 
                 const primary_key = @TypeOf(query).info.Table.primary_key;
                 const primary_key_present = @hasField(
@@ -68,7 +68,7 @@ pub const Result = union(enum) {
 
                     var aux_rows = std.ArrayList(aux_type).init(adapted_result.allocator);
                     while (try aux_result.next(q)) |aux_row| {
-                        try aux_rows.append(self.mergeAux(
+                        try aux_rows.append(mergeAux(
                             aux_type,
                             q,
                             @TypeOf(aux_row),
@@ -106,7 +106,7 @@ pub const Result = union(enum) {
                         try map.id_array.append(id);
                     }
                     var adapted_row = row;
-                    self.extendInternalFields(@TypeOf(query), &adapted_row);
+                    extendInternalFields(@TypeOf(query), &adapted_row);
 
                     var merged_row: MergedRow = undefined;
                     inline for (query.auxiliary_queries) |init_aux_query| {
@@ -148,7 +148,7 @@ pub const Result = union(enum) {
                     const aux_type = AuxType(ResultType, aux_query.relation);
 
                     while (try aux_result.next(q)) |aux_row| {
-                        const adapted_aux_row = self.mergeAux(
+                        const adapted_aux_row = mergeAux(
                             aux_type,
                             q,
                             @TypeOf(aux_row),
@@ -205,10 +205,7 @@ pub const Result = union(enum) {
         };
     }
 
-    fn extendInternalFields(self: Result, Query: type, result: *Query.ResultType) void {
-        result.__jetquery.id = switch (self) {
-            inline else => |*adapted_result| adapted_result.repo.generateId(),
-        };
+    fn extendInternalFields(Query: type, result: *Query.ResultType) void {
         result.__jetquery_model = Query.info.Table;
         result.__jetquery_schema = Query.info.Schema;
 
@@ -238,9 +235,9 @@ pub const Result = union(enum) {
         };
     }
 
-    fn mergeAux(self: Result, aux_type: type, q: anytype, T: type, aux_row: T) aux_type {
+    fn mergeAux(aux_type: type, q: anytype, T: type, aux_row: T) aux_type {
         var extended_aux_row = aux_row;
-        self.extendInternalFields(@TypeOf(q), &extended_aux_row);
+        extendInternalFields(@TypeOf(q), &extended_aux_row);
 
         var adapted_aux_row: aux_type = undefined;
 

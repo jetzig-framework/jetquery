@@ -6,7 +6,7 @@ const migrations = @import("migrations").migrations;
 const Migration = @import("migrations").Migration;
 const jetquery = @import("jetquery");
 
-const Schema = struct {
+const MigrateSchema = struct {
     pub const Migrations = jetquery.Table(
         @This(),
         "jetquery_migrations",
@@ -19,10 +19,10 @@ const Schema = struct {
     );
 };
 
-pub fn Migrate(adapter_name: jetquery.adapters.Name) type {
+pub fn Migrate(adapter_name: jetquery.adapters.Name, Schema: type) type {
     return struct {
         const Self = @This();
-        const AdaptedRepo = jetquery.Repo(adapter_name);
+        const AdaptedRepo = jetquery.Repo(adapter_name, Schema);
 
         repo: *AdaptedRepo,
 
@@ -47,7 +47,7 @@ pub fn Migrate(adapter_name: jetquery.adapters.Name) type {
                         .message = "Executing migration: " ++ migration.name,
                     });
 
-                    try self.repo.Query(Schema, .Migrations)
+                    try self.repo.Query(.Migrations)
                         .insert(.{ .version = migration.version, .name = migration.name })
                         .execute(self.repo);
 
@@ -69,7 +69,7 @@ pub fn Migrate(adapter_name: jetquery.adapters.Name) type {
         pub fn rollback(self: Self) !void {
             if (migrations.len == 0) return;
 
-            const last_migration = try self.repo.Query(Schema, .Migrations)
+            const last_migration = try self.repo.Query(.Migrations)
                 .orderBy(.{ .version = .desc })
                 .first(self.repo) orelse return;
             defer self.repo.free(last_migration);
@@ -87,7 +87,7 @@ pub fn Migrate(adapter_name: jetquery.adapters.Name) type {
         }
 
         fn isMigrated(self: Self, migration: Migration) !bool {
-            const result = try self.repo.Query(Schema, .Migrations)
+            const result = try self.repo.Query(.Migrations)
                 .findBy(.{ .version = migration.version }).execute(self.repo);
 
             return result != null;
@@ -109,29 +109,6 @@ pub fn Migrate(adapter_name: jetquery.adapters.Name) type {
 
 test "migrate" {
     try resetDatabase();
-    var repo = try jetquery.Repo(.postgresql).init(
-        std.testing.allocator,
-        .{
-            .adapter = .{
-                .database = "migrate_test",
-                .username = "postgres",
-                .hostname = "127.0.0.1",
-                .password = "password",
-                .port = 5432,
-            },
-        },
-    );
-    defer repo.deinit();
-
-    const migrate = Migrate(.postgresql).init(&repo);
-    try migrate.run();
-
-    const migration = try repo.Query(Schema, .Migrations)
-        .findBy(.{ .version = "2024-08-26_13-18-52" })
-        .execute(&repo);
-    defer repo.free(migration);
-
-    try std.testing.expect(migration != null);
 
     const TestSchema = struct {
         pub const Cat = jetquery.Table(@This(), "cats", struct {
@@ -153,32 +130,71 @@ test "migrate" {
         );
     };
 
-    const query = repo.Query(TestSchema, .Human)
+    var migrate_repo = try jetquery.Repo(.postgresql, MigrateSchema).init(
+        std.testing.allocator,
+        .{
+            .adapter = .{
+                .database = "migrate_test",
+                .username = "postgres",
+                .hostname = "127.0.0.1",
+                .password = "password",
+                .port = 5432,
+            },
+        },
+    );
+    defer migrate_repo.deinit();
+
+    const migrate = Migrate(.postgresql, MigrateSchema).init(&migrate_repo);
+    try migrate.run();
+
+    var test_repo = try jetquery.Repo(.postgresql, TestSchema).init(
+        std.testing.allocator,
+        .{
+            .adapter = .{
+                .database = "migrate_test",
+                .username = "postgres",
+                .hostname = "127.0.0.1",
+                .password = "password",
+                .port = 5432,
+            },
+        },
+    );
+    defer test_repo.deinit();
+
+    const migration = try migrate_repo.Query(.Migrations)
+        .findBy(.{ .version = "2024-08-26_13-18-52" })
+        .execute(&migrate_repo);
+    defer migrate_repo.free(migration);
+
+    try std.testing.expect(migration != null);
+
+    const query = test_repo.Query(.Human)
         .join(.inner, .cats)
         .select(.{ .id, .name, .{ .cats = .{ .name, .paws, .created_at, .updated_at } } });
-    var result = try repo.execute(query);
+    var result = try test_repo.execute(query);
     try result.drain();
     defer result.deinit();
 
     try migrate.rollback();
 
-    try std.testing.expectError(error.PG, repo.execute(query));
+    try std.testing.expectError(error.PG, test_repo.execute(query));
 
     {
-        const humans = try repo.Query(TestSchema, .Human).all(&repo);
-        defer repo.free(humans);
+        const humans = try test_repo.Query(.Human).all(&test_repo);
+        defer test_repo.free(humans);
     }
 
     try migrate.rollback();
 
     {
-        const humans = repo.Query(TestSchema, .Human).all(&repo);
+        const humans = test_repo.Query(.Human).all(&test_repo);
         try std.testing.expectError(error.PG, humans);
     }
 }
 
 fn resetDatabase() !void {
-    var repo = try jetquery.Repo(.postgresql).init(
+    const S = struct {};
+    var repo = try jetquery.Repo(.postgresql, S).init(
         std.testing.allocator,
         .{
             .adapter = .{

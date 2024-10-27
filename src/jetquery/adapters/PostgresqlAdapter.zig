@@ -20,8 +20,6 @@ pub const Max = i32;
 pub const Min = i32;
 pub const max_identifier_len = 63;
 
-const AdaptedRepo = jetquery.Repo(.postgresql);
-
 pub const name: jetquery.adapters.Name = .postgresql;
 
 pub fn Aggregate(comptime context: jetquery.sql.FunctionContext) type {
@@ -38,7 +36,6 @@ pub const Result = struct {
     result: *pg.Result,
     allocator: std.mem.Allocator,
     connection: *pg.Conn,
-    repo: *AdaptedRepo,
     caller_info: ?jetquery.debug.CallerInfo,
     duration: i64,
 
@@ -184,26 +181,26 @@ pub fn deinit(self: *PostgresqlAdapter) void {
 
 pub const Connection = struct {
     connection: *pg.Conn,
-    repo: *AdaptedRepo,
 
     pub fn execute(
         self: Connection,
         sql: []const u8,
         values: anytype,
         caller_info: ?jetquery.debug.CallerInfo,
+        repo: anytype,
     ) !jetquery.Result {
         const start_time = std.time.nanoTimestamp();
 
         const result = self.connection.queryOpts(sql, values, .{}) catch |err| {
             if (self.connection.err) |connection_error| {
-                try self.repo.eventCallback(.{
+                try repo.eventCallback(.{
                     .sql = sql,
                     .err = .{ .message = connection_error.message },
                     .status = .fail,
                     .caller_info = caller_info,
                 });
             } else {
-                try self.repo.eventCallback(.{
+                try repo.eventCallback(.{
                     .sql = sql,
                     .err = .{ .message = @errorName(err) },
                     .status = .fail,
@@ -216,7 +213,7 @@ pub const Connection = struct {
 
         const duration: i64 = @intCast(std.time.nanoTimestamp() - start_time);
 
-        try self.repo.eventCallback(.{
+        try repo.eventCallback(.{
             .sql = sql,
             .caller_info = caller_info,
             .duration = duration,
@@ -224,9 +221,8 @@ pub const Connection = struct {
 
         return .{
             .postgresql = .{
-                .allocator = self.repo.allocator,
+                .allocator = repo.allocator,
                 .result = result,
-                .repo = self.repo,
                 .connection = self.connection,
                 .caller_info = caller_info,
                 .duration = duration,
@@ -239,11 +235,11 @@ pub const Connection = struct {
     }
 };
 
-pub fn connect(self: *PostgresqlAdapter, repo: *AdaptedRepo) !AdaptedRepo.Connection {
-    return .{ .postgresql = .{ .connection = try self.pool.acquire(), .repo = repo } };
+pub fn connect(self: *PostgresqlAdapter) !jetquery.Connection {
+    return .{ .postgresql = .{ .connection = try self.pool.acquire() } };
 }
 
-pub fn release(self: *PostgresqlAdapter, connection: AdaptedRepo.Connection) void {
+pub fn release(self: *PostgresqlAdapter, connection: jetquery.Connection) void {
     self.pool.release(connection.postgresql.connection);
 }
 
@@ -452,7 +448,7 @@ pub fn createIndexSql(
     comptime index_name: []const u8,
     comptime table_name: []const u8,
     comptime column_names: []const []const u8,
-    comptime options: AdaptedRepo.CreateIndexOptions,
+    comptime options: jetquery.CreateIndexOptions,
 ) *const [createIndexSqlSize(index_name, table_name, column_names, options)]u8 {
     comptime {
         var buf: [createIndexSqlSize(index_name, table_name, column_names, options)]u8 = undefined;
@@ -479,7 +475,7 @@ fn createIndexSqlSize(
     comptime index_name: []const u8,
     comptime table_name: []const u8,
     comptime column_names: []const []const u8,
-    comptime options: AdaptedRepo.CreateIndexOptions,
+    comptime options: jetquery.CreateIndexOptions,
 ) usize {
     comptime {
         var size: usize = 0;
@@ -510,7 +506,7 @@ pub fn referenceSql(comptime reference: jetquery.schema.Column.Reference) []cons
 pub fn reflect(
     self: *PostgresqlAdapter,
     allocator: std.mem.Allocator,
-    repo: *AdaptedRepo,
+    repo: anytype,
 ) !jetquery.Reflection {
     const tables = try self.reflectTables(allocator, repo);
     const columns = try self.reflectColumns(allocator, repo);
@@ -520,7 +516,7 @@ pub fn reflect(
 pub fn reflectTables(
     self: *PostgresqlAdapter,
     allocator: std.mem.Allocator,
-    repo: *AdaptedRepo,
+    repo: anytype,
 ) ![]const jetquery.Reflection.TableInfo {
     _ = self;
 
@@ -542,12 +538,10 @@ pub fn reflectTables(
 }
 
 pub fn reflectColumns(
-    self: *PostgresqlAdapter,
+    _: *PostgresqlAdapter,
     allocator: std.mem.Allocator,
-    repo: *AdaptedRepo,
+    repo: anytype,
 ) ![]const jetquery.Reflection.ColumnInfo {
-    _ = self;
-
     const sql =
         \\SELECT "table_name", "column_name", "data_type", "is_nullable" FROM "information_schema"."columns" WHERE "table_schema" = 'public' ORDER BY "table_name", "ordinal_position"
     ;
