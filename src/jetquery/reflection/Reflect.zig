@@ -1,6 +1,7 @@
 const std = @import("std");
 
 const jetquery = @import("jetquery");
+const jetcommon = @import("jetcommon");
 
 const util = @import("util.zig");
 
@@ -49,7 +50,11 @@ pub fn Reflect(adapter_name: jetquery.adapters.Name, Schema: type) type {
                 try writeTable(allocator, Schema, reflection, table, writer);
             }
 
-            return try self.allocator.dupe(u8, try validateAndFormat(allocator, buf.items));
+            return try self.allocator.dupe(u8, try jetcommon.fmt.zig(
+                allocator,
+                buf.items,
+                "Found errors in generated schema.",
+            ));
         }
     };
 }
@@ -87,42 +92,6 @@ fn writeTable(
         \\);
         \\
     , .{try stringifyOptions(allocator, schema, table.name)});
-}
-
-fn validateAndFormat(allocator: std.mem.Allocator, input: []const u8) ![]const u8 {
-    const ast = try std.zig.Ast.parse(
-        allocator,
-        try std.mem.concatWithSentinel(allocator, u8, &.{input}, 0),
-        .zig,
-    );
-    if (ast.errors.len > 0) {
-        const tty = std.io.tty.detectConfig(std.io.getStdErr());
-        const writer = std.io.getStdErr().writer();
-        var it = std.mem.tokenizeScalar(u8, input, '\n');
-        var line_number: usize = 1;
-        while (it.next()) |line| : (line_number += 1) {
-            const maybe_err = for (ast.errors) |err| {
-                if (ast.tokenLocation(0, err.token).line == line_number + 1) break err;
-            } else null;
-            try tty.setColor(writer, if (maybe_err != null) .red else .cyan);
-            const error_message = if (maybe_err) |err| blk: {
-                var buf = std.ArrayList(u8).init(allocator);
-                const err_writer = buf.writer();
-                try err_writer.writeAll(" // ");
-                try ast.renderError(err, err_writer);
-                break :blk try buf.toOwnedSlice();
-            } else "";
-            std.debug.print("{: <4} {s}{s}\n", .{
-                line_number,
-                line,
-                error_message,
-            });
-        }
-        try tty.setColor(writer, .reset);
-        std.debug.print("\nFound errors in generated schema.\n", .{});
-        return error.JetQueryInvalidSchema;
-    }
-    return try ast.render(allocator);
 }
 
 fn stringifyOptions(
