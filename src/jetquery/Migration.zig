@@ -21,11 +21,12 @@ const Command = struct {
     command: []const u8,
     allocator: std.mem.Allocator,
 
-    const Action = enum { create, drop, alter };
+    const Action = enum { create, drop, alter, rename };
 
     const Modifier = enum {
         action,
         name,
+        rename,
         type,
         index,
         unique,
@@ -47,6 +48,7 @@ const Command = struct {
 
         pub const Table = struct {
             name: ?[]const u8 = null,
+            rename: ?[]const u8 = null,
             action: ?Action = null,
 
             pub fn writeUp(self: Table, columns: []const Column, writer: anytype) !void {
@@ -54,6 +56,7 @@ const Command = struct {
                     .create => try self.writeCreateTable(columns, writer),
                     .drop => try self.writeDropTable(writer),
                     .alter => try self.writeAlterTable(columns, writer),
+                    .rename => {}, // Covered by alterTable
                 }
             }
 
@@ -80,29 +83,7 @@ const Command = struct {
                 try writer.writeAll("&.{");
 
                 for (columns) |column| {
-                    try writer.print(
-                        \\t.column("{s}", .{s}, .{{
-                    , .{
-                        column.name orelse return error.MissingColumnName,
-                        @tagName(column.type orelse .string),
-                    });
-                    var options_count: usize = 0;
-                    inline for (comptime std.enums.values(Column.options)) |tag| {
-                        if (@field(column, @tagName(tag))) |option| {
-                            if (option) options_count += 1;
-                        }
-                    }
-                    var index: usize = 0;
-                    inline for (comptime std.enums.values(Column.options)) |field| {
-                        if (@field(column, @tagName(field))) |option| {
-                            if (option) {
-                                const sep = if (index + 1 < options_count) "," else "";
-                                try writer.print(".{s} = true{s}", .{ @tagName(field), sep });
-                                index += 1;
-                            }
-                        }
-                    }
-                    try writer.writeAll("}),");
+                    try writeColumn(column, writer);
                 }
                 try writer.writeAll("},");
                 try writer.writeAll(".{},);");
@@ -115,15 +96,124 @@ const Command = struct {
             }
 
             fn writeAlterTable(self: Table, columns: []const Column, writer: anytype) !void {
-                _ = columns;
                 try writer.print(
-                    \\try repo.alterTable("{s}", .{{}});
+                    \\try repo.alterTable("{s}", .{{
                 , .{self.name orelse return error.MissingTableName});
+
+                const has_columns = for (columns) |column| {
+                    switch (column.action orelse .create) {
+                        .create, .drop, .rename => break true,
+                        else => unreachable,
+                    }
+                } else false;
+
+                if (has_columns) try writer.writeAll(".columns = .{");
+
+                if (self.rename) |rename_table| {
+                    try writer.print(
+                        \\.rename = "{s}"{s}
+                    , .{ rename_table, if (has_columns) "," else "" });
+                }
+
+                try writeAlterAddColumns(columns, writer);
+                try writeAlterDropColumns(columns, writer);
+                try writeAlterRenameColumns(columns, writer);
+                if (has_columns) try writer.writeAll("},");
+
+                try writer.writeAll("});");
+            }
+
+            fn writeAlterAddColumns(columns: []const Column, writer: anytype) !void {
+                const has_add_column = for (columns) |column| {
+                    if (column.action orelse .create == .create) break true;
+                } else false;
+
+                if (has_add_column) try writer.writeAll(".add = &.{");
+
+                for (columns) |column| {
+                    if (column.action orelse .create == .create) {
+                        try writeColumn(column, writer);
+                    }
+                }
+
+                if (has_add_column) try writer.writeAll("},");
+            }
+
+            fn writeAlterDropColumns(columns: []const Column, writer: anytype) !void {
+                const has_drop_column = for (columns) |column| {
+                    if (column.action orelse .create == .drop) break true;
+                } else false;
+
+                if (has_drop_column) try writer.writeAll(".drop = &.{");
+
+                for (columns) |column| {
+                    if (column.action orelse .create == .drop) {
+                        try writer.print(
+                            \\"{s},"
+                        ,
+                            .{column.name orelse return error.MissingColumnName},
+                        );
+                    }
+                }
+
+                if (has_drop_column) try writer.writeAll("},");
+            }
+
+            fn writeAlterRenameColumns(columns: []const Column, writer: anytype) !void {
+                var count: usize = 0;
+                for (columns) |column| {
+                    if (column.action orelse .create == .rename) {
+                        try writer.print(
+                            \\.rename = .{{ .from = "{s}", .to = "{s}" }},
+                        ,
+                            .{
+                                column.name orelse return error.MissingColumnName,
+                                column.rename orelse return error.MissingColumnName,
+                            },
+                        );
+                        count += 1;
+                    }
+                }
+
+                if (count > 1) {
+                    std.log.err(
+                        "Multiple column renames are not permitted. " ++
+                            "Create separate migrations to rename multiple columns.",
+                        .{},
+                    );
+                }
+            }
+
+            fn writeColumn(column: Column, writer: anytype) !void {
+                try writer.print(
+                    \\t.column("{s}", .{s}, .{{
+                , .{
+                    column.name orelse return error.MissingColumnName,
+                    @tagName(column.type orelse .string),
+                });
+                var options_count: usize = 0;
+                inline for (comptime std.enums.values(Column.options)) |tag| {
+                    if (@field(column, @tagName(tag))) |option| {
+                        if (option) options_count += 1;
+                    }
+                }
+                var index: usize = 0;
+                inline for (comptime std.enums.values(Column.options)) |field| {
+                    if (@field(column, @tagName(field))) |option| {
+                        if (option) {
+                            const sep = if (index + 1 < options_count) "," else "";
+                            try writer.print(".{s} = true{s}", .{ @tagName(field), sep });
+                            index += 1;
+                        }
+                    }
+                }
+                try writer.writeAll("}),");
             }
         };
 
         pub const Column = struct {
             name: ?[]const u8 = null,
+            rename: ?[]const u8 = null,
             action: ?Action = null,
             type: ?DataType = null,
             index: ?bool = null,
@@ -152,6 +242,18 @@ const Command = struct {
         pub fn hasAction(self: Token) bool {
             return switch (self) {
                 inline else => |token| token.action != null,
+            };
+        }
+
+        pub fn isRename(self: Token) bool {
+            return switch (self) {
+                inline else => |token| token.action orelse .create == .rename,
+            };
+        }
+
+        pub fn hasRename(self: Token) bool {
+            return switch (self) {
+                inline else => |token| token.rename != null,
             };
         }
 
@@ -201,6 +303,8 @@ const Command = struct {
                             token.set(modifier_token, true);
                         } else if (isType(modifier)) {
                             token.set(.type, modifier);
+                        } else if (token.isRename() and !token.hasRename()) {
+                            token.set(.rename, modifier);
                         } else {
                             std.log.err("Invalid migration command: {s}", .{arg});
                             unreachable;
@@ -210,8 +314,12 @@ const Command = struct {
                             Token{ .table = .{} }
                         else if (std.mem.eql(u8, modifier, "column"))
                             Token{ .column = .{} }
-                        else
-                            null;
+                        else if (std.mem.eql(u8, modifier, "rename"))
+                            Token{ .table = .{ .action = .alter, .rename = modifier } }
+                        else {
+                            std.log.err("Invalid migration command: {s}", .{arg});
+                            unreachable;
+                        };
                     }
                 }
                 return maybe_token;
@@ -439,17 +547,10 @@ test "migration from command line: drop table" {
 }
 
 test "migration from command line: alter table" {
-    const command = "table:alter:cats column:color:string";
-
-    // const t = void;
-    // void.alterTable("foobar", .{
-    //     .rename = "qux",
-    //     .columns = .{
-    //         .add = &.{t.column()},
-    //         .drop = &.{"foo"},
-    //         .rename = &.{.{ .from = "bar", .to = "baz" }},
-    //     },
-    // });
+    // XXX: This is an incoherent migration (renaming table while adding columns not permitted)
+    // but it tests a lot of variations all in one command. We let the database fail if the
+    // migration is not coherent.
+    const command = "table:alter:cats column:color:string:index:unique column:rename:paws:feet column:drop:name rename:dogs";
 
     const migration = Migration.init(
         std.testing.allocator,
@@ -458,24 +559,28 @@ test "migration from command line: alter table" {
     );
     const rendered = try migration.render();
     defer std.testing.allocator.free(rendered);
-    // TODO
 
-    //
-    // try std.testing.expectEqualStrings(
-    //     \\const std = @import("std");
-    //     \\const jetquery = @import("jetquery");
-    //     \\const t = jetquery.schema.table;
-    //     \\
-    //     \\pub fn up(repo: anytype) !void {
-    //     \\    try repo.dropTable(
-    //     \\        "cats",
-    //     \\        .{},
-    //     \\    );
-    //     \\}
-    //     \\
-    //     \\pub fn down(repo: anytype) !void {
-    //     \\    _ = repo;
-    //     \\}
-    //     \\
-    // , rendered);
+    try std.testing.expectEqualStrings(
+        \\const std = @import("std");
+        \\const jetquery = @import("jetquery");
+        \\const t = jetquery.schema.table;
+        \\
+        \\pub fn up(repo: anytype) !void {
+        \\    try repo.alterTable("dogs", .{
+        \\        .columns = .{
+        \\            .rename = "rename",
+        \\            .add = &.{
+        \\                t.column("color", .string, .{ .unique = true, .index = true }),
+        \\            },
+        \\            .drop = &.{"name,"},
+        \\            .rename = .{ .from = "paws", .to = "feet" },
+        \\        },
+        \\    });
+        \\}
+        \\
+        \\pub fn down(repo: anytype) !void {
+        \\    _ = repo;
+        \\}
+        \\
+    , rendered);
 }
