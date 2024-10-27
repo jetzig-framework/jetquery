@@ -4,10 +4,10 @@ const jetquery = @import("jetquery");
 
 const util = @import("util.zig");
 
-pub fn Reflect(adapter_name: jetquery.adapters.Name) type {
+pub fn Reflect(adapter_name: jetquery.adapters.Name, Schema: type) type {
     return struct {
         const Self = @This();
-        const AdaptedRepo = jetquery.Repo(adapter_name);
+        const AdaptedRepo = jetquery.Repo(adapter_name, Schema);
         allocator: std.mem.Allocator,
         repo: *AdaptedRepo,
 
@@ -15,7 +15,7 @@ pub fn Reflect(adapter_name: jetquery.adapters.Name) type {
             return .{ .repo = repo, .allocator = allocator };
         }
 
-        pub fn generateSchema(self: Self, comptime schema: type) ![]const u8 {
+        pub fn generateSchema(self: Self) ![]const u8 {
             var arena = std.heap.ArenaAllocator.init(self.allocator);
             defer arena.deinit();
 
@@ -36,9 +36,9 @@ pub fn Reflect(adapter_name: jetquery.adapters.Name) type {
             var written = std.BufSet.init(allocator);
 
             // Write tables already defined in the schema first ...
-            inline for (comptime std.meta.declarations(schema)) |decl| {
-                if (map.get(@field(schema, decl.name).name)) |table| {
-                    try writeTable(allocator, schema, reflection, table, writer);
+            inline for (comptime std.meta.declarations(Schema)) |decl| {
+                if (map.get(@field(Schema, decl.name).name)) |table| {
+                    try writeTable(allocator, Schema, reflection, table, writer);
                     try written.insert(table.name);
                 }
             }
@@ -46,7 +46,7 @@ pub fn Reflect(adapter_name: jetquery.adapters.Name) type {
             // ... then write any remaining tables to preserve schema order if edited by user.
             for (reflection.tables) |table| {
                 if (written.contains(table.name)) continue;
-                try writeTable(allocator, schema, reflection, table, writer);
+                try writeTable(allocator, Schema, reflection, table, writer);
             }
 
             return try self.allocator.dupe(u8, try validateAndFormat(allocator, buf.items));
@@ -347,8 +347,8 @@ test "reflect" {
         jetquery.schema.table.timestamps(.{}),
     }, .{});
 
-    const reflect = Reflect(.postgresql).init(std.testing.allocator, &repo);
-    const schema = try reflect.generateSchema(Schema);
+    const reflect = Reflect(.postgresql, Schema).init(std.testing.allocator, &repo);
+    const schema = try reflect.generateSchema();
     defer std.testing.allocator.free(schema);
     try std.testing.expectEqualStrings(
         \\const jetquery = @import("jetquery");

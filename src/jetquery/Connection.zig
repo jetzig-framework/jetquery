@@ -10,7 +10,7 @@ pub const Connection = union(enum) {
         repo: anytype,
     ) !switch (@TypeOf(query).ResultContext) {
         .one => ?@TypeOf(query).ResultType,
-        .many => jetquery.Result,
+        .many => jetquery.Result(@TypeOf(repo.*)),
         .none => void,
     } {
         return switch (self) {
@@ -71,7 +71,7 @@ pub const Connection = union(enum) {
         values: anytype,
         caller_info: ?jetquery.debug.CallerInfo,
         repo: anytype,
-    ) !jetquery.Result {
+    ) !jetquery.Result(@TypeOf(repo.*)) {
         return switch (self) {
             inline else => |connection| try connection.execute(sql, values, caller_info, repo),
         };

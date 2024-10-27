@@ -32,68 +32,77 @@ pub fn Aggregate(comptime context: jetquery.sql.FunctionContext) type {
     };
 }
 
-pub const Result = struct {
-    result: *pg.Result,
-    allocator: std.mem.Allocator,
-    connection: *pg.Conn,
-    caller_info: ?jetquery.debug.CallerInfo,
-    duration: i64,
+pub fn Result(AdaptedRepo: type) type {
+    return struct {
+        result: *pg.Result,
+        allocator: std.mem.Allocator,
+        connection: *pg.Conn,
+        caller_info: ?jetquery.debug.CallerInfo,
+        duration: i64,
+        repo: *AdaptedRepo,
 
-    pub fn deinit(self: *Result) void {
-        self.result.deinit();
-    }
+        const Self = @This();
 
-    pub fn drain(self: *Result) !void {
-        try self.result.drain();
-    }
-
-    pub fn next(self: *Result, query: anytype) !?@TypeOf(query).ResultType {
-        if (try self.result.next()) |row| {
-            var result_row: @TypeOf(query).ResultType = undefined;
-            inline for (@TypeOf(query).ColumnInfos) |column_info| {
-                if (column_info.relation) |relation| {
-                    @field(
-                        @field(result_row, relation.relation_name),
-                        column_info.name,
-                    ) = try resolvedValue(self.allocator, column_info, &row);
-                } else {
-                    @field(result_row, column_info.name) = try resolvedValue(
-                        self.allocator,
-                        column_info,
-                        &row,
-                    );
-                }
-            }
-            return result_row;
-        } else {
-            return null;
+        pub fn deinit(self: *Self) void {
+            self.result.deinit();
         }
-    }
 
-    pub fn unary(self: *Result, T: type) !T {
-        // This error should really never happen if used in conjunction with (e.g.) a `COUNT`
-        // query, but we return an error to allow the host app (e.g. Jetzig) to handle it instead
-        // of panicking.
-        const row = try self.result.next() orelse return error.JetQueryMissingRowInUnaryQuery;
+        pub fn drain(self: *Self) !void {
+            try self.result.drain();
+        }
 
-        if (row.values.len < 1) return error.JetQueryMissingColumnInUnaryQuery;
+        pub fn next(self: *Self, query: anytype) !?@TypeOf(query).ResultType {
+            if (try self.result.next()) |row| {
+                var result_row: @TypeOf(query).ResultType = undefined;
+                inline for (@TypeOf(query).ColumnInfos) |column_info| {
+                    if (column_info.relation) |relation| {
+                        @field(
+                            @field(result_row, relation.relation_name),
+                            column_info.name,
+                        ) = try resolvedValue(self.allocator, column_info, &row);
+                    } else {
+                        @field(result_row, column_info.name) = try resolvedValue(
+                            self.allocator,
+                            column_info,
+                            &row,
+                        );
+                    }
+                }
+                return result_row;
+            } else {
+                return null;
+            }
+        }
 
-        return row.get(T, 0);
-    }
+        pub fn unary(self: *Self, T: type) !T {
+            // This error should really never happen if used in conjunction with (e.g.) a `COUNT`
+            // query, but we return an error to allow the host app (e.g. Jetzig) to handle it instead
+            // of panicking.
+            const row = try self.result.next() orelse return error.JetQueryMissingRowInUnaryQuery;
 
-    pub fn all(self: *Result, query: anytype) ![]@TypeOf(query).ResultType {
-        defer self.deinit();
+            if (row.values.len < 1) return error.JetQueryMissingColumnInUnaryQuery;
 
-        var array = std.ArrayList(@TypeOf(query).ResultType).init(self.allocator);
-        while (try self.next(query)) |row| try array.append(row);
-        try self.drain();
-        return try array.toOwnedSlice();
-    }
+            return row.get(T, 0);
+        }
 
-    pub fn execute(self: *Result, sql: []const u8, values: anytype) !jetquery.Result {
-        return try self.connection.execute(sql, values, self.caller_info);
-    }
-};
+        pub fn all(self: *Self, query: anytype) ![]@TypeOf(query).ResultType {
+            defer self.deinit();
+
+            var array = std.ArrayList(@TypeOf(query).ResultType).init(self.allocator);
+            while (try self.next(query)) |row| try array.append(row);
+            try self.drain();
+            return try array.toOwnedSlice();
+        }
+
+        pub fn execute(
+            self: *Self,
+            sql: []const u8,
+            values: anytype,
+        ) !jetquery.Result(AdaptedRepo) {
+            return try self.connection.execute(sql, values, self.caller_info);
+        }
+    };
+}
 
 fn resolvedValue(
     allocator: std.mem.Allocator,
@@ -188,7 +197,7 @@ pub const Connection = struct {
         values: anytype,
         caller_info: ?jetquery.debug.CallerInfo,
         repo: anytype,
-    ) !jetquery.Result {
+    ) !jetquery.Result(@TypeOf(repo.*)) {
         const start_time = std.time.nanoTimestamp();
 
         const result = self.connection.queryOpts(sql, values, .{}) catch |err| {
@@ -226,6 +235,7 @@ pub const Connection = struct {
                 .connection = self.connection,
                 .caller_info = caller_info,
                 .duration = duration,
+                .repo = repo,
             },
         };
     }
