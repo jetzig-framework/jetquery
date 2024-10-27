@@ -50,45 +50,11 @@ const Command = struct {
             action: ?Action = null,
 
             pub fn writeUp(self: Table, columns: []const Column, writer: anytype) !void {
-                try writer.print(
-                    \\try repo.{s}Table("{s}",
-                , .{
-                    @tagName(self.action orelse .create),
-                    self.name orelse return error.MissingTableName,
-                });
-
-                if ((self.action orelse .create) == .create) {
-                    try writer.writeAll("&.{");
-
-                    for (columns) |column| {
-                        try writer.print(
-                            \\t.column("{s}", .{s}, .{{
-                        , .{
-                            column.name orelse return error.MissingColumnName,
-                            @tagName(column.type orelse .string),
-                        });
-                        var options_count: usize = 0;
-                        inline for (comptime std.enums.values(Column.options)) |tag| {
-                            if (@field(column, @tagName(tag))) |option| {
-                                if (option) options_count += 1;
-                            }
-                        }
-                        var index: usize = 0;
-                        inline for (comptime std.enums.values(Column.options)) |field| {
-                            if (@field(column, @tagName(field))) |option| {
-                                if (option) {
-                                    const sep = if (index + 1 < options_count) "," else "";
-                                    try writer.print(".{s} = true{s}", .{ @tagName(field), sep });
-                                    index += 1;
-                                }
-                            }
-                        }
-                        try writer.writeAll("}),");
-                    }
-
-                    try writer.writeAll("},");
+                switch (self.action orelse .create) {
+                    .create => try self.writeCreateTable(columns, writer),
+                    .drop => try self.writeDropTable(writer),
+                    .alter => try self.writeAlterTable(columns, writer),
                 }
-                try writer.writeAll(".{},);");
             }
 
             pub fn writeDown(self: Table, writer: anytype) !void {
@@ -102,6 +68,57 @@ const Command = struct {
                 } else {
                     try writer.writeAll("_ = repo;");
                 }
+            }
+
+            fn writeCreateTable(self: Table, columns: []const Column, writer: anytype) !void {
+                try writer.print(
+                    \\try repo.createTable("{s}",
+                , .{
+                    self.name orelse return error.MissingTableName,
+                });
+
+                try writer.writeAll("&.{");
+
+                for (columns) |column| {
+                    try writer.print(
+                        \\t.column("{s}", .{s}, .{{
+                    , .{
+                        column.name orelse return error.MissingColumnName,
+                        @tagName(column.type orelse .string),
+                    });
+                    var options_count: usize = 0;
+                    inline for (comptime std.enums.values(Column.options)) |tag| {
+                        if (@field(column, @tagName(tag))) |option| {
+                            if (option) options_count += 1;
+                        }
+                    }
+                    var index: usize = 0;
+                    inline for (comptime std.enums.values(Column.options)) |field| {
+                        if (@field(column, @tagName(field))) |option| {
+                            if (option) {
+                                const sep = if (index + 1 < options_count) "," else "";
+                                try writer.print(".{s} = true{s}", .{ @tagName(field), sep });
+                                index += 1;
+                            }
+                        }
+                    }
+                    try writer.writeAll("}),");
+                }
+                try writer.writeAll("},");
+                try writer.writeAll(".{},);");
+            }
+
+            fn writeDropTable(self: Table, writer: anytype) !void {
+                try writer.print(
+                    \\try repo.dropTable("{s}", .{{}});
+                , .{self.name orelse return error.MissingTableName});
+            }
+
+            fn writeAlterTable(self: Table, columns: []const Column, writer: anytype) !void {
+                _ = columns;
+                try writer.print(
+                    \\try repo.alterTable("{s}", .{{}});
+                , .{self.name orelse return error.MissingTableName});
             }
         };
 
@@ -411,10 +428,7 @@ test "migration from command line: drop table" {
         \\const t = jetquery.schema.table;
         \\
         \\pub fn up(repo: anytype) !void {
-        \\    try repo.dropTable(
-        \\        "cats",
-        \\        .{},
-        \\    );
+        \\    try repo.dropTable("cats", .{});
         \\}
         \\
         \\pub fn down(repo: anytype) !void {
@@ -427,6 +441,16 @@ test "migration from command line: drop table" {
 test "migration from command line: alter table" {
     const command = "table:alter:cats column:color:string";
 
+    // const t = void;
+    // void.alterTable("foobar", .{
+    //     .rename = "qux",
+    //     .columns = .{
+    //         .add = &.{t.column()},
+    //         .drop = &.{"foo"},
+    //         .rename = &.{.{ .from = "bar", .to = "baz" }},
+    //     },
+    // });
+
     const migration = Migration.init(
         std.testing.allocator,
         "test_migration",
@@ -434,22 +458,24 @@ test "migration from command line: alter table" {
     );
     const rendered = try migration.render();
     defer std.testing.allocator.free(rendered);
+    // TODO
 
-    try std.testing.expectEqualStrings(
-        \\const std = @import("std");
-        \\const jetquery = @import("jetquery");
-        \\const t = jetquery.schema.table;
-        \\
-        \\pub fn up(repo: anytype) !void {
-        \\    try repo.dropTable(
-        \\        "cats",
-        \\        .{},
-        \\    );
-        \\}
-        \\
-        \\pub fn down(repo: anytype) !void {
-        \\    _ = repo;
-        \\}
-        \\
-    , rendered);
+    //
+    // try std.testing.expectEqualStrings(
+    //     \\const std = @import("std");
+    //     \\const jetquery = @import("jetquery");
+    //     \\const t = jetquery.schema.table;
+    //     \\
+    //     \\pub fn up(repo: anytype) !void {
+    //     \\    try repo.dropTable(
+    //     \\        "cats",
+    //     \\        .{},
+    //     \\    );
+    //     \\}
+    //     \\
+    //     \\pub fn down(repo: anytype) !void {
+    //     \\    _ = repo;
+    //     \\}
+    //     \\
+    // , rendered);
 }

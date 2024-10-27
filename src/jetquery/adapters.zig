@@ -201,6 +201,7 @@ pub fn Adapter(comptime adapter_name: Name, AdaptedRepo: type) type {
             };
         }
 
+        /// Return all metadata from the database needed to generate a schema file.
         pub fn reflect(
             self: *Self,
             allocator: std.mem.Allocator,
@@ -209,6 +210,36 @@ pub fn Adapter(comptime adapter_name: Name, AdaptedRepo: type) type {
             return switch (comptime adapter_name) {
                 inline else => |tag| try @field(self, @tagName(tag)).reflect(allocator, repo),
             };
+        }
+
+        pub fn writeAddColumnSql(
+            self: Self,
+            comptime column: jetquery.schema.Column,
+            writer: anytype,
+        ) !void {
+            if (column.timestamps) |timestamps| {
+                try timestamps.toSql(writer, self);
+            } else {
+                try writer.print(
+                    \\{s}{s}{s}{s}{s}{s}
+                , .{
+                    self.identifier(column.name),
+                    if (column.primary_key)
+                        ""
+                    else
+                        self.columnTypeSql(column),
+                    if (!column.primary_key and column.options.not_null)
+                        self.notNullSql()
+                    else
+                        "",
+                    if (column.primary_key) self.primaryKeySql(column) else "",
+                    if (column.options.unique) self.uniqueColumnSql() else "",
+                    if (column.options.reference) |reference|
+                        self.referenceSql(reference)
+                    else
+                        "",
+                });
+            }
         }
     };
     return Union;
