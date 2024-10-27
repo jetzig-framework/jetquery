@@ -32,7 +32,7 @@ pub const TimestampsOptions = struct {
     pub fn toSql(
         self: TimestampsOptions,
         writer: anytype,
-        adapter: jetquery.adapters.Adapter,
+        adapter: jetquery.adapters.Adapter(jetquery.adapter),
     ) !void {
         const created_at = comptime Column.init(
             jetquery.default_column_names.created_at,

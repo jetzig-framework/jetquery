@@ -2,7 +2,7 @@ const std = @import("std");
 const jetquery = @import("jetquery");
 const t = jetquery.schema.table;
 
-pub fn up(repo: *jetquery.Repo) !void {
+pub fn up(repo: anytype) !void {
     try repo.createTable(
         "cats",
         &.{
@@ -18,6 +18,6 @@ pub fn up(repo: *jetquery.Repo) !void {
     try repo.createIndex("cats", &.{ "name", "paws" }, .{});
 }
 
-pub fn down(repo: *jetquery.Repo) !void {
+pub fn down(repo: anytype) !void {
     try repo.dropTable("cats", .{});
 }

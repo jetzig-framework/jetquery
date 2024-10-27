@@ -4,7 +4,7 @@ pub const jetcommon = @import("jetcommon");
 
 pub const config = @import("jetquery.config");
 
-pub const Repo = @import("jetquery/Repo.zig");
+pub const Repo = @import("jetquery/Repo.zig").Repo;
 pub const adapters = @import("jetquery/adapters.zig");
 pub const sql = @import("jetquery/sql.zig");
 pub const relation = @import("jetquery/relation.zig");

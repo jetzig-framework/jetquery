@@ -18,8 +18,8 @@ pub fn main() !void {
     try writer.writeAll(
         \\const jetquery = @import("jetquery");
         \\pub const Migration = struct {
-        \\    upFn: *const fn(*jetquery.Repo) anyerror!void,
-        \\    downFn: *const fn(*jetquery.Repo) anyerror!void,
+        \\    upFn: *const fn(repo: anytype) anyerror!void,
+        \\    downFn: *const fn(repo: anytype) anyerror!void,
         \\    version: []const u8,
         \\    name: []const u8,
         \\};

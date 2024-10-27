@@ -4,10 +4,11 @@ const jetquery = @import("../../jetquery.zig");
 const fields = @import("../fields.zig");
 
 const NullAdapter = @This();
+const AdaptedRepo = jetquery.Repo(.null);
 
 pub const Options = struct {};
 
-pub fn execute(self: *const NullAdapter, repo: *const jetquery.Repo, sql: []const u8, values: anytype, caller_info: ?jetquery.debug.CallerInfo) !jetquery.Result {
+pub fn execute(self: *const NullAdapter, repo: *const AdaptedRepo, sql: []const u8, values: anytype, caller_info: ?jetquery.debug.CallerInfo) !jetquery.Result {
     _ = self;
     _ = repo;
     _ = sql;
@@ -20,7 +21,7 @@ pub fn deinit(self: *const NullAdapter) void {
     _ = self;
 }
 
-pub fn connect(self: *const NullAdapter, repo: *const jetquery.Repo) !jetquery.Repo.Connection {
+pub fn connect(self: *const NullAdapter, repo: *const AdaptedRepo) !AdaptedRepo.Connection {
     _ = self;
     _ = repo;
     return error.JetQueryNullAdapterError;
@@ -28,7 +29,7 @@ pub fn connect(self: *const NullAdapter, repo: *const jetquery.Repo) !jetquery.R
 
 pub fn release(
     self: *const NullAdapter,
-    connection: jetquery.Repo.Connection,
+    connection: AdaptedRepo.Connection,
 ) void {
     // We don't return an error here because `release` is used in defers, but execute/connect
     // will error before we get here in usual circumstances.
@@ -135,7 +136,7 @@ pub fn createIndexSql(
     comptime index_name: []const u8,
     comptime table_name: []const u8,
     comptime column_names: []const []const u8,
-    comptime options: jetquery.Repo.CreateIndexOptions,
+    comptime options: AdaptedRepo.CreateIndexOptions,
 ) [0]u8 {
     _ = index_name;
     _ = table_name;
@@ -147,7 +148,7 @@ pub fn createIndexSql(
 pub fn reflect(
     self: *const NullAdapter,
     allocator: std.mem.Allocator,
-    repo: *const jetquery.Repo,
+    repo: *const AdaptedRepo,
 ) !jetquery.Reflection {
     _ = allocator;
     _ = self;

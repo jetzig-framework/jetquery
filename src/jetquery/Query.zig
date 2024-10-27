@@ -126,7 +126,7 @@ pub fn Query(Schema: type, comptime table: anytype) type {
         /// try Query(Schema, .MyTable).all(repo);
         /// ```
         pub fn all(
-            repo: *jetquery.Repo,
+            repo: anytype,
         ) @TypeOf(InitialStatement(Schema, Table).select(.{}).all(repo)) {
             return InitialStatement(Schema, Table).select(.{}).all(repo);
         }
@@ -136,7 +136,7 @@ pub fn Query(Schema: type, comptime table: anytype) type {
         /// try Query(Schema, .MyTable).first(repo);
         /// ```
         pub fn first(
-            repo: *jetquery.Repo,
+            repo: anytype,
         ) @TypeOf(InitialStatement(Schema, Table).select(.{}).first(repo)) {
             return InitialStatement(Schema, Table).select(.{}).first(repo);
         }
@@ -933,7 +933,7 @@ fn Statement(
             return self.extend(S, .{}, .none);
         }
 
-        pub fn execute(self: Self, repo: *jetquery.Repo) !switch (options.result_context) {
+        pub fn execute(self: Self, repo: anytype) !switch (options.result_context) {
             .one => ?ResultType,
             .many => jetquery.Result,
             .none => void,
@@ -942,7 +942,7 @@ fn Statement(
             return try repo.executeInternal(self, caller_info);
         }
 
-        pub fn all(self: Self, repo: *jetquery.Repo) ![]ResultType {
+        pub fn all(self: Self, repo: anytype) ![]ResultType {
             var result = try repo.executeInternal(
                 self,
                 try jetquery.debug.getCallerInfo(@returnAddress()),
@@ -950,7 +950,7 @@ fn Statement(
             return try result.all(self);
         }
 
-        pub fn first(self: Self, repo: *jetquery.Repo) !?ResultType {
+        pub fn first(self: Self, repo: anytype) !?ResultType {
             const query = self.limit(1);
             var result = try repo.executeInternal(
                 query,

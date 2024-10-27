@@ -7,9 +7,9 @@ const util = @import("util.zig");
 const Reflect = @This();
 
 allocator: std.mem.Allocator,
-repo: *jetquery.Repo,
+repo: *jetquery.Repo(jetquery.adapter),
 
-pub fn init(allocator: std.mem.Allocator, repo: *jetquery.Repo) Reflect {
+pub fn init(allocator: std.mem.Allocator, repo: *jetquery.Repo(jetquery.adapter)) Reflect {
     return .{ .repo = repo, .allocator = allocator };
 }
 
@@ -267,7 +267,7 @@ fn translateTableName(
 }
 
 test "reflect" {
-    var admin_repo = try jetquery.Repo.init(
+    var admin_repo = try jetquery.Repo(jetquery.adapter).init(
         std.testing.allocator,
         .{
             .adapter = .{
@@ -285,7 +285,7 @@ test "reflect" {
     try admin_repo.dropDatabase("reflection_test", .{ .if_exists = true });
     try admin_repo.createDatabase("reflection_test", .{});
 
-    var repo = try jetquery.Repo.init(
+    var repo = try jetquery.Repo(jetquery.adapter).init(
         std.testing.allocator,
         .{
             .adapter = .{

@@ -8,9 +8,9 @@ const jetquery = @import("jetquery");
 
 const Migrate = @This();
 
-repo: *jetquery.Repo,
+repo: *jetquery.Repo(jetquery.adapter),
 
-pub fn init(repo: *jetquery.Repo) Migrate {
+pub fn init(repo: *jetquery.Repo(jetquery.adapter)) Migrate {
     return .{ .repo = repo };
 }
 
@@ -104,7 +104,7 @@ fn createMigrationsTable(self: Migrate) !void {
 
 test "migrate" {
     try resetDatabase();
-    var repo = try jetquery.Repo.init(
+    var repo = try jetquery.Repo(.postgresql).init(
         std.testing.allocator,
         .{
             .adapter = .{
@@ -175,7 +175,7 @@ test "migrate" {
 }
 
 fn resetDatabase() !void {
-    var repo = try jetquery.Repo.init(
+    var repo = try jetquery.Repo(.postgresql).init(
         std.testing.allocator,
         .{
             .adapter = .{

@@ -20,6 +20,8 @@ pub const Max = i32;
 pub const Min = i32;
 pub const max_identifier_len = 63;
 
+const AdaptedRepo = jetquery.Repo(.postgresql);
+
 pub fn Aggregate(comptime context: jetquery.sql.FunctionContext) type {
     return switch (context) {
         .min => Min,
@@ -34,7 +36,7 @@ pub const Result = struct {
     result: *pg.Result,
     allocator: std.mem.Allocator,
     connection: *pg.Conn,
-    repo: *jetquery.Repo,
+    repo: *AdaptedRepo,
     caller_info: ?jetquery.debug.CallerInfo,
     duration: i64,
 
@@ -180,7 +182,7 @@ pub fn deinit(self: *PostgresqlAdapter) void {
 
 pub const Connection = struct {
     connection: *pg.Conn,
-    repo: *jetquery.Repo,
+    repo: *AdaptedRepo,
 
     pub fn execute(
         self: Connection,
@@ -235,11 +237,11 @@ pub const Connection = struct {
     }
 };
 
-pub fn connect(self: *PostgresqlAdapter, repo: *jetquery.Repo) !jetquery.Repo.Connection {
+pub fn connect(self: *PostgresqlAdapter, repo: *AdaptedRepo) !AdaptedRepo.Connection {
     return .{ .postgresql = .{ .connection = try self.pool.acquire(), .repo = repo } };
 }
 
-pub fn release(self: *PostgresqlAdapter, connection: jetquery.Repo.Connection) void {
+pub fn release(self: *PostgresqlAdapter, connection: AdaptedRepo.Connection) void {
     self.pool.release(connection.postgresql.connection);
 }
 
@@ -448,7 +450,7 @@ pub fn createIndexSql(
     comptime index_name: []const u8,
     comptime table_name: []const u8,
     comptime column_names: []const []const u8,
-    comptime options: jetquery.Repo.CreateIndexOptions,
+    comptime options: AdaptedRepo.CreateIndexOptions,
 ) *const [createIndexSqlSize(index_name, table_name, column_names, options)]u8 {
     comptime {
         var buf: [createIndexSqlSize(index_name, table_name, column_names, options)]u8 = undefined;
@@ -475,7 +477,7 @@ fn createIndexSqlSize(
     comptime index_name: []const u8,
     comptime table_name: []const u8,
     comptime column_names: []const []const u8,
-    comptime options: jetquery.Repo.CreateIndexOptions,
+    comptime options: AdaptedRepo.CreateIndexOptions,
 ) usize {
     comptime {
         var size: usize = 0;
@@ -506,7 +508,7 @@ pub fn referenceSql(comptime reference: jetquery.schema.Column.Reference) []cons
 pub fn reflect(
     self: *PostgresqlAdapter,
     allocator: std.mem.Allocator,
-    repo: *jetquery.Repo,
+    repo: *AdaptedRepo,
 ) !jetquery.Reflection {
     const tables = try self.reflectTables(allocator, repo);
     const columns = try self.reflectColumns(allocator, repo);
@@ -516,7 +518,7 @@ pub fn reflect(
 pub fn reflectTables(
     self: *PostgresqlAdapter,
     allocator: std.mem.Allocator,
-    repo: *jetquery.Repo,
+    repo: *AdaptedRepo,
 ) ![]const jetquery.Reflection.TableInfo {
     _ = self;
 
@@ -540,7 +542,7 @@ pub fn reflectTables(
 pub fn reflectColumns(
     self: *PostgresqlAdapter,
     allocator: std.mem.Allocator,
-    repo: *jetquery.Repo,
+    repo: *AdaptedRepo,
 ) ![]const jetquery.Reflection.ColumnInfo {
     _ = self;
 
