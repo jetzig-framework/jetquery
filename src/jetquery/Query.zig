@@ -12,8 +12,10 @@ const ResultContext = enum { one, many, none };
 
 /// Create a new query by passing a table definition.
 /// ```zig
-/// const query = Query(Schema, .Cat);
+/// const query = Query(.postgresql, Schema, .Cat);
 /// ```
+///
+/// For convenience, use `repo.Query(Schema, .Cat)`.
 pub fn Query(adapter: jetquery.adapters.Name, Schema: type, comptime table: anytype) type {
     const Adapter = jetquery.adapters.Type(adapter);
     const Table = switch (@typeInfo(@TypeOf(table))) {
@@ -35,11 +37,11 @@ pub fn Query(adapter: jetquery.adapters.Name, Schema: type, comptime table: anyt
 
         /// Create a `SELECT` query with the specified `columns`, e.g.:
         /// ```zig
-        /// Query(Schema, .MyTable).select(.{ .foo, .bar }).where(.{ .foo = "qux" });
+        /// Query(.postgresql, Schema, .MyTable).select(.{ .foo, .bar }).where(.{ .foo = "qux" });
         /// ```
         /// Pass an empty `columns` array to select all columns:
         /// ```zig
-        /// Query(Schema, .MyTable).select(.{}).where(.{ .foo = "qux" });
+        /// Query(.postgresql, Schema, .MyTable).select(.{}).where(.{ .foo = "qux" });
         /// ```
         pub fn select(
             comptime columns: anytype,
@@ -49,11 +51,11 @@ pub fn Query(adapter: jetquery.adapters.Name, Schema: type, comptime table: anyt
 
         /// Create a `SELECT` query defaulting to all columns selected:
         /// ```zig
-        /// Query(Schema, .MyTable).where(.{ .foo = "bar" })
+        /// Query(.postgresql, Schema, .MyTable).where(.{ .foo = "bar" })
         /// ```
         /// Short-hand for:
         /// ```zig
-        /// Query(Schema, .MyTable).select(.{}).where(.{ .foo = "bar" })
+        /// Query(.postgresql, Schema, .MyTable).select(.{}).where(.{ .foo = "bar" })
         /// ```
         pub fn where(args: anytype) @TypeOf(InitialStatement(Adapter, Schema, Table).where(args)) {
             return InitialStatement(Adapter, Schema, Table).where(args);
@@ -61,7 +63,7 @@ pub fn Query(adapter: jetquery.adapters.Name, Schema: type, comptime table: anyt
 
         /// Create an `UPDATE` query with the specified `args`, e.g.:
         /// ```zig
-        /// Query(Schema, .MyTable).update(.{ .foo = "bar", .baz = "qux" }).where(.{ .quux = "corge" });
+        /// Query(.postgresql, Schema, .MyTable).update(.{ .foo = "bar", .baz = "qux" }).where(.{ .quux = "corge" });
         /// ```
         pub fn update(args: anytype) @TypeOf(InitialStatement(Adapter, Schema, Table).update(args)) {
             return InitialStatement(Adapter, Schema, Table).update(args);
@@ -69,7 +71,7 @@ pub fn Query(adapter: jetquery.adapters.Name, Schema: type, comptime table: anyt
 
         /// Create an `INSERT` query with the specified `args`, e.g.:
         /// ```zig
-        /// Query(Schema, .MyTable).insert(.{ .foo = "bar", .baz = "qux" });
+        /// Query(.postgresql, Schema, .MyTable).insert(.{ .foo = "bar", .baz = "qux" });
         /// ```
         pub fn insert(args: anytype) @TypeOf(InitialStatement(Adapter, Schema, Table).insert(args)) {
             return InitialStatement(Adapter, Schema, Table).insert(args);
@@ -79,7 +81,7 @@ pub fn Query(adapter: jetquery.adapters.Name, Schema: type, comptime table: anyt
         /// `.where()` clause attached or it will not be executed. Use `deleteAll()` if you wish
         /// to delete all records.
         /// ```zig
-        /// Query(Schema, .MyTable).delete().where(.{ .foo = "bar" });
+        /// Query(.postgresql, Schema, .MyTable).delete().where(.{ .foo = "bar" });
         /// ```
         pub fn delete() @TypeOf(InitialStatement(Adapter, Schema, Table).delete()) {
             return InitialStatement(Adapter, Schema, Table).delete();
@@ -88,7 +90,7 @@ pub fn Query(adapter: jetquery.adapters.Name, Schema: type, comptime table: anyt
         /// Create a `DELETE` query that does not require a `WHERE` clause to delete all records
         /// from a table.
         /// ```zig
-        /// Query(Schema, .MyTable).deleteAll();
+        /// Query(.postgresql, Schema, .MyTable).deleteAll();
         /// ```
         pub fn deleteAll() @TypeOf(InitialStatement(Adapter, Schema, Table).deleteAll()) {
             return InitialStatement(Adapter, Schema, Table).deleteAll();
@@ -96,11 +98,11 @@ pub fn Query(adapter: jetquery.adapters.Name, Schema: type, comptime table: anyt
 
         /// Create a `SELECT` query to return a single row matching the given ID.
         /// ```zig
-        /// Query(Schema, .MyTable).find(1000);
+        /// Query(.postgresql, Schema, .MyTable).find(1000);
         /// ```
         /// Short-hand for:
         /// ```zig
-        /// Query(Schema, .MyTable).select(.{}).where(.{ .id = id }).limit(1);
+        /// Query(.postgresql, Schema, .MyTable).select(.{}).where(.{ .id = id }).limit(1);
         /// ```
         pub fn find(id: anytype) @TypeOf(InitialStatement(Adapter, Schema, Table).find(id)) {
             return InitialStatement(Adapter, Schema, Table).find(id);
@@ -108,11 +110,11 @@ pub fn Query(adapter: jetquery.adapters.Name, Schema: type, comptime table: anyt
 
         /// Create a `SELECT` query to return a single row matching the given args.
         /// ```zig
-        /// Query(Schema, .MyTable).findBy(.{ .foo = "bar", .baz = "qux" });
+        /// Query(.postgresql, Schema, .MyTable).findBy(.{ .foo = "bar", .baz = "qux" });
         /// ```
         /// Short-hand for:
         /// ```zig
-        /// Query(Schema, .MyTable).select(.{}).where(args).limit(1);
+        /// Query(.postgresql, Schema, .MyTable).select(.{}).where(args).limit(1);
         /// ```
         pub fn findBy(args: anytype) @TypeOf(InitialStatement(Adapter, Schema, Table).findBy(args)) {
             return InitialStatement(Adapter, Schema, Table).findBy(args);
@@ -143,18 +145,18 @@ pub fn Query(adapter: jetquery.adapters.Name, Schema: type, comptime table: anyt
         ///
         /// Select all columns and all rows of the association:
         /// ```zig
-        /// Query(Schema, .MyTable).include(.my_relation, .{});
+        /// Query(.postgresql, Schema, .MyTable).include(.my_relation, .{});
         /// ```
         /// Select specific columns:
         /// ```zig
-        /// Query(Schema, .MyTable).include(.my_relation, .{ .select = .{ .foo, .bar } });
+        /// Query(.postgresql, Schema, .MyTable).include(.my_relation, .{ .select = .{ .foo, .bar } });
         /// ```
         /// Pass `limit` to limit the number of rows fetched for `hasMany` relations. This option
         /// is not supported for `belongsTo` relations. Note that the limit applies to the sum of
         /// all related records from the base result set so this option is only recommended when
         /// using `find` and `findBy`, e.g. fetch 1 blog post and 10 associated comments.
         /// ```zig
-        /// Query(Schema, .MyTable).include(.my_relation, .{ .limit = 10 });
+        /// Query(.postgresql, Schema, .MyTable).include(.my_relation, .{ .limit = 10 });
         /// ```
         pub fn include(
             comptime name: jetquery.relation.RelationsEnum(Table),
@@ -167,11 +169,11 @@ pub fn Query(adapter: jetquery.adapters.Name, Schema: type, comptime table: anyt
         /// included in the result set. Use `include` to fetch associations, use `join` to filter
         /// results.
         /// ```zig
-        /// Query(Schema, .MyTable).join(.inner, .my_relation);
+        /// Query(.postgresql, Schema, .MyTable).join(.inner, .my_relation);
         /// ```
         /// If required, call `.select` after a `.join` to specify association columns to select:
         /// ```zig
-        /// Query(Schema, .MyTable).join(.inner, .my_relation)
+        /// Query(.postgresql, Schema, .MyTable).join(.inner, .my_relation)
         ///     .select(.{ .foo, .my_relation = .{ .bar, .baz } })
         /// ```
         pub fn join(
@@ -183,11 +185,11 @@ pub fn Query(adapter: jetquery.adapters.Name, Schema: type, comptime table: anyt
 
         /// Create a `SELECT DISTINCT` query with the specified `columns`, e.g.:
         /// ```zig
-        /// Query(Schema, .MyTable).distinct(.{ .foo, .bar }).where(.{ .foo = "qux" });
+        /// Query(.postgresql, Schema, .MyTable).distinct(.{ .foo, .bar }).where(.{ .foo = "qux" });
         /// ```
         ///
         /// ```zig
-        /// Query(Schema, .MyTable)
+        /// Query(.postgresql, Schema, .MyTable)
         ///     .include(.my_relation)
         ///     .distinct(.{ .foo, .{ .my_relation = .{.bar} });
         /// ```
@@ -199,7 +201,7 @@ pub fn Query(adapter: jetquery.adapters.Name, Schema: type, comptime table: anyt
 
         /// Apply a `GROUP BY` clause to the query, e.g.:
         /// ```zig
-        /// Query(Schema, .MyTable).groupBy(.{ .foo, .{ .my_relation = .{.bar} })
+        /// Query(.postgresql, Schema, .MyTable).groupBy(.{ .foo, .{ .my_relation = .{.bar} })
         /// ```
         pub fn groupBy(
             comptime args: anytype,
@@ -209,9 +211,9 @@ pub fn Query(adapter: jetquery.adapters.Name, Schema: type, comptime table: anyt
 
         /// Apply an `ORDER BY` clause to the query, e.g.:
         /// ```zig
-        /// Query(Schema, .MyTable).orderBy(.{.foo});
-        /// Query(Schema, .MyTable).orderBy(.{ .foo = .descending });
-        /// Query(Schema, .MyTable).orderBy(.{ .foo, .{ .my_relattion = .{.bar} } });
+        /// Query(.postgresql, Schema, .MyTable).orderBy(.{.foo});
+        /// Query(.postgresql, Schema, .MyTable).orderBy(.{ .foo = .descending });
+        /// Query(.postgresql, Schema, .MyTable).orderBy(.{ .foo, .{ .my_relattion = .{.bar} } });
         ///
         pub fn orderBy(
             comptime args: anytype,

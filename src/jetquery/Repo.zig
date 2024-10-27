@@ -14,6 +14,9 @@ pub fn Repo(adapter_name: jetquery.adapters.Name) type {
         eventCallback: *const fn (event: jetquery.events.Event) anyerror!void = jetquery.events.defaultCallback,
         connection: ?Connection = null,
         result: ?jetquery.Result = null,
+
+        // For convenience, allow users to call `repo.Query(...)` instead of
+        // `@TypeOf(repo).Query(...)`
         comptime Query: fn (type, anytype) type = _Query,
 
         pub const InitOptions = switch (adapter_name) {
@@ -92,7 +95,7 @@ pub fn Repo(adapter_name: jetquery.adapters.Name) type {
         /// Initialize a new repo using a config file. Config file build path is configured by build
         /// option `jetquery_config_path`.
         pub fn loadConfig(allocator: std.mem.Allocator, global_options: GlobalOptions) !AdaptedRepo {
-            const AdapterOptions = switch (jetquery.adapter) {
+            const AdapterOptions = switch (Adapter.name) {
                 .postgresql => jetquery.adapters.PostgresqlAdapter.Options,
                 .null => jetquery.adapters.NullAdapter.Options,
             };
@@ -107,7 +110,7 @@ pub fn Repo(adapter_name: jetquery.adapters.Name) type {
                     @compileError("Missing database configuration value for: `" ++ field.name ++ "`");
                 }
             }
-            var init_options: InitOptions = switch (jetquery.adapter) {
+            var init_options: InitOptions = switch (Adapter.name) {
                 .postgresql => .{ .adapter = options },
                 .null => .{ .adapter = .null },
             };
@@ -646,12 +649,16 @@ pub fn Repo(adapter_name: jetquery.adapters.Name) type {
             comptime column_names: []const []const u8,
             comptime options: CreateIndexOptions,
         ) !void {
-            const adapter = jetquery.adapters.Type(jetquery.adapter);
-            const index_name = comptime options.name orelse adapter.indexName(
+            const index_name = comptime options.name orelse Adapter.indexName(
                 table_name,
                 column_names,
             );
-            const sql = comptime adapter.createIndexSql(index_name, table_name, column_names, options);
+            const sql = comptime Adapter.createIndexSql(
+                index_name,
+                table_name,
+                column_names,
+                options,
+            );
             const connection = try self.connectManaged();
             try connection.executeVoid(
                 sql,

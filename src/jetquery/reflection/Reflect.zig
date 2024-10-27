@@ -4,50 +4,54 @@ const jetquery = @import("jetquery");
 
 const util = @import("util.zig");
 
-const Reflect = @This();
+pub fn Reflect(adapter_name: jetquery.adapters.Name) type {
+    return struct {
+        const Self = @This();
+        const AdaptedRepo = jetquery.Repo(adapter_name);
+        allocator: std.mem.Allocator,
+        repo: *AdaptedRepo,
 
-allocator: std.mem.Allocator,
-repo: *jetquery.Repo(jetquery.adapter),
-
-pub fn init(allocator: std.mem.Allocator, repo: *jetquery.Repo(jetquery.adapter)) Reflect {
-    return .{ .repo = repo, .allocator = allocator };
-}
-
-pub fn generateSchema(self: Reflect, comptime schema: type) ![]const u8 {
-    var arena = std.heap.ArenaAllocator.init(self.allocator);
-    defer arena.deinit();
-
-    const allocator = arena.allocator();
-
-    var buf = std.ArrayList(u8).init(allocator);
-    defer buf.deinit();
-
-    const writer = buf.writer();
-
-    try writer.print(
-        \\const jetquery = @import("jetquery");
-        \\
-    , .{});
-
-    const reflection = try self.repo.adapter.reflect(allocator, self.repo);
-    const map = try reflection.tableMap(allocator);
-    var written = std.BufSet.init(allocator);
-
-    // Write tables already defined in the schema first ...
-    inline for (comptime std.meta.declarations(schema)) |decl| {
-        if (map.get(@field(schema, decl.name).name)) |table| {
-            try writeTable(allocator, schema, reflection, table, writer);
-            try written.insert(table.name);
+        pub fn init(allocator: std.mem.Allocator, repo: *AdaptedRepo) Self {
+            return .{ .repo = repo, .allocator = allocator };
         }
-    }
 
-    // ... then write any remaining tables to preserve schema order if edited by user.
-    for (reflection.tables) |table| {
-        if (written.contains(table.name)) continue;
-        try writeTable(allocator, schema, reflection, table, writer);
-    }
+        pub fn generateSchema(self: Self, comptime schema: type) ![]const u8 {
+            var arena = std.heap.ArenaAllocator.init(self.allocator);
+            defer arena.deinit();
 
-    return try self.allocator.dupe(u8, try validateAndFormat(allocator, buf.items));
+            const allocator = arena.allocator();
+
+            var buf = std.ArrayList(u8).init(allocator);
+            defer buf.deinit();
+
+            const writer = buf.writer();
+
+            try writer.print(
+                \\const jetquery = @import("jetquery");
+                \\
+            , .{});
+
+            const reflection = try self.repo.adapter.reflect(allocator, self.repo);
+            const map = try reflection.tableMap(allocator);
+            var written = std.BufSet.init(allocator);
+
+            // Write tables already defined in the schema first ...
+            inline for (comptime std.meta.declarations(schema)) |decl| {
+                if (map.get(@field(schema, decl.name).name)) |table| {
+                    try writeTable(allocator, schema, reflection, table, writer);
+                    try written.insert(table.name);
+                }
+            }
+
+            // ... then write any remaining tables to preserve schema order if edited by user.
+            for (reflection.tables) |table| {
+                if (written.contains(table.name)) continue;
+                try writeTable(allocator, schema, reflection, table, writer);
+            }
+
+            return try self.allocator.dupe(u8, try validateAndFormat(allocator, buf.items));
+        }
+    };
 }
 
 fn writeTable(
@@ -343,7 +347,7 @@ test "reflect" {
         );
     };
 
-    const reflect = init(std.testing.allocator, &repo);
+    const reflect = Reflect(.postgresql).init(std.testing.allocator, &repo);
     const schema = try reflect.generateSchema(Schema);
     defer std.testing.allocator.free(schema);
     try std.testing.expectEqualStrings(

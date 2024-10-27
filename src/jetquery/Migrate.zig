@@ -6,14 +6,6 @@ const migrations = @import("migrations").migrations;
 const Migration = @import("migrations").Migration;
 const jetquery = @import("jetquery");
 
-const Migrate = @This();
-
-repo: *jetquery.Repo(jetquery.adapter),
-
-pub fn init(repo: *jetquery.Repo(jetquery.adapter)) Migrate {
-    return .{ .repo = repo };
-}
-
 const Schema = struct {
     pub const Migrations = jetquery.Table(
         @This(),
@@ -27,79 +19,92 @@ const Schema = struct {
     );
 };
 
-/// Run migrations. Create `jetquery_migrations` table if it does not exist. Skip migrations
-/// already present in `jetquery_migrations`.
-pub fn run(self: Migrate) !void {
-    try self.createMigrationsTable();
+pub fn Migrate(adapter_name: jetquery.adapters.Name) type {
+    return struct {
+        const Self = @This();
+        const AdaptedRepo = jetquery.Repo(adapter_name);
 
-    try self.repo.eventCallback(.{
-        .context = .migration,
-        .message = "Running migrations.",
-    });
+        repo: *AdaptedRepo,
 
-    inline for (migrations) |migration| {
-        if (!try self.isMigrated(migration)) {
-            try self.repo.eventCallback(.{
-                .context = .migration,
-                .message = "Executing migration: " ++ migration.name,
-            });
+        pub fn init(repo: *AdaptedRepo) Self {
+            return .{ .repo = repo };
+        }
 
-            try self.repo.Query(Schema, .Migrations)
-                .insert(.{ .version = migration.version, .name = migration.name })
-                .execute(self.repo);
-
-            try migration.upFn(self.repo);
+        /// Run migrations. Create `jetquery_migrations` table if it does not exist. Skip migrations
+        /// already present in `jetquery_migrations`.
+        pub fn run(self: Self) !void {
+            try self.createMigrationsTable();
 
             try self.repo.eventCallback(.{
                 .context = .migration,
-                .message = "Completed migration: " ++ migration.name,
+                .message = "Running migrations.",
+            });
+
+            inline for (migrations) |migration| {
+                if (!try self.isMigrated(migration)) {
+                    try self.repo.eventCallback(.{
+                        .context = .migration,
+                        .message = "Executing migration: " ++ migration.name,
+                    });
+
+                    try self.repo.Query(Schema, .Migrations)
+                        .insert(.{ .version = migration.version, .name = migration.name })
+                        .execute(self.repo);
+
+                    try migration.upFn(self.repo);
+
+                    try self.repo.eventCallback(.{
+                        .context = .migration,
+                        .message = "Completed migration: " ++ migration.name,
+                    });
+                }
+            }
+
+            try self.repo.eventCallback(.{
+                .context = .migration,
+                .message = "Migrations completed.",
             });
         }
-    }
 
-    try self.repo.eventCallback(.{
-        .context = .migration,
-        .message = "Migrations completed.",
-    });
-}
+        pub fn rollback(self: Self) !void {
+            if (migrations.len == 0) return;
 
-pub fn rollback(self: Migrate) !void {
-    if (migrations.len == 0) return;
+            const last_migration = try self.repo.Query(Schema, .Migrations)
+                .orderBy(.{ .version = .desc })
+                .first(self.repo) orelse return;
+            defer self.repo.free(last_migration);
 
-    const last_migration = try self.repo.Query(Schema, .Migrations)
-        .orderBy(.{ .version = .desc })
-        .first(self.repo) orelse return;
-    defer self.repo.free(last_migration);
-
-    var applied = false;
-    inline for (migrations) |migration| {
-        if (!applied and std.mem.eql(u8, migration.version, last_migration.version)) {
-            try migration.downFn(self.repo);
-            try self.repo.delete(last_migration);
-            // Just in case we somehow end up with two migrations with the same version (e.g.
-            // user manually copied a file), we want to only apply one of them:
-            applied = true;
+            var applied = false;
+            inline for (migrations) |migration| {
+                if (!applied and std.mem.eql(u8, migration.version, last_migration.version)) {
+                    try migration.downFn(self.repo);
+                    try self.repo.delete(last_migration);
+                    // Just in case we somehow end up with two migrations with the same version (e.g.
+                    // user manually copied a file), we want to only apply one of them:
+                    applied = true;
+                }
+            }
         }
-    }
-}
 
-fn isMigrated(self: Migrate, migration: Migration) !bool {
-    const result = try self.repo.Query(Schema, .Migrations)
-        .findBy(.{ .version = migration.version }).execute(self.repo);
+        fn isMigrated(self: Self, migration: Migration) !bool {
+            const result = try self.repo.Query(Schema, .Migrations)
+                .findBy(.{ .version = migration.version }).execute(self.repo);
 
-    return result != null;
-}
+            return result != null;
+        }
 
-fn createMigrationsTable(self: Migrate) !void {
-    try self.repo.createTable(
-        "jetquery_migrations",
-        &.{
-            jetquery.schema.table.primaryKey("version", .{ .type = .string }),
-            jetquery.schema.table.column("name", .string, .{ .not_null = true, .length = 1024 }),
-            jetquery.schema.table.timestamps(.{ .updated_at = false }),
-        },
-        .{ .if_not_exists = true },
-    );
+        fn createMigrationsTable(self: Self) !void {
+            try self.repo.createTable(
+                "jetquery_migrations",
+                &.{
+                    jetquery.schema.table.primaryKey("version", .{ .type = .string }),
+                    jetquery.schema.table.column("name", .string, .{ .not_null = true, .length = 1024 }),
+                    jetquery.schema.table.timestamps(.{ .updated_at = false }),
+                },
+                .{ .if_not_exists = true },
+            );
+        }
+    };
 }
 
 test "migrate" {
@@ -118,7 +123,7 @@ test "migrate" {
     );
     defer repo.deinit();
 
-    const migrate = Migrate.init(&repo);
+    const migrate = Migrate(.postgresql).init(&repo);
     try migrate.run();
 
     const migration = try repo.Query(Schema, .Migrations)

@@ -24,9 +24,6 @@ pub const debug = @import("jetquery/debug.zig");
 pub const Reflection = @import("jetquery/reflection/Reflection.zig");
 pub const util = @import("jetquery/util.zig");
 
-pub const adapter = std.enums.nameCast(adapters.Name, config.database.adapter);
-pub const timestamp_updated_column_name = "updated_at";
-pub const timestamp_created_column_name = "created_at";
 pub const original_prefix = "__original_";
 
 // Can be switched to `std.meta.DeclEnum` if https://github.com/ziglang/zig/pull/21331 is merged
