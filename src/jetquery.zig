@@ -55,6 +55,8 @@ pub fn DeclEnum(T: type) type {
     }
 }
 
+const TestAdapter: adapters.Name = .postgresql;
+
 test {
     std.testing.refAllDecls(@This());
 }
@@ -63,7 +65,7 @@ test "select" {
     const Schema = struct {
         pub const Cat = Table(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});
     };
-    const query = Query(Schema, .Cat).select(.{ .name, .paws });
+    const query = Query(TestAdapter, Schema, .Cat).select(.{ .name, .paws });
 
     try std.testing.expectEqualStrings(
         \\SELECT "cats"."name", "cats"."paws" FROM "cats" WHERE (1 = 1)
@@ -74,7 +76,7 @@ test "select (all)" {
     const Schema = struct {
         pub const Cat = Table(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});
     };
-    const query = Query(Schema, .Cat).select(.{});
+    const query = Query(TestAdapter, Schema, .Cat).select(.{});
 
     try std.testing.expectEqualStrings(
         \\SELECT "cats"."name", "cats"."paws" FROM "cats" WHERE (1 = 1)
@@ -87,7 +89,7 @@ test "select (with `where`)" {
     };
 
     const paws = 4;
-    const query = Query(Schema, .Cat)
+    const query = Query(TestAdapter, Schema, .Cat)
         .select(.{ .name, .paws })
         .where(.{ .name = "bar", .paws = paws });
 
@@ -102,7 +104,7 @@ test "where" {
     };
 
     const paws = 4;
-    const query = Query(Schema, .Cat)
+    const query = Query(TestAdapter, Schema, .Cat)
         .where(.{ .name = "bar", .paws = paws });
 
     try std.testing.expectEqualStrings(
@@ -115,7 +117,7 @@ test "where (multiple)" {
         pub const Cat = Table(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});
     };
 
-    const query = Query(Schema, .Cat)
+    const query = Query(TestAdapter, Schema, .Cat)
         .select(.{ .name, .paws })
         .where(.{ .name = "bar" })
         .where(.{ .paws = 4 });
@@ -129,7 +131,7 @@ test "limit" {
     const Schema = struct {
         pub const Cat = Table(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});
     };
-    const query = Query(Schema, .Cat)
+    const query = Query(TestAdapter, Schema, .Cat)
         .select(.{ .name, .paws })
         .limit(100);
 
@@ -142,7 +144,7 @@ test "offset" {
     const Schema = struct {
         pub const Cat = Table(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});
     };
-    const query = Query(Schema, .Cat)
+    const query = Query(TestAdapter, Schema, .Cat)
         .select(.{ .name, .paws })
         .limit(100)
         .offset(50);
@@ -156,7 +158,7 @@ test "order by" {
     const Schema = struct {
         pub const Cat = Table(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});
     };
-    const query = Query(Schema, .Cat)
+    const query = Query(TestAdapter, Schema, .Cat)
         .select(.{ .name, .paws })
         .orderBy(.{ .name = .ascending });
 
@@ -169,7 +171,7 @@ test "order by (aliased desc = descending)" {
     const Schema = struct {
         pub const Cat = Table(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});
     };
-    const query = Query(Schema, .Cat)
+    const query = Query(TestAdapter, Schema, .Cat)
         .select(.{ .name, .paws })
         .orderBy(.{ .name = .desc });
 
@@ -182,7 +184,7 @@ test "order by (aliased asc = ascending)" {
     const Schema = struct {
         pub const Cat = Table(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});
     };
-    const query = Query(Schema, .Cat)
+    const query = Query(TestAdapter, Schema, .Cat)
         .select(.{ .name, .paws })
         .orderBy(.{ .name = .asc });
 
@@ -195,7 +197,7 @@ test "order by (short-hand)" {
     const Schema = struct {
         pub const Cat = Table(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});
     };
-    const query = Query(Schema, .Cat)
+    const query = Query(TestAdapter, Schema, .Cat)
         .select(.{ .name, .paws })
         .orderBy(.name);
 
@@ -221,7 +223,7 @@ test "order by with relations (short-hand)" {
         );
     };
 
-    const query = Query(Schema, .Human)
+    const query = Query(TestAdapter, Schema, .Human)
         .join(.inner, .cat)
         .orderBy(.{ .cat = .name });
 
@@ -249,7 +251,7 @@ test "order by with relations (explicit form)" {
         );
     };
 
-    const query = Query(Schema, .Human)
+    const query = Query(TestAdapter, Schema, .Human)
         .join(.inner, .cat)
         .orderBy(.{ .cat = .{ .name = .descending } });
 
@@ -289,7 +291,7 @@ test "order by with relations and base table, short + explicit forms" {
         );
     };
 
-    const query = Query(Schema, .Human)
+    const query = Query(TestAdapter, Schema, .Human)
         .join(.inner, .cat)
         .join(.inner, .family)
         .orderBy(.{
@@ -309,7 +311,7 @@ test "insert" {
     const Schema = struct {
         pub const Cat = Table(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});
     };
-    const query = Query(Schema, .Cat)
+    const query = Query(TestAdapter, Schema, .Cat)
         .insert(.{ .name = "Hercules", .paws = 4 });
 
     try std.testing.expectEqualStrings(
@@ -321,7 +323,7 @@ test "update" {
     const Schema = struct {
         pub const Cat = Table(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});
     };
-    const query = Query(Schema, .Cat)
+    const query = Query(TestAdapter, Schema, .Cat)
         .update(.{ .name = "Heracles", .paws = 2 })
         .where(.{ .name = "Hercules" });
 
@@ -336,7 +338,7 @@ test "delete" {
     const Schema = struct {
         pub const Cat = Table(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});
     };
-    const query = Query(Schema, .Cat)
+    const query = Query(TestAdapter, Schema, .Cat)
         .delete()
         .where(.{ .name = "Hercules" });
 
@@ -349,7 +351,7 @@ test "delete (without where clause)" {
     const Schema = struct {
         pub const Cat = Table(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});
     };
-    const query = Query(Schema, .Cat).delete();
+    const query = Query(TestAdapter, Schema, .Cat).delete();
 
     try std.testing.expectError(error.JetQueryUnsafeDelete, query.validateDelete());
 }
@@ -358,7 +360,7 @@ test "deleteAll" {
     const Schema = struct {
         pub const Cat = Table(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});
     };
-    const query = Query(Schema, .Cat)
+    const query = Query(TestAdapter, Schema, .Cat)
         .deleteAll();
 
     try std.testing.expectEqualStrings(
@@ -370,7 +372,7 @@ test "find" {
     const Schema = struct {
         pub const Cat = Table(@This(), "cats", struct { id: i32, name: []const u8, paws: i32 }, .{});
     };
-    const query = Query(Schema, .Cat).find(1000);
+    const query = Query(TestAdapter, Schema, .Cat).find(1000);
 
     try std.testing.expectEqualStrings(
         \\SELECT "cats"."id", "cats"."name", "cats"."paws" FROM "cats" WHERE "cats"."id" = $1 ORDER BY "cats"."id" ASC LIMIT $2
@@ -381,7 +383,7 @@ test "find (with coerced id)" {
     const Schema = struct {
         pub const Cat = Table(@This(), "cats", struct { id: i32, name: []const u8, paws: i32 }, .{});
     };
-    const query = Query(Schema, .Cat).find("1000");
+    const query = Query(TestAdapter, Schema, .Cat).find("1000");
 
     try std.testing.expectEqualStrings(
         \\SELECT "cats"."id", "cats"."name", "cats"."paws" FROM "cats" WHERE "cats"."id" = $1 ORDER BY "cats"."id" ASC LIMIT $2
@@ -392,7 +394,7 @@ test "findBy" {
     const Schema = struct {
         pub const Cat = Table(@This(), "cats", struct { id: i32, name: []const u8, paws: i32 }, .{});
     };
-    const query = Query(Schema, .Cat).findBy(.{ .name = "Hercules", .paws = 4 });
+    const query = Query(TestAdapter, Schema, .Cat).findBy(.{ .name = "Hercules", .paws = 4 });
 
     try std.testing.expectEqualStrings(
         \\SELECT "cats"."id", "cats"."name", "cats"."paws" FROM "cats" WHERE ("cats"."name" = $1 AND "cats"."paws" = $2) ORDER BY "cats"."id" ASC LIMIT $3
@@ -403,7 +405,7 @@ test "count()" {
     const Schema = struct {
         pub const Cat = Table(@This(), "cats", struct { id: i32, name: []const u8, paws: i32 }, .{});
     };
-    const query = Query(Schema, .Cat).where(.{ .name = "Hercules", .paws = 4 }).count();
+    const query = Query(TestAdapter, Schema, .Cat).where(.{ .name = "Hercules", .paws = 4 }).count();
 
     try std.testing.expectEqualStrings(
         \\SELECT COUNT(*) FROM "cats" WHERE ("cats"."name" = $1 AND "cats"."paws" = $2)
@@ -414,7 +416,7 @@ test "distinct().count()" {
     const Schema = struct {
         pub const Cat = Table(@This(), "cats", struct { id: i32, name: []const u8, paws: i32 }, .{});
     };
-    const query = Query(Schema, .Cat).where(.{ .name = "Hercules", .paws = 4 }).distinct(.{.name}).count();
+    const query = Query(TestAdapter, Schema, .Cat).where(.{ .name = "Hercules", .paws = 4 }).distinct(.{.name}).count();
 
     try std.testing.expectEqualStrings(
         \\SELECT COUNT(DISTINCT("cats"."name")) FROM "cats" WHERE ("cats"."name" = $1 AND "cats"."paws" = $2)
@@ -433,7 +435,7 @@ test "nested distinct().count()" {
             },
         );
     };
-    const query = Query(Schema, .Human).include(.cat, .{}).where(.{ .name = "Bob" }).distinct(.{ .name, .{ .cat = .{.name} } }).count();
+    const query = Query(TestAdapter, Schema, .Human).include(.cat, .{}).where(.{ .name = "Bob" }).distinct(.{ .name, .{ .cat = .{.name} } }).count();
 
     try std.testing.expectEqualStrings(
         \\SELECT COUNT(DISTINCT("humans"."name", "cats"."name")) FROM "humans" INNER JOIN "cats" ON "humans"."cat_id" = "cats"."id" WHERE "humans"."name" = $1
@@ -444,7 +446,7 @@ test "combined" {
     const Schema = struct {
         pub const Cat = Table(@This(), "cats", struct { id: i32, name: []const u8, paws: i32 }, .{});
     };
-    const query = Query(Schema, .Cat)
+    const query = Query(TestAdapter, Schema, .Cat)
         .select(.{ .name, .paws })
         .where(.{ .name = "Hercules" })
         .limit(10)
@@ -464,7 +466,7 @@ test "runtime field values" {
     const paws: u16 = std.crypto.random.int(u8);
     var heracles_buf: [8]u8 = undefined;
     const heracles = try std.fmt.bufPrint(&heracles_buf, "{s}", .{"Heracles"});
-    const query = Query(Schema, .Cat)
+    const query = Query(TestAdapter, Schema, .Cat)
         .update(.{ .name = heracles, .paws = paws + 2 })
         .where(.{ .name = hercules, .paws = paws });
     const values = query.values();
@@ -477,7 +479,7 @@ test "boolean coercion" {
     const Schema = struct {
         pub const Cat = Table(@This(), "cats", struct { name: []const u8, intelligent: bool }, .{});
     };
-    const query = Query(Schema, .Cat)
+    const query = Query(TestAdapter, Schema, .Cat)
         .select(.{.name})
         .where(.{ .intelligent = "1" });
 
@@ -488,7 +490,7 @@ test "integer coercion" {
     const Schema = struct {
         pub const Cat = Table(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});
     };
-    const query = Query(Schema, .Cat)
+    const query = Query(TestAdapter, Schema, .Cat)
         .select(.{.name})
         .where(.{ .paws = "4" });
 
@@ -499,7 +501,7 @@ test "float coercion" {
     const Schema = struct {
         pub const Cat = Table(@This(), "cats", struct { name: []const u8, intelligence: f64 }, .{});
     };
-    const query = Query(Schema, .Cat)
+    const query = Query(TestAdapter, Schema, .Cat)
         .select(.{.name})
         .where(.{ .intelligence = "10.2" });
 
@@ -545,7 +547,7 @@ test "toJetQuery()" {
     const paws = Paws{};
     const color = Color{};
 
-    const query = Query(Schema, .Cat)
+    const query = Query(TestAdapter, Schema, .Cat)
         .insert(.{ .name = name, .paws = &paws, .color = color });
     try std.testing.expectEqualStrings(
         \\INSERT INTO "cats" ("name", "paws", "color") VALUES ($1, $2, $3)
@@ -559,7 +561,7 @@ test "failed coercion (bool)" {
     const Schema = struct {
         pub const Cat = Table(@This(), "cats", struct { name: []const u8, intelligent: bool }, .{});
     };
-    const query = Query(Schema, .Cat)
+    const query = Query(TestAdapter, Schema, .Cat)
         .select(.{.name})
         .where(.{ .intelligent = "not a bool" });
 
@@ -570,7 +572,7 @@ test "failed coercion (int)" {
     const Schema = struct {
         pub const Cat = Table(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});
     };
-    const query = Query(Schema, .Cat)
+    const query = Query(TestAdapter, Schema, .Cat)
         .select(.{.name})
         .where(.{ .paws = "not an int" });
 
@@ -581,7 +583,7 @@ test "failed coercion (float)" {
     const Schema = struct {
         pub const Cat = Table(@This(), "cats", struct { name: []const u8, intelligence: f64 }, .{});
     };
-    const query = Query(Schema, .Cat)
+    const query = Query(TestAdapter, Schema, .Cat)
         .select(.{.name})
         .where(.{ .intelligence = "not a float" });
 
@@ -597,7 +599,7 @@ test "timestamps (create)" {
             .{},
         );
     };
-    const query = Query(Schema, .Cat)
+    const query = Query(TestAdapter, Schema, .Cat)
         .insert(.{ .name = "Hercules", .paws = 4 });
 
     try std.testing.expectEqualStrings(
@@ -614,7 +616,7 @@ test "timestamps (update)" {
             .{},
         );
     };
-    const query = Query(Schema, .Cat)
+    const query = Query(TestAdapter, Schema, .Cat)
         .update(.{ .name = "Heracles", .paws = 2 })
         .where(.{ .name = "Hercules" });
 
@@ -641,7 +643,7 @@ test "belongsTo" {
             .{ .relations = .{} },
         );
     };
-    const query = Query(Schema, .Human)
+    const query = Query(TestAdapter, Schema, .Human)
         .include(.cat, .{})
         .findBy(.{ .name = "Bob" });
 
@@ -680,7 +682,7 @@ test "belongsTo (multiple)" {
             .{},
         );
     };
-    const query = Query(Schema, .Human)
+    const query = Query(TestAdapter, Schema, .Human)
         .include(.cat, .{})
         .include(.family, .{})
         .findBy(.{ .name = "Bob" });
@@ -720,7 +722,7 @@ test "belongsTo (with specified columns)" {
             .{},
         );
     };
-    const query = Query(Schema, .Human)
+    const query = Query(TestAdapter, Schema, .Human)
         .include(.cat, .{ .select = .{ .name, .paws } })
         .include(.family, .{ .select = .{.name} })
         .select(.{.name})
@@ -749,7 +751,7 @@ test "hasMany" {
             .{ .relations = .{ .humans = relation.hasMany(.Human, .{}) } },
         );
     };
-    const query = Query(Schema, .Cat)
+    const query = Query(TestAdapter, Schema, .Cat)
         .include(.humans, .{})
         .findBy(.{ .name = "Hercules" });
 
@@ -796,7 +798,7 @@ test "nested where" {
             .{},
         );
     };
-    const query = Query(Schema, .Human)
+    const query = Query(TestAdapter, Schema, .Human)
         .include(.cat, .{})
         .include(.family, .{})
         .where(.{
@@ -840,7 +842,7 @@ test "operator logic" {
             .{},
         );
     };
-    const query = Query(Schema, .Human)
+    const query = Query(TestAdapter, Schema, .Human)
         .include(.cat, .{})
         .include(.family, .{})
         .where(.{
@@ -875,7 +877,7 @@ test "slice of []const u8 in whereclause" {
     try array.append("Bob");
     try array.append("Jane");
 
-    const query = Query(Schema, .Human).where(.{ .name = array.items });
+    const query = Query(TestAdapter, Schema, .Human).where(.{ .name = array.items });
     try std.testing.expectEqualStrings(
         \\SELECT "humans"."name" FROM "humans" WHERE "humans"."name" = ANY ($1)
     , query.sql);
@@ -896,7 +898,7 @@ test "slice of int in whereclause" {
     try array.append(2);
     try array.append(1231231238128381283);
 
-    const query = Query(Schema, .Human).where(.{ .cats = array.items });
+    const query = Query(TestAdapter, Schema, .Human).where(.{ .cats = array.items });
     try std.testing.expectEqualStrings(
         \\SELECT "humans"."cats" FROM "humans" WHERE "humans"."cats" = ANY ($1)
     , query.sql);
@@ -917,7 +919,7 @@ test "slice of float in whereclause" {
     try array.append(3.1415926535897932);
     try array.append(2.7182818284590452);
 
-    const query = Query(Schema, .Human).where(.{ .favorite_number = array.items });
+    const query = Query(TestAdapter, Schema, .Human).where(.{ .favorite_number = array.items });
     try std.testing.expectEqualStrings(
         \\SELECT "humans"."favorite_number" FROM "humans" WHERE "humans"."favorite_number" = ANY ($1)
     , query.sql);
@@ -938,7 +940,7 @@ test "slice of bool in whereclause" {
     try array.append(true);
     try array.append(false);
 
-    const query = Query(Schema, .Human).where(.{ .has_cats = array.items });
+    const query = Query(TestAdapter, Schema, .Human).where(.{ .has_cats = array.items });
     try std.testing.expectEqualStrings(
         \\SELECT "humans"."has_cats" FROM "humans" WHERE "humans"."has_cats" = ANY ($1)
     , query.sql);
@@ -954,7 +956,7 @@ test "null in whereclause" {
         );
     };
 
-    const query = Query(Schema, .Human).where(.{ .{ .name = null }, .OR, .{ .name = "baz" } });
+    const query = Query(TestAdapter, Schema, .Human).where(.{ .{ .name = null }, .OR, .{ .name = "baz" } });
     try std.testing.expectEqualStrings(
         \\SELECT "humans"."name" FROM "humans" WHERE ("humans"."name" IS NULL OR "humans"."name" = $1)
     , query.sql);
@@ -970,7 +972,7 @@ test "groupBy" {
         );
     };
 
-    const query = Query(Schema, .Cat).groupBy(.{.name});
+    const query = Query(TestAdapter, Schema, .Cat).groupBy(.{.name});
     try std.testing.expectEqualStrings(
         \\SELECT FROM "cats" WHERE (1 = 1) GROUP BY "cats"."name"
     , query.sql);
@@ -986,7 +988,7 @@ test "aggregate max()" {
         );
     };
 
-    const query = Query(Schema, .Cat)
+    const query = Query(TestAdapter, Schema, .Cat)
         .select(.{ .name, sql.max(.paws) })
         .groupBy(.{.name});
     try std.testing.expectEqualStrings(
@@ -1004,7 +1006,7 @@ test "aggregate min()" {
         );
     };
 
-    const query = Query(Schema, .Cat)
+    const query = Query(TestAdapter, Schema, .Cat)
         .select(.{ .name, sql.min(.paws) })
         .groupBy(.{.name});
     try std.testing.expectEqualStrings(
@@ -1022,7 +1024,7 @@ test "aggregate count()" {
         );
     };
 
-    const query = Query(Schema, .Cat)
+    const query = Query(TestAdapter, Schema, .Cat)
         .select(.{ .name, sql.count(.paws) })
         .groupBy(.{.name});
     try std.testing.expectEqualStrings(
@@ -1040,7 +1042,7 @@ test "aggregate avg()" {
         );
     };
 
-    const query = Query(Schema, .Cat)
+    const query = Query(TestAdapter, Schema, .Cat)
         .select(.{ .name, sql.avg(.paws) })
         .groupBy(.{.name});
     try std.testing.expectEqualStrings(
@@ -1058,7 +1060,7 @@ test "aggregate sum()" {
         );
     };
 
-    const query = Query(Schema, .Cat)
+    const query = Query(TestAdapter, Schema, .Cat)
         .select(.{ .name, sql.sum(.paws) })
         .groupBy(.{.name});
     try std.testing.expectEqualStrings(
@@ -1076,7 +1078,7 @@ test "like/ilike" {
         );
     };
 
-    const query = Query(Schema, .Cat)
+    const query = Query(TestAdapter, Schema, .Cat)
         .select(.{.name})
         .where(.{ .{ .name, .like, "Herc%" }, .OR, .{ .name, .ilike, "princ%" } });
     try std.testing.expectEqualStrings(
@@ -1113,7 +1115,7 @@ test "inner join" {
         );
     };
 
-    const query = Query(Schema, .Human)
+    const query = Query(TestAdapter, Schema, .Human)
         .join(.inner, .cat)
         .join(.inner, .computers)
         .select(.{.name});
@@ -1151,7 +1153,7 @@ test "outer join" {
         );
     };
 
-    const query = Query(Schema, .Human)
+    const query = Query(TestAdapter, Schema, .Human)
         .join(.outer, .cat)
         .join(.outer, .computers)
         .select(.{.name});
@@ -1189,7 +1191,7 @@ test "inner and outer join" {
         );
     };
 
-    const query = Query(Schema, .Human)
+    const query = Query(TestAdapter, Schema, .Human)
         .join(.inner, .cat)
         .join(.outer, .family)
         .select(.{.name});
@@ -1227,7 +1229,7 @@ test "inner and outer join with select on relation columns" {
         );
     };
 
-    const query = Query(Schema, .Human)
+    const query = Query(TestAdapter, Schema, .Human)
         .join(.inner, .cat)
         .join(.outer, .family)
         .select(.{ .name, .{ .family = .{.id}, .cat = .{.paws} } });
@@ -1245,7 +1247,7 @@ test "default order by (no order clauses, default primary key present)" {
             .{},
         );
     };
-    const query = Query(Schema, .Human).select(.{});
+    const query = Query(TestAdapter, Schema, .Human).select(.{});
     try std.testing.expectEqualStrings(
         \\SELECT "humans"."id" FROM "humans" WHERE (1 = 1) ORDER BY "humans"."id" ASC
     , query.sql);
@@ -1260,7 +1262,7 @@ test "default order by (no order clauses, default primary key not present)" {
             .{},
         );
     };
-    const query = Query(Schema, .Human).select(.{});
+    const query = Query(TestAdapter, Schema, .Human).select(.{});
     try std.testing.expectEqualStrings(
         \\SELECT "humans"."name" FROM "humans" WHERE (1 = 1)
     , query.sql);
@@ -1275,7 +1277,7 @@ test "default order by (no order clauses, custom primary key present)" {
             .{ .primary_key = "name" },
         );
     };
-    const query = Query(Schema, .Human).select(.{});
+    const query = Query(TestAdapter, Schema, .Human).select(.{});
     try std.testing.expectEqualStrings(
         \\SELECT "humans"."name" FROM "humans" WHERE (1 = 1) ORDER BY "humans"."name" ASC
     , query.sql);
@@ -1290,7 +1292,7 @@ test "default order by (no order clauses, custom primary key not present)" {
             .{ .primary_key = "name" },
         );
     };
-    const query = Query(Schema, .Human).select(.{});
+    const query = Query(TestAdapter, Schema, .Human).select(.{});
     try std.testing.expectEqualStrings(
         \\SELECT "humans"."id" FROM "humans" WHERE (1 = 1)
     , query.sql);
@@ -1308,7 +1310,7 @@ test "raw whereclause" {
     const qux = std.crypto.random.int(u8);
     var buf: [4]u8 = undefined;
     const quux = try std.fmt.bufPrint(&buf, "{s}", .{"quux"});
-    const query = Query(Schema, .Human).where(.{
+    const query = Query(TestAdapter, Schema, .Human).where(.{
         "foo = ? and bar = ? or baz = ? and qux = ? and quux = ? and a = ? and b = ? and c = ? and d = ? and e = ? and f = ? and g = ? and h = ? and i = ? and j = ? and k = ?",
         .{ "qux", 100, false, qux, quux, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 },
     });
@@ -1326,7 +1328,7 @@ test "raw select column" {
             .{},
         );
     };
-    const query = Query(Schema, .Human).select(.{
+    const query = Query(TestAdapter, Schema, .Human).select(.{
         sql.column(u32, "foo(bar + baz)").as(.foo),
         sql.column([]const u8, "qux(quux, corge)").as(.bar),
     });

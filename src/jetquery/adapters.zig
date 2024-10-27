@@ -22,15 +22,17 @@ pub fn Adapter(comptime adapter_name: Name) type {
         const Self = @This();
         const AdaptedRepo = jetquery.Repo(adapter_name);
 
+        pub const name = adapter_name;
+
         pub fn connect(self: *Self, repo: *AdaptedRepo) !AdaptedRepo.Connection {
             return switch (comptime adapter_name) {
-                inline else => |name| try @field(self, @tagName(name)).connect(repo),
+                inline else => |tag| try @field(self, @tagName(tag)).connect(repo),
             };
         }
 
         pub fn release(self: *Self, connection: AdaptedRepo.Connection) void {
             return switch (comptime adapter_name) {
-                inline else => |name| @field(self, @tagName(name)).release(connection),
+                inline else => |tag| @field(self, @tagName(tag)).release(connection),
             };
         }
 
@@ -42,9 +44,9 @@ pub fn Adapter(comptime adapter_name: Name) type {
         }
 
         /// Quote an identifier (e.g. a table name) suitable for the active adapter.
-        pub fn identifier(self: Self, comptime name: []const u8) []const u8 {
+        pub fn identifier(self: Self, comptime value: []const u8) []const u8 {
             return switch (self) {
-                inline else => |adapter| @TypeOf(adapter).identifier(name),
+                inline else => |adapter| @TypeOf(adapter).identifier(value),
             };
         }
 
@@ -108,11 +110,16 @@ pub fn Adapter(comptime adapter_name: Name) type {
             self: Self,
             Table: type,
             JoinTable: type,
-            comptime name: []const u8,
+            comptime relation_name: []const u8,
             comptime options: JoinOptions,
         ) []const u8 {
             return switch (self) {
-                inline else => |adapter| @TypeOf(adapter).innerJoinSql(Table, JoinTable, name, options),
+                inline else => |adapter| @TypeOf(adapter).innerJoinSql(
+                    Table,
+                    JoinTable,
+                    relation_name,
+                    options,
+                ),
             };
         }
 
@@ -121,11 +128,16 @@ pub fn Adapter(comptime adapter_name: Name) type {
             self: Self,
             Table: type,
             JoinTable: type,
-            comptime name: []const u8,
+            comptime relation_name: []const u8,
             comptime options: JoinOptions,
         ) []const u8 {
             return switch (self) {
-                inline else => |adapter| @TypeOf(adapter).outerJoinSql(Table, JoinTable, name, options),
+                inline else => |adapter| @TypeOf(adapter).outerJoinSql(
+                    Table,
+                    JoinTable,
+                    relation_name,
+                    options,
+                ),
             };
         }
 
@@ -196,7 +208,7 @@ pub fn Adapter(comptime adapter_name: Name) type {
             repo: *AdaptedRepo,
         ) !jetquery.Reflection {
             return switch (comptime adapter_name) {
-                inline else => |name| try @field(self, @tagName(name)).reflect(allocator, repo),
+                inline else => |tag| try @field(self, @tagName(tag)).reflect(allocator, repo),
             };
         }
     };

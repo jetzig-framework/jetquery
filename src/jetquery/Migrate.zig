@@ -44,7 +44,7 @@ pub fn run(self: Migrate) !void {
                 .message = "Executing migration: " ++ migration.name,
             });
 
-            try jetquery.Query(Schema, .Migrations)
+            try self.repo.Query(Schema, .Migrations)
                 .insert(.{ .version = migration.version, .name = migration.name })
                 .execute(self.repo);
 
@@ -66,7 +66,7 @@ pub fn run(self: Migrate) !void {
 pub fn rollback(self: Migrate) !void {
     if (migrations.len == 0) return;
 
-    const last_migration = try jetquery.Query(Schema, .Migrations)
+    const last_migration = try self.repo.Query(Schema, .Migrations)
         .orderBy(.{ .version = .desc })
         .first(self.repo) orelse return;
     defer self.repo.free(last_migration);
@@ -84,7 +84,7 @@ pub fn rollback(self: Migrate) !void {
 }
 
 fn isMigrated(self: Migrate, migration: Migration) !bool {
-    const result = try jetquery.Query(Schema, .Migrations)
+    const result = try self.repo.Query(Schema, .Migrations)
         .findBy(.{ .version = migration.version }).execute(self.repo);
 
     return result != null;
@@ -121,7 +121,7 @@ test "migrate" {
     const migrate = Migrate.init(&repo);
     try migrate.run();
 
-    const migration = try jetquery.Query(Schema, .Migrations)
+    const migration = try repo.Query(Schema, .Migrations)
         .findBy(.{ .version = "2024-08-26_13-18-52" })
         .execute(&repo);
     defer repo.free(migration);
@@ -148,7 +148,7 @@ test "migrate" {
         );
     };
 
-    const query = jetquery.Query(TestSchema, .Human)
+    const query = repo.Query(TestSchema, .Human)
         .join(.inner, .cats)
         .select(.{ .id, .name, .{ .cats = .{ .name, .paws, .created_at, .updated_at } } });
     var result = try repo.execute(query);
@@ -160,14 +160,14 @@ test "migrate" {
     try std.testing.expectError(error.PG, repo.execute(query));
 
     {
-        const humans = try jetquery.Query(TestSchema, .Human).all(&repo);
+        const humans = try repo.Query(TestSchema, .Human).all(&repo);
         defer repo.free(humans);
     }
 
     try migrate.rollback();
 
     {
-        const humans = jetquery.Query(TestSchema, .Human).all(&repo);
+        const humans = repo.Query(TestSchema, .Human).all(&repo);
         try std.testing.expectError(error.PG, humans);
     }
 }

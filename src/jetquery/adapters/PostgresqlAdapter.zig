@@ -22,6 +22,8 @@ pub const max_identifier_len = 63;
 
 const AdaptedRepo = jetquery.Repo(.postgresql);
 
+pub const name: jetquery.adapters.Name = .postgresql;
+
 pub fn Aggregate(comptime context: jetquery.sql.FunctionContext) type {
     return switch (context) {
         .min => Min,
@@ -145,8 +147,8 @@ pub const Options = struct {
     pool_size: ?u16 = null,
     timeout: ?u32 = null,
 
-    pub fn defaultValue(T: type, comptime name: []const u8) T {
-        const tag = std.enums.nameCast(std.meta.FieldEnum(Options), name);
+    pub fn defaultValue(T: type, comptime field_name: []const u8) T {
+        const tag = std.enums.nameCast(std.meta.FieldEnum(Options), field_name);
         return switch (tag) {
             .database, .username, .password => null,
             .hostname => "localhost",
@@ -259,10 +261,10 @@ pub fn columnTypeSql(comptime column: jetquery.schema.Column) []const u8 {
 }
 
 /// Output quoted identifier.
-pub fn identifier(comptime name: []const u8) []const u8 {
+pub fn identifier(comptime value: []const u8) []const u8 {
     return std.fmt.comptimePrint(
         \\"{s}"
-    , .{name});
+    , .{value});
 }
 
 /// SQL fragment used to represent a column bound to a table, e.g. `"foo"."bar"`
@@ -360,10 +362,10 @@ pub fn countSql(comptime distinct: ?[]const jetquery.columns.Column) []const u8 
 pub fn innerJoinSql(
     Table: type,
     JoinTable: type,
-    comptime name: []const u8,
+    comptime relation_name: []const u8,
     comptime options: jetquery.adapters.JoinOptions,
 ) []const u8 {
-    const foreign_key = options.foreign_key orelse name ++ "_id";
+    const foreign_key = options.foreign_key orelse relation_name ++ "_id";
     const primary_key = options.primary_key orelse "id";
 
     return std.fmt.comptimePrint(
@@ -382,10 +384,10 @@ pub fn innerJoinSql(
 pub fn outerJoinSql(
     Table: type,
     JoinTable: type,
-    comptime name: []const u8,
+    comptime relation_name: []const u8,
     comptime options: jetquery.adapters.JoinOptions,
 ) []const u8 {
-    const foreign_key = options.foreign_key orelse name ++ "_id";
+    const foreign_key = options.foreign_key orelse relation_name ++ "_id";
     const primary_key = options.primary_key orelse "id";
 
     return std.fmt.comptimePrint(
@@ -566,7 +568,7 @@ pub fn reflectColumns(
     return try columns.toOwnedSlice();
 }
 
-fn translateColumnType(name: []const u8) jetquery.schema.Column.Type {
+fn translateColumnType(column_name: []const u8) jetquery.schema.Column.Type {
     // TODO
     const types = std.StaticStringMap(jetquery.schema.Column.Type).initComptime(.{
         .{ "integer", jetquery.schema.Column.Type.integer },
@@ -578,8 +580,8 @@ fn translateColumnType(name: []const u8) jetquery.schema.Column.Type {
         .{ "timestamp without time zone", jetquery.schema.Column.Type.datetime },
         .{ "timestamp with time zone", jetquery.schema.Column.Type.datetime },
     });
-    return types.get(name) orelse {
-        std.log.err("Unsupported column type: `{s}`\n", .{name});
+    return types.get(column_name) orelse {
+        std.log.err("Unsupported column type: `{s}`\n", .{column_name});
         unreachable;
     };
 }
@@ -600,8 +602,8 @@ fn initPool(allocator: std.mem.Allocator, options: Options) !*pg.Pool {
     });
 }
 
-fn configError(comptime name: []const u8) error{JetQueryConfigError} {
-    const message = "Missing expected configuration value: `" ++ name ++ "`";
+fn configError(comptime config_field: []const u8) error{JetQueryConfigError} {
+    const message = "Missing expected configuration value: `" ++ config_field ++ "`";
     if (builtin.is_test) { // https://github.com/ziglang/zig/issues/5738
         std.log.warn(message, .{});
     } else {
