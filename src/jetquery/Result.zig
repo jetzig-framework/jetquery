@@ -31,9 +31,9 @@ pub fn Result(AdaptedRepo: type) type {
 
                     extendInternalFields(@TypeOf(query), &row);
 
-                    const primary_key = @TypeOf(query).info.Table.primary_key;
+                    const primary_key = @TypeOf(query).info.Model.primary_key;
                     const primary_key_present = @hasField(
-                        @TypeOf(query).info.Table.Definition,
+                        @TypeOf(query).info.Model.Definition,
                         primary_key,
                     );
 
@@ -48,7 +48,7 @@ pub fn Result(AdaptedRepo: type) type {
 
                     inline for (query.auxiliary_queries) |aux_query| {
                         const foreign_key = comptime aux_query.relation.foreign_key orelse
-                            @TypeOf(query).info.Table.defaultForeignKey();
+                            @TypeOf(query).info.Model.defaultForeignKey();
 
                         const Args = WhereArgs(aux_query, foreign_key, .one);
                         var args: Args = undefined;
@@ -93,9 +93,9 @@ pub fn Result(AdaptedRepo: type) type {
                 inline else => |*adapted_result| blk: {
                     var rows = try adapted_result.all(query);
                     const MergedRow = MergedRowType(query.auxiliary_queries, ResultType);
-                    const primary_key = @TypeOf(query).info.Table.primary_key;
+                    const primary_key = @TypeOf(query).info.Model.primary_key;
                     const primary_key_present = @hasField(
-                        @TypeOf(query).info.Table.Definition,
+                        @TypeOf(query).info.Model.Definition,
                         primary_key,
                     );
 
@@ -130,7 +130,7 @@ pub fn Result(AdaptedRepo: type) type {
                     // the results together.
                     inline for (query.auxiliary_queries) |aux_query| {
                         const foreign_key = comptime aux_query.relation.foreign_key orelse
-                            @TypeOf(query).info.Table.defaultForeignKey();
+                            @TypeOf(query).info.Model.defaultForeignKey();
 
                         const Args = WhereArgs(aux_query, foreign_key, .many);
                         var args: Args = undefined;
@@ -195,7 +195,7 @@ pub fn Result(AdaptedRepo: type) type {
         }
 
         fn extendInternalFields(Query: type, result: *Query.ResultType) void {
-            result.__jetquery_model = Query.info.Table;
+            result.__jetquery_model = Query.info.Model;
             result.__jetquery_schema = Query.info.Schema;
 
             const originals = std.meta.fields(@TypeOf(result.__jetquery.original_values));
@@ -320,8 +320,8 @@ fn WhereArgs(
 }
 
 fn IdMap(Query: type, comptime primary_key: []const u8) type {
-    const PK = if (comptime @hasField(Query.info.Table.Definition, primary_key))
-        jetquery.fields.fieldType(Query.info.Table.Definition, primary_key)
+    const PK = if (comptime @hasField(Query.info.Model.Definition, primary_key))
+        jetquery.fields.fieldType(Query.info.Model.Definition, primary_key)
     else
         void;
     return switch (PK) {
@@ -331,8 +331,8 @@ fn IdMap(Query: type, comptime primary_key: []const u8) type {
 }
 
 fn PrimaryKey(Query: type, comptime primary_key: []const u8) type {
-    return if (comptime @hasField(Query.info.Table.Definition, primary_key))
-        jetquery.fields.fieldType(Query.info.Table.Definition, primary_key)
+    return if (comptime @hasField(Query.info.Model.Definition, primary_key))
+        jetquery.fields.fieldType(Query.info.Model.Definition, primary_key)
     else
         void;
 }

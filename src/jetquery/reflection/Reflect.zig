@@ -39,7 +39,7 @@ pub fn Reflect(adapter_name: jetquery.adapters.Name, Schema: type) type {
             // Write tables already defined in the schema first ...
             inline for (comptime std.meta.declarations(Schema)) |decl| {
                 if (map.get(@field(Schema, decl.name).name)) |table| {
-                    try writeTable(allocator, Schema, reflection, table, writer);
+                    try writeModel(allocator, Schema, reflection, table, writer);
                     try written.insert(table.name);
                 }
             }
@@ -47,7 +47,7 @@ pub fn Reflect(adapter_name: jetquery.adapters.Name, Schema: type) type {
             // ... then write any remaining tables to preserve schema order if edited by user.
             for (reflection.tables) |table| {
                 if (written.contains(table.name)) continue;
-                try writeTable(allocator, Schema, reflection, table, writer);
+                try writeModel(allocator, Schema, reflection, table, writer);
             }
 
             return try self.allocator.dupe(u8, try jetcommon.fmt.zig(
@@ -59,7 +59,7 @@ pub fn Reflect(adapter_name: jetquery.adapters.Name, Schema: type) type {
     };
 }
 
-fn writeTable(
+fn writeModel(
     allocator: std.mem.Allocator,
     comptime schema: type,
     reflection: jetquery.Reflection,
@@ -69,7 +69,7 @@ fn writeTable(
     const model_name = try translateTableName(allocator, schema, table.name);
     try writer.print(
         \\
-        \\pub const {s} = jetquery.Table(
+        \\pub const {s} = jetquery.Model(
         \\@This(),
         \\"{s}",
         \\struct {{
@@ -257,7 +257,7 @@ test "reflect" {
     try admin_repo.createDatabase("reflection_test", .{});
 
     const Schema = struct {
-        pub const Human = jetquery.Table(
+        pub const Human = jetquery.Model(
             @This(),
             "humans",
             struct { id: i32, name: []const u8 },
@@ -268,7 +268,7 @@ test "reflect" {
             },
         );
 
-        pub const Cat = jetquery.Table(
+        pub const Cat = jetquery.Model(
             @This(),
             "cats",
             struct { id: i32, name: []const u8, human_id: i32, paws: i32 },
@@ -322,7 +322,7 @@ test "reflect" {
     try std.testing.expectEqualStrings(
         \\const jetquery = @import("jetquery");
         \\
-        \\pub const Human = jetquery.Table(
+        \\pub const Human = jetquery.Model(
         \\    @This(),
         \\    "humans",
         \\    struct {
@@ -338,7 +338,7 @@ test "reflect" {
         \\    },
         \\);
         \\
-        \\pub const Cat = jetquery.Table(
+        \\pub const Cat = jetquery.Model(
         \\    @This(),
         \\    "cats",
         \\    struct {
@@ -356,7 +356,7 @@ test "reflect" {
         \\    },
         \\);
         \\
-        \\pub const Dog = jetquery.Table(@This(), "dogs", struct {
+        \\pub const Dog = jetquery.Model(@This(), "dogs", struct {
         \\    id: i32,
         \\    name: []const u8,
         \\    is_woofy: ?bool,

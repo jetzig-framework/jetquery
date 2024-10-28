@@ -107,14 +107,14 @@ pub fn Adapter(comptime adapter_name: Name, AdaptedRepo: type) type {
         /// SQL representing an inner join, e.g. `INNER JOIN "foo" ON "bar"."baz" = "foo"."baz"`
         pub fn innerJoinSql(
             self: Self,
-            Table: type,
+            Model: type,
             JoinTable: type,
             comptime relation_name: []const u8,
             comptime options: JoinOptions,
         ) []const u8 {
             return switch (self) {
                 inline else => |adapter| @TypeOf(adapter).innerJoinSql(
-                    Table,
+                    Model,
                     JoinTable,
                     relation_name,
                     options,
@@ -125,14 +125,14 @@ pub fn Adapter(comptime adapter_name: Name, AdaptedRepo: type) type {
         /// SQL representing an outer join, e.g. `LEFT OUTER JOIN "foo" ON "bar"."baz" = "foo"."baz"`
         pub fn outerJoinSql(
             self: Self,
-            Table: type,
+            Model: type,
             JoinTable: type,
             comptime relation_name: []const u8,
             comptime options: JoinOptions,
         ) []const u8 {
             return switch (self) {
                 inline else => |adapter| @TypeOf(adapter).outerJoinSql(
-                    Table,
+                    Model,
                     JoinTable,
                     relation_name,
                     options,

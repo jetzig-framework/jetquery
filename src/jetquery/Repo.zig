@@ -295,7 +295,7 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
             try self.executeInternal(query, try jetquery.debug.getCallerInfo(@returnAddress()));
         }
 
-        /// Insert a model instance into the database. Use `Schema.Model.init` to create a new record.
+        /// Insert a model instance into the database.
         /// ```zig
         /// const cat = Schema.Cat.init(.{ .name = "Hercules", .paws  = 4 });
         /// try repo.insert(cat);
@@ -657,7 +657,7 @@ test "Repo" {
     try resetDatabase();
 
     const Schema = struct {
-        pub const Cat = jetquery.Table(
+        pub const Cat = jetquery.Model(
             @This(),
             "cats",
             struct { name: []const u8, paws: i32 },
@@ -732,14 +732,14 @@ test "relations" {
     try resetDatabase();
 
     const Schema = struct {
-        pub const Cat = jetquery.Table(
+        pub const Cat = jetquery.Model(
             @This(),
             "cats",
             struct { id: i32, human_id: ?i32, name: []const u8, paws: i32 },
             .{ .relations = .{ .human = jetquery.relation.belongsTo(.Human, .{}) } },
         );
 
-        pub const Human = jetquery.Table(
+        pub const Human = jetquery.Model(
             @This(),
             "humans",
             struct { id: i32, name: []const u8 },
@@ -916,7 +916,7 @@ test "timestamps" {
     try resetDatabase();
 
     const Schema = struct {
-        pub const Cat = jetquery.Table(
+        pub const Cat = jetquery.Model(
             @This(),
             "cats",
             struct {
@@ -975,7 +975,7 @@ test "save" {
     try resetDatabase();
 
     const Schema = struct {
-        pub const Cat = jetquery.Table(
+        pub const Cat = jetquery.Model(
             @This(),
             "cats",
             struct { id: i32, name: []const u8, paws: i32 },
@@ -1026,7 +1026,7 @@ test "aggregate max()" {
     try resetDatabase();
 
     const Schema = struct {
-        pub const Cat = jetquery.Table(
+        pub const Cat = jetquery.Model(
             @This(),
             "cats",
             struct { name: []const u8, paws: usize },
@@ -1079,7 +1079,7 @@ test "aggregate count() with HAVING" {
     try resetDatabase();
 
     const Schema = struct {
-        pub const Cat = jetquery.Table(
+        pub const Cat = jetquery.Model(
             @This(),
             "cats",
             struct { name: []const u8, paws: usize },
@@ -1141,7 +1141,7 @@ test "transactions" {
     try resetDatabase();
 
     const Schema = struct {
-        pub const Cat = jetquery.Table(
+        pub const Cat = jetquery.Model(
             @This(),
             "cats",
             struct { name: []const u8, paws: i32 },
@@ -1192,13 +1192,13 @@ test "transactions" {
 test "alterTable" {
     try resetDatabase();
     const Schema = struct {
-        pub const Cat = jetquery.Table(
+        pub const Cat = jetquery.Model(
             @This(),
             "cats",
             struct { name: []const u8, paws: i32 },
             .{},
         );
-        pub const Dog = jetquery.Table(
+        pub const Dog = jetquery.Model(
             @This(),
             "dogs",
             struct { name: []const u8, identifier: []const u8, paws: i32 },

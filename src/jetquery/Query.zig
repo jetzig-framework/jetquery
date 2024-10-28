@@ -18,7 +18,7 @@ const ResultContext = enum { one, many, none };
 /// For convenience, use `repo.Query(.Cat)`.
 pub fn Query(adapter: jetquery.adapters.Name, Schema: type, comptime table: anytype) type {
     const Adapter = jetquery.adapters.Type(adapter);
-    const Table = switch (@typeInfo(@TypeOf(table))) {
+    const Model = switch (@typeInfo(@TypeOf(table))) {
         .enum_literal => @field(Schema, @tagName(std.enums.nameCast(jetquery.DeclEnum(Schema), table))),
         else => switch (@TypeOf(table)) {
             type => table,
@@ -27,11 +27,11 @@ pub fn Query(adapter: jetquery.adapters.Name, Schema: type, comptime table: anyt
     };
 
     return struct {
-        table: Table,
+        table: Model,
 
-        pub const Definition = Table.Definition;
+        pub const Definition = Model.Definition;
         pub const info = .{
-            .Table = Table,
+            .Model = Model,
             .Schema = Schema,
         };
 
@@ -45,8 +45,8 @@ pub fn Query(adapter: jetquery.adapters.Name, Schema: type, comptime table: anyt
         /// ```
         pub fn select(
             comptime columns: anytype,
-        ) @TypeOf(InitialStatement(Adapter, Schema, Table).select(columns)) {
-            return InitialStatement(Adapter, Schema, Table).select(columns);
+        ) @TypeOf(InitialStatement(Adapter, Schema, Model).select(columns)) {
+            return InitialStatement(Adapter, Schema, Model).select(columns);
         }
 
         /// Create a `SELECT` query defaulting to all columns selected:
@@ -57,24 +57,24 @@ pub fn Query(adapter: jetquery.adapters.Name, Schema: type, comptime table: anyt
         /// ```zig
         /// Query(.postgresql, Schema, .MyTable).select(.{}).where(.{ .foo = "bar" })
         /// ```
-        pub fn where(args: anytype) @TypeOf(InitialStatement(Adapter, Schema, Table).where(args)) {
-            return InitialStatement(Adapter, Schema, Table).where(args);
+        pub fn where(args: anytype) @TypeOf(InitialStatement(Adapter, Schema, Model).where(args)) {
+            return InitialStatement(Adapter, Schema, Model).where(args);
         }
 
         /// Create an `UPDATE` query with the specified `args`, e.g.:
         /// ```zig
         /// Query(.postgresql, Schema, .MyTable).update(.{ .foo = "bar", .baz = "qux" }).where(.{ .quux = "corge" });
         /// ```
-        pub fn update(args: anytype) @TypeOf(InitialStatement(Adapter, Schema, Table).update(args)) {
-            return InitialStatement(Adapter, Schema, Table).update(args);
+        pub fn update(args: anytype) @TypeOf(InitialStatement(Adapter, Schema, Model).update(args)) {
+            return InitialStatement(Adapter, Schema, Model).update(args);
         }
 
         /// Create an `INSERT` query with the specified `args`, e.g.:
         /// ```zig
         /// Query(.postgresql, Schema, .MyTable).insert(.{ .foo = "bar", .baz = "qux" });
         /// ```
-        pub fn insert(args: anytype) @TypeOf(InitialStatement(Adapter, Schema, Table).insert(args)) {
-            return InitialStatement(Adapter, Schema, Table).insert(args);
+        pub fn insert(args: anytype) @TypeOf(InitialStatement(Adapter, Schema, Model).insert(args)) {
+            return InitialStatement(Adapter, Schema, Model).insert(args);
         }
 
         /// Create a `DELETE` query. As a safety measure, a `delete()` query **must** have a
@@ -83,8 +83,8 @@ pub fn Query(adapter: jetquery.adapters.Name, Schema: type, comptime table: anyt
         /// ```zig
         /// Query(.postgresql, Schema, .MyTable).delete().where(.{ .foo = "bar" });
         /// ```
-        pub fn delete() @TypeOf(InitialStatement(Adapter, Schema, Table).delete()) {
-            return InitialStatement(Adapter, Schema, Table).delete();
+        pub fn delete() @TypeOf(InitialStatement(Adapter, Schema, Model).delete()) {
+            return InitialStatement(Adapter, Schema, Model).delete();
         }
 
         /// Create a `DELETE` query that does not require a `WHERE` clause to delete all records
@@ -92,8 +92,8 @@ pub fn Query(adapter: jetquery.adapters.Name, Schema: type, comptime table: anyt
         /// ```zig
         /// Query(.postgresql, Schema, .MyTable).deleteAll();
         /// ```
-        pub fn deleteAll() @TypeOf(InitialStatement(Adapter, Schema, Table).deleteAll()) {
-            return InitialStatement(Adapter, Schema, Table).deleteAll();
+        pub fn deleteAll() @TypeOf(InitialStatement(Adapter, Schema, Model).deleteAll()) {
+            return InitialStatement(Adapter, Schema, Model).deleteAll();
         }
 
         /// Create a `SELECT` query to return a single row matching the given ID.
@@ -104,8 +104,8 @@ pub fn Query(adapter: jetquery.adapters.Name, Schema: type, comptime table: anyt
         /// ```zig
         /// Query(.postgresql, Schema, .MyTable).select(.{}).where(.{ .id = id }).limit(1);
         /// ```
-        pub fn find(id: anytype) @TypeOf(InitialStatement(Adapter, Schema, Table).find(id)) {
-            return InitialStatement(Adapter, Schema, Table).find(id);
+        pub fn find(id: anytype) @TypeOf(InitialStatement(Adapter, Schema, Model).find(id)) {
+            return InitialStatement(Adapter, Schema, Model).find(id);
         }
 
         /// Create a `SELECT` query to return a single row matching the given args.
@@ -116,8 +116,8 @@ pub fn Query(adapter: jetquery.adapters.Name, Schema: type, comptime table: anyt
         /// ```zig
         /// Query(.postgresql, Schema, .MyTable).select(.{}).where(args).limit(1);
         /// ```
-        pub fn findBy(args: anytype) @TypeOf(InitialStatement(Adapter, Schema, Table).findBy(args)) {
-            return InitialStatement(Adapter, Schema, Table).findBy(args);
+        pub fn findBy(args: anytype) @TypeOf(InitialStatement(Adapter, Schema, Model).findBy(args)) {
+            return InitialStatement(Adapter, Schema, Model).findBy(args);
         }
 
         /// Return all records from the current table.
@@ -126,8 +126,8 @@ pub fn Query(adapter: jetquery.adapters.Name, Schema: type, comptime table: anyt
         /// ```
         pub fn all(
             repo: anytype,
-        ) @TypeOf(InitialStatement(Adapter, Schema, Table).select(.{}).all(repo)) {
-            return InitialStatement(Adapter, Schema, Table).select(.{}).all(repo);
+        ) @TypeOf(InitialStatement(Adapter, Schema, Model).select(.{}).all(repo)) {
+            return InitialStatement(Adapter, Schema, Model).select(.{}).all(repo);
         }
 
         /// Return the first record from the current table.
@@ -136,8 +136,8 @@ pub fn Query(adapter: jetquery.adapters.Name, Schema: type, comptime table: anyt
         /// ```
         pub fn first(
             repo: anytype,
-        ) @TypeOf(InitialStatement(Adapter, Schema, Table).select(.{}).first(repo)) {
-            return InitialStatement(Adapter, Schema, Table).select(.{}).first(repo);
+        ) @TypeOf(InitialStatement(Adapter, Schema, Model).select(.{}).first(repo)) {
+            return InitialStatement(Adapter, Schema, Model).select(.{}).first(repo);
         }
 
         /// Indicate that a relation should be fetched with this query. Pass options to control
@@ -159,10 +159,10 @@ pub fn Query(adapter: jetquery.adapters.Name, Schema: type, comptime table: anyt
         /// Query(.postgresql, Schema, .MyTable).include(.my_relation, .{ .limit = 10 });
         /// ```
         pub fn include(
-            comptime name: jetquery.relation.RelationsEnum(Table),
+            comptime name: jetquery.relation.RelationsEnum(Model),
             comptime include_options: anytype,
-        ) @TypeOf(InitialStatement(Adapter, Schema, Table).include(name, include_options)) {
-            return InitialStatement(Adapter, Schema, Table).include(name, include_options);
+        ) @TypeOf(InitialStatement(Adapter, Schema, Model).include(name, include_options)) {
+            return InitialStatement(Adapter, Schema, Model).include(name, include_options);
         }
 
         /// Join to another table by association name. Columns on the joined table are not
@@ -178,9 +178,9 @@ pub fn Query(adapter: jetquery.adapters.Name, Schema: type, comptime table: anyt
         /// ```
         pub fn join(
             comptime join_context: jetquery.relation.JoinContext,
-            comptime name: jetquery.relation.RelationsEnum(Table),
-        ) @TypeOf(InitialStatement(Adapter, Schema, Table).join(join_context, name)) {
-            return InitialStatement(Adapter, Schema, Table).join(join_context, name);
+            comptime name: jetquery.relation.RelationsEnum(Model),
+        ) @TypeOf(InitialStatement(Adapter, Schema, Model).join(join_context, name)) {
+            return InitialStatement(Adapter, Schema, Model).join(join_context, name);
         }
 
         /// Create a `SELECT DISTINCT` query with the specified `columns`, e.g.:
@@ -195,8 +195,8 @@ pub fn Query(adapter: jetquery.adapters.Name, Schema: type, comptime table: anyt
         /// ```
         pub fn distinct(
             comptime columns: anytype,
-        ) @TypeOf(InitialStatement(Adapter, Schema, Table).distinct(columns)) {
-            return InitialStatement(Adapter, Schema, Table).distinct(columns);
+        ) @TypeOf(InitialStatement(Adapter, Schema, Model).distinct(columns)) {
+            return InitialStatement(Adapter, Schema, Model).distinct(columns);
         }
 
         /// Apply a `GROUP BY` clause to the query, e.g.:
@@ -205,8 +205,8 @@ pub fn Query(adapter: jetquery.adapters.Name, Schema: type, comptime table: anyt
         /// ```
         pub fn groupBy(
             comptime args: anytype,
-        ) @TypeOf(InitialStatement(Adapter, Schema, Table).groupBy(args)) {
-            return InitialStatement(Adapter, Schema, Table).groupBy(args);
+        ) @TypeOf(InitialStatement(Adapter, Schema, Model).groupBy(args)) {
+            return InitialStatement(Adapter, Schema, Model).groupBy(args);
         }
 
         /// Apply an `ORDER BY` clause to the query, e.g.:
@@ -217,8 +217,8 @@ pub fn Query(adapter: jetquery.adapters.Name, Schema: type, comptime table: anyt
         ///
         pub fn orderBy(
             comptime args: anytype,
-        ) @TypeOf(InitialStatement(Adapter, Schema, Table).orderBy(args)) {
-            return InitialStatement(Adapter, Schema, Table).orderBy(args);
+        ) @TypeOf(InitialStatement(Adapter, Schema, Model).orderBy(args)) {
+            return InitialStatement(Adapter, Schema, Model).orderBy(args);
         }
     };
 }
@@ -230,12 +230,12 @@ const MissingField = struct {
 fn InitialStatement(
     Adapter: type,
     Schema: type,
-    Table: type,
-) Statement(Adapter, .none, Schema, Table, .{
+    Model: type,
+) Statement(Adapter, .none, Schema, Model, .{
     .result_context = .none,
     .default_select = true,
 }) {
-    return Statement(Adapter, .none, Schema, Table, .{
+    return Statement(Adapter, .none, Schema, Model, .{
         .result_context = .none,
         .default_select = true,
     }){ .field_values = .{}, .field_errors = .{} };
@@ -258,14 +258,14 @@ fn StatementOptions(comptime query_context: sql.QueryContext) type {
         group_by: ?[]const jetquery.columns.Column = null,
         having_clauses: []const sql.Where.Tree = &.{},
 
-        pub fn orderClauses(self: @This(), Table: type) []const sql.OrderClause {
+        pub fn orderClauses(self: @This(), Model: type) []const sql.OrderClause {
             if (query_context != .select) return self.order_clauses;
             if (self.order_clauses.len > 0) return self.order_clauses;
             // We could force ordering by one of the grouped columns but this seems like
             // overreaching - we should only apply a default order on ungrouped select queries.
             if (self.group_by != null) return self.order_clauses;
 
-            return Table.defaultOrderBy();
+            return Model.defaultOrderBy();
         }
     };
 }
@@ -319,11 +319,11 @@ fn Statement(
     Adapter: type,
     comptime query_context: sql.QueryContext,
     Schema: type,
-    Table: type,
+    Model: type,
     comptime options: StatementOptions(query_context),
 ) type {
     return struct {
-        field_values: jetquery.fields.FieldValues(Table, options.relations, options.field_infos),
+        field_values: jetquery.fields.FieldValues(Model, options.relations, options.field_infos),
         limit_bound: ?u64 = null,
         field_errors: [options.field_infos.len]?anyerror,
 
@@ -335,11 +335,11 @@ fn Statement(
         comptime sql: []const u8 = render(),
 
         pub const info = .{
-            .Table = Table,
+            .Model = Model,
             .Schema = Schema,
         };
 
-        pub const Definition = Table.Definition;
+        pub const Definition = Model.Definition;
         pub const ResultContext = options.result_context;
         pub const ResultType = QueryResultType();
         pub const ColumnInfos = QueryColumnInfos();
@@ -352,11 +352,11 @@ fn Statement(
                 return jetquery.sql.render(
                     Adapter,
                     query_context,
-                    Table,
+                    Model,
                     options.relations,
                     options.field_infos,
                     options.columns,
-                    options.orderClauses(Table),
+                    options.orderClauses(Model),
                     options.distinct,
                     options.where_clauses,
                     options.group_by,
@@ -383,7 +383,7 @@ fn Statement(
 
             const tree = sql.Where.tree(
                 Adapter,
-                Table,
+                Model,
                 options.relations,
                 @TypeOf(args),
                 context,
@@ -408,19 +408,19 @@ fn Statement(
         pub fn select(
             self: Self,
             comptime select_columns: anytype,
-        ) Statement(Adapter, .select, Schema, Table, .{
+        ) Statement(Adapter, .select, Schema, Model, .{
             .relations = options.relations,
             .field_infos = options.field_infos,
-            .columns = &jetquery.columns.translate(Table, options.relations, select_columns),
+            .columns = &jetquery.columns.translate(Model, options.relations, select_columns),
             .order_clauses = options.order_clauses,
             .group_by = options.group_by,
             .distinct = options.distinct,
             .result_context = if (options.default_select) .many else options.result_context,
         }) {
-            const S = Statement(Adapter, .select, Schema, Table, .{
+            const S = Statement(Adapter, .select, Schema, Model, .{
                 .relations = options.relations,
                 .field_infos = options.field_infos,
-                .columns = &jetquery.columns.translate(Table, options.relations, select_columns),
+                .columns = &jetquery.columns.translate(Model, options.relations, select_columns),
                 .order_clauses = options.order_clauses,
                 .group_by = options.group_by,
                 .distinct = options.distinct,
@@ -437,13 +437,13 @@ fn Statement(
                 else => |tag| tag,
             },
             Schema,
-            Table,
+            Model,
             .{
                 .relations = options.relations,
                 .where_clauses = options.where_clauses ++ .{
                     sql.Where.tree(
                         Adapter,
-                        Table,
+                        Model,
                         options.relations,
                         @TypeOf(args),
                         .where,
@@ -452,12 +452,12 @@ fn Statement(
                 },
                 .field_infos = options.field_infos ++ jetquery.fields.fieldInfos(
                     Adapter,
-                    Table,
+                    Model,
                     options.relations,
                     @TypeOf(args),
                     .where,
                 ),
-                .columns = if (options.default_select) &Table.columns() else options.columns,
+                .columns = if (options.default_select) &Model.columns() else options.columns,
                 .order_clauses = options.order_clauses,
                 .group_by = options.group_by,
                 .distinct = options.distinct,
@@ -474,24 +474,24 @@ fn Statement(
             const S = Statement(Adapter, switch (query_context) {
                 .none => .select,
                 else => |tag| tag,
-            }, Schema, Table, .{
+            }, Schema, Model, .{
                 .relations = options.relations,
                 .field_infos = options.field_infos ++ jetquery.fields.fieldInfos(
                     Adapter,
-                    Table,
+                    Model,
                     options.relations,
                     @TypeOf(args),
                     .where,
                 ),
                 .where_clauses = options.where_clauses ++ .{sql.Where.tree(
                     Adapter,
-                    Table,
+                    Model,
                     options.relations,
                     @TypeOf(args),
                     .where,
                     options.field_infos.len,
                 )},
-                .columns = if (options.default_select) &Table.columns() else options.columns,
+                .columns = if (options.default_select) &Model.columns() else options.columns,
                 .order_clauses = options.order_clauses,
                 .group_by = options.group_by,
                 .distinct = options.distinct,
@@ -507,39 +507,39 @@ fn Statement(
             return self.extend(S, args, .where);
         }
 
-        pub fn find(self: Self, id: anytype) Statement(Adapter, .select, Schema, Table, .{
+        pub fn find(self: Self, id: anytype) Statement(Adapter, .select, Schema, Model, .{
             .field_infos = &(jetquery.fields.fieldInfos(
                 Adapter,
-                Table,
+                Model,
                 options.relations,
                 @TypeOf(.{ .id = id }),
                 .where,
             ) ++
-                jetquery.fields.fieldInfos(Adapter, Table, options.relations, @TypeOf(.{1}), .limit)),
+                jetquery.fields.fieldInfos(Adapter, Model, options.relations, @TypeOf(.{1}), .limit)),
             .where_clauses = &.{sql.Where.tree(
                 Adapter,
-                Table,
+                Model,
                 &.{},
                 @TypeOf(.{ .id = id }),
                 .where,
                 options.field_infos.len,
             )},
-            .columns = if (options.columns.len == 0) &Table.columns() else options.columns,
+            .columns = if (options.columns.len == 0) &Model.columns() else options.columns,
             .result_context = .one,
         }) {
             // No need to verify `id` presence as `jetquery.fields.fieldInfos` will reject unknown fields.
             return self.findBy(.{ .id = id });
         }
 
-        pub fn findBy(self: Self, args: anytype) Statement(Adapter, .select, Schema, Table, .{
+        pub fn findBy(self: Self, args: anytype) Statement(Adapter, .select, Schema, Model, .{
             .relations = options.relations,
             .field_infos = options.field_infos ++
-                jetquery.fields.fieldInfos(Adapter, Table, options.relations, @TypeOf(args), .where) ++
-                jetquery.fields.fieldInfos(Adapter, Table, options.relations, @TypeOf(.{1}), .limit),
-            .columns = if (options.columns.len == 0) &Table.columns() else options.columns,
+                jetquery.fields.fieldInfos(Adapter, Model, options.relations, @TypeOf(args), .where) ++
+                jetquery.fields.fieldInfos(Adapter, Model, options.relations, @TypeOf(.{1}), .limit),
+            .columns = if (options.columns.len == 0) &Model.columns() else options.columns,
             .where_clauses = &.{sql.Where.tree(
                 Adapter,
-                Table,
+                Model,
                 &.{},
                 @TypeOf(args),
                 .where,
@@ -548,13 +548,13 @@ fn Statement(
             .group_by = options.group_by,
             .result_context = .one,
         }) {
-            const S = Statement(Adapter, .select, Schema, Table, .{
+            const S = Statement(Adapter, .select, Schema, Model, .{
                 .relations = options.relations,
                 .field_infos = options.field_infos ++
-                    jetquery.fields.fieldInfos(Adapter, Table, options.relations, @TypeOf(args), .where) ++
-                    jetquery.fields.fieldInfos(Adapter, Table, options.relations, @TypeOf(.{1}), .limit),
-                .columns = if (options.columns.len == 0) &Table.columns() else options.columns,
-                .where_clauses = &.{sql.Where.tree(Adapter, Table, &.{}, @TypeOf(args), .where, options.field_infos.len)},
+                    jetquery.fields.fieldInfos(Adapter, Model, options.relations, @TypeOf(args), .where) ++
+                    jetquery.fields.fieldInfos(Adapter, Model, options.relations, @TypeOf(.{1}), .limit),
+                .columns = if (options.columns.len == 0) &Model.columns() else options.columns,
+                .where_clauses = &.{sql.Where.tree(Adapter, Model, &.{}, @TypeOf(args), .where, options.field_infos.len)},
                 .group_by = options.group_by,
                 .result_context = .one,
             });
@@ -565,14 +565,14 @@ fn Statement(
             return statement;
         }
 
-        pub fn count(self: Self) Statement(Adapter, .count, Schema, Table, .{
+        pub fn count(self: Self) Statement(Adapter, .count, Schema, Model, .{
             .relations = options.relations,
             .field_infos = options.field_infos,
             .distinct = options.distinct,
             .where_clauses = options.where_clauses,
             .group_by = options.group_by,
         }) {
-            const S = Statement(Adapter, .count, Schema, Table, .{
+            const S = Statement(Adapter, .count, Schema, Model, .{
                 .relations = options.relations,
                 .field_infos = options.field_infos,
                 .distinct = options.distinct,
@@ -582,23 +582,23 @@ fn Statement(
             return self.extend(S, .{}, .none);
         }
 
-        pub fn distinct(self: Self, comptime args: anytype) Statement(Adapter, .select, Schema, Table, .{
+        pub fn distinct(self: Self, comptime args: anytype) Statement(Adapter, .select, Schema, Model, .{
             .relations = options.relations,
             .field_infos = options.field_infos,
             .columns = &.{},
             .order_clauses = options.order_clauses,
             .result_context = .many,
-            .distinct = &jetquery.columns.translate(Table, options.relations, args),
+            .distinct = &jetquery.columns.translate(Model, options.relations, args),
             .where_clauses = options.where_clauses,
             .group_by = options.group_by,
         }) {
-            const S = Statement(Adapter, .select, Schema, Table, .{
+            const S = Statement(Adapter, .select, Schema, Model, .{
                 .relations = options.relations,
                 .field_infos = options.field_infos,
                 .columns = &.{},
                 .order_clauses = options.order_clauses,
                 .result_context = .many,
-                .distinct = &jetquery.columns.translate(Table, options.relations, args),
+                .distinct = &jetquery.columns.translate(Model, options.relations, args),
                 .where_clauses = options.where_clauses,
                 .group_by = options.group_by,
             });
@@ -612,30 +612,30 @@ fn Statement(
 
             return self.extend(S, .{}, .none);
         }
-        pub fn update(self: Self, args: anytype) Statement(Adapter, .update, Schema, Table, .{
-            .field_infos = &(jetquery.fields.fieldInfos(Adapter, Table, &.{}, @TypeOf(args), .update) ++
-                timestampsFields(Table, .update)),
+        pub fn update(self: Self, args: anytype) Statement(Adapter, .update, Schema, Model, .{
+            .field_infos = &(jetquery.fields.fieldInfos(Adapter, Model, &.{}, @TypeOf(args), .update) ++
+                timestampsFields(Model, .update)),
         }) {
-            const S = Statement(Adapter, .update, Schema, Table, .{
-                .field_infos = &(jetquery.fields.fieldInfos(Adapter, Table, &.{}, @TypeOf(args), .update) ++
-                    timestampsFields(Table, .update)),
+            const S = Statement(Adapter, .update, Schema, Model, .{
+                .field_infos = &(jetquery.fields.fieldInfos(Adapter, Model, &.{}, @TypeOf(args), .update) ++
+                    timestampsFields(Model, .update)),
             });
             return self.extend(S, args, .update);
         }
 
-        pub fn insert(self: Self, args: anytype) Statement(Adapter, .insert, Schema, Table, .{
-            .field_infos = &(jetquery.fields.fieldInfos(Adapter, Table, &.{}, @TypeOf(args), .insert) ++
-                timestampsFields(Table, .insert)),
+        pub fn insert(self: Self, args: anytype) Statement(Adapter, .insert, Schema, Model, .{
+            .field_infos = &(jetquery.fields.fieldInfos(Adapter, Model, &.{}, @TypeOf(args), .insert) ++
+                timestampsFields(Model, .insert)),
         }) {
-            const S = Statement(Adapter, .insert, Schema, Table, .{
-                .field_infos = &(jetquery.fields.fieldInfos(Adapter, Table, &.{}, @TypeOf(args), .insert) ++
-                    timestampsFields(Table, .insert)),
+            const S = Statement(Adapter, .insert, Schema, Model, .{
+                .field_infos = &(jetquery.fields.fieldInfos(Adapter, Model, &.{}, @TypeOf(args), .insert) ++
+                    timestampsFields(Model, .insert)),
             });
             return self.extend(S, args, .insert);
         }
 
-        pub fn delete(self: Self) Statement(Adapter, .delete, Schema, Table, .{
-            .field_infos = &jetquery.fields.fieldInfos(Adapter, Table, &.{}, @TypeOf(.{}), .none),
+        pub fn delete(self: Self) Statement(Adapter, .delete, Schema, Model, .{
+            .field_infos = &jetquery.fields.fieldInfos(Adapter, Model, &.{}, @TypeOf(.{}), .none),
             .where_clauses = options.where_clauses,
         }) {
             // TODO: Add support for `DELETE ... USING ...`
@@ -643,26 +643,26 @@ fn Statement(
                 "Failed attempting to generate `DELETE` query with relations. " ++
                     "This error occurred to prevent accidential deletion of potentially unexpected behaviour.",
             );
-            const S = Statement(Adapter, .delete, Schema, Table, .{
-                .field_infos = &jetquery.fields.fieldInfos(Adapter, Table, &.{}, @TypeOf(.{}), .none),
+            const S = Statement(Adapter, .delete, Schema, Model, .{
+                .field_infos = &jetquery.fields.fieldInfos(Adapter, Model, &.{}, @TypeOf(.{}), .none),
                 .where_clauses = options.where_clauses,
             });
             return self.extend(S, .{}, .none);
         }
 
-        pub fn deleteAll(self: Self) Statement(Adapter, .delete_all, Schema, Table, .{}) {
+        pub fn deleteAll(self: Self) Statement(Adapter, .delete_all, Schema, Model, .{}) {
             // TODO: Add support for `DELETE ... USING ...`
             if (comptime options.relations.len != 0) @compileError(
                 "Failed attempting to generate `DELETE` query with relations. " ++
                     "This error occurred to prevent accidential deletion of potentially unexpected behaviour.",
             );
-            const S = Statement(Adapter, .delete_all, Schema, Table, .{});
+            const S = Statement(Adapter, .delete_all, Schema, Model, .{});
             return self.extend(S, .{}, .none);
         }
 
-        pub fn limit(self: Self, bound: u64) Statement(Adapter, query_context, Schema, Table, .{
+        pub fn limit(self: Self, bound: u64) Statement(Adapter, query_context, Schema, Model, .{
             .relations = options.relations,
-            .field_infos = options.field_infos ++ jetquery.fields.fieldInfos(Adapter, Table, &.{}, @TypeOf(.{bound}), .limit),
+            .field_infos = options.field_infos ++ jetquery.fields.fieldInfos(Adapter, Model, &.{}, @TypeOf(.{bound}), .limit),
             .columns = options.columns,
             .order_clauses = options.order_clauses,
             .result_context = options.result_context,
@@ -670,9 +670,9 @@ fn Statement(
             .group_by = options.group_by,
             .having_clauses = options.having_clauses,
         }) {
-            const S = Statement(Adapter, query_context, Schema, Table, .{
+            const S = Statement(Adapter, query_context, Schema, Model, .{
                 .relations = options.relations,
-                .field_infos = options.field_infos ++ jetquery.fields.fieldInfos(Adapter, Table, &.{}, @TypeOf(.{bound}), .limit),
+                .field_infos = options.field_infos ++ jetquery.fields.fieldInfos(Adapter, Model, &.{}, @TypeOf(.{bound}), .limit),
                 .columns = options.columns,
                 .order_clauses = options.order_clauses,
                 .result_context = options.result_context,
@@ -683,9 +683,9 @@ fn Statement(
             return self.extend(S, .{bound}, .limit);
         }
 
-        pub fn offset(self: Self, bound: u64) Statement(Adapter, query_context, Schema, Table, .{
+        pub fn offset(self: Self, bound: u64) Statement(Adapter, query_context, Schema, Model, .{
             .relations = options.relations,
-            .field_infos = options.field_infos ++ jetquery.fields.fieldInfos(Adapter, Table, &.{}, @TypeOf(.{bound}), .offset),
+            .field_infos = options.field_infos ++ jetquery.fields.fieldInfos(Adapter, Model, &.{}, @TypeOf(.{bound}), .offset),
             .columns = options.columns,
             .order_clauses = options.order_clauses,
             .result_context = options.result_context,
@@ -693,9 +693,9 @@ fn Statement(
             .group_by = options.group_by,
             .having_clauses = options.having_clauses,
         }) {
-            const S = Statement(Adapter, query_context, Schema, Table, .{
+            const S = Statement(Adapter, query_context, Schema, Model, .{
                 .relations = options.relations,
-                .field_infos = options.field_infos ++ jetquery.fields.fieldInfos(Adapter, Table, &.{}, @TypeOf(.{bound}), .offset),
+                .field_infos = options.field_infos ++ jetquery.fields.fieldInfos(Adapter, Model, &.{}, @TypeOf(.{bound}), .offset),
                 .columns = options.columns,
                 .order_clauses = options.order_clauses,
                 .result_context = options.result_context,
@@ -713,15 +713,15 @@ fn Statement(
                 else => query_context,
             },
             Schema,
-            Table,
+            Model,
             .{
                 .relations = options.relations,
                 .field_infos = options.field_infos,
                 .columns = switch (query_context) {
-                    .none => &Table.columns(),
+                    .none => &Model.columns(),
                     else => options.columns,
                 },
-                .order_clauses = &sql.translateOrderBy(Table, options.relations, args),
+                .order_clauses = &sql.translateOrderBy(Model, options.relations, args),
                 .result_context = switch (options.result_context) {
                     .none => .many,
                     else => options.result_context,
@@ -738,15 +738,15 @@ fn Statement(
                     else => query_context,
                 },
                 Schema,
-                Table,
+                Model,
                 .{
                     .relations = options.relations,
                     .field_infos = options.field_infos,
                     .columns = switch (query_context) {
-                        .none => &Table.columns(),
+                        .none => &Model.columns(),
                         else => options.columns,
                     },
-                    .order_clauses = &sql.translateOrderBy(Table, options.relations, args),
+                    .order_clauses = &sql.translateOrderBy(Model, options.relations, args),
                     .result_context = switch (options.result_context) {
                         .none => .many,
                         else => options.result_context,
@@ -759,22 +759,22 @@ fn Statement(
             return self.extend(S, .{}, .order);
         }
 
-        pub fn groupBy(self: Self, comptime columns: anytype) Statement(Adapter, .select, Schema, Table, .{
+        pub fn groupBy(self: Self, comptime columns: anytype) Statement(Adapter, .select, Schema, Model, .{
             .relations = options.relations,
             .field_infos = options.field_infos,
             .columns = options.columns,
             .order_clauses = options.order_clauses,
             .result_context = .many,
             .where_clauses = options.where_clauses,
-            .group_by = &jetquery.columns.translate(Table, options.relations, columns),
+            .group_by = &jetquery.columns.translate(Model, options.relations, columns),
             .having_clauses = options.having_clauses,
         }) {
-            const S = Statement(Adapter, .select, Schema, Table, .{
+            const S = Statement(Adapter, .select, Schema, Model, .{
                 .relations = options.relations,
                 .field_infos = options.field_infos,
                 .columns = options.columns,
                 .order_clauses = options.order_clauses,
-                .group_by = &jetquery.columns.translate(Table, options.relations, columns),
+                .group_by = &jetquery.columns.translate(Model, options.relations, columns),
                 .result_context = .many,
                 .where_clauses = options.where_clauses,
                 .having_clauses = options.having_clauses,
@@ -782,11 +782,11 @@ fn Statement(
             return self.extend(S, .{}, .none);
         }
 
-        pub fn having(self: Self, args: anytype) Statement(Adapter, .select, Schema, Table, .{
+        pub fn having(self: Self, args: anytype) Statement(Adapter, .select, Schema, Model, .{
             .relations = options.relations,
             .field_infos = options.field_infos ++ jetquery.fields.fieldInfos(
                 Adapter,
-                Table,
+                Model,
                 options.relations,
                 @TypeOf(args),
                 .where,
@@ -799,18 +799,18 @@ fn Statement(
             .having_clauses = options.having_clauses ++
                 .{sql.Where.tree(
                 Adapter,
-                Table,
+                Model,
                 options.relations,
                 @TypeOf(args),
                 .where,
                 options.field_infos.len,
             )},
         }) {
-            const S = Statement(Adapter, .select, Schema, Table, .{
+            const S = Statement(Adapter, .select, Schema, Model, .{
                 .relations = options.relations,
                 .field_infos = options.field_infos ++ jetquery.fields.fieldInfos(
                     Adapter,
-                    Table,
+                    Model,
                     options.relations,
                     @TypeOf(args),
                     .where,
@@ -823,7 +823,7 @@ fn Statement(
                 .having_clauses = options.having_clauses ++
                     .{sql.Where.tree(
                     Adapter,
-                    Table,
+                    Model,
                     options.relations,
                     @TypeOf(args),
                     .where,
@@ -835,17 +835,17 @@ fn Statement(
 
         pub fn include(
             self: Self,
-            comptime name: jetquery.relation.RelationsEnum(Table),
+            comptime name: jetquery.relation.RelationsEnum(Model),
             comptime include_options: anytype,
         ) Statement(Adapter, switch (query_context) {
             .none => .select,
             else => |tag| tag,
-        }, Schema, Table, .{
+        }, Schema, Model, .{
             .relations = options.relations ++
-                .{jetquery.relation.Relation(Schema, Table, name, include_options, .include)},
+                .{jetquery.relation.Relation(Schema, Model, name, include_options, .include)},
             .field_infos = options.field_infos,
             .columns = switch (query_context) {
-                .none => &Table.columns(),
+                .none => &Model.columns(),
                 else => options.columns,
             },
             .order_clauses = options.order_clauses,
@@ -860,12 +860,12 @@ fn Statement(
             const S = Statement(Adapter, switch (query_context) {
                 .none => .select,
                 else => |tag| tag,
-            }, Schema, Table, .{
+            }, Schema, Model, .{
                 .relations = options.relations ++
-                    .{jetquery.relation.Relation(Schema, Table, name, include_options, .include)},
+                    .{jetquery.relation.Relation(Schema, Model, name, include_options, .include)},
                 .field_infos = options.field_infos,
                 .columns = switch (query_context) {
-                    .none => &Table.columns(),
+                    .none => &Model.columns(),
                     else => options.columns,
                 },
                 .order_clauses = options.order_clauses,
@@ -883,7 +883,7 @@ fn Statement(
         pub fn join(
             self: Self,
             comptime join_context: jetquery.relation.JoinContext,
-            comptime name: jetquery.relation.RelationsEnum(Table),
+            comptime name: jetquery.relation.RelationsEnum(Model),
         ) Statement(
             Adapter,
             switch (query_context) {
@@ -891,19 +891,19 @@ fn Statement(
                 else => |tag| tag,
             },
             Schema,
-            Table,
+            Model,
             .{
                 .relations = options.relations ++
                     .{jetquery.relation.Relation(
                     Schema,
-                    Table,
+                    Model,
                     name,
                     .{ .select = null },
                     join_context,
                 )},
                 .field_infos = options.field_infos,
                 .columns = switch (query_context) {
-                    .none => &Table.columns(),
+                    .none => &Model.columns(),
                     else => options.columns,
                 },
                 .order_clauses = options.order_clauses,
@@ -919,18 +919,18 @@ fn Statement(
             const S = Statement(Adapter, switch (query_context) {
                 .none => .select,
                 else => |tag| tag,
-            }, Schema, Table, .{
+            }, Schema, Model, .{
                 .relations = options.relations ++
                     .{jetquery.relation.Relation(
                     Schema,
-                    Table,
+                    Model,
                     name,
                     .{ .select = null },
                     join_context,
                 )},
                 .field_infos = options.field_infos,
                 .columns = switch (query_context) {
-                    .none => &Table.columns(),
+                    .none => &Model.columns(),
                     else => options.columns,
                 },
                 .order_clauses = options.order_clauses,
@@ -973,7 +973,7 @@ fn Statement(
             return if (rows.len == 0) return null else rows[0];
         }
 
-        pub fn values(self: Self) jetquery.fields.FieldValues(Table, options.relations, options.field_infos) {
+        pub fn values(self: Self) jetquery.fields.FieldValues(Model, options.relations, options.field_infos) {
             return self.field_values;
         }
 
@@ -1171,7 +1171,7 @@ fn Statement(
                     jetquery.fields.structField("__jetquery", JQ),
                     // Sadly we can't store these inside the nested value as Zig doesn't figure
                     // out that the values are available at comptime.
-                    jetquery.fields.structFieldComptime("__jetquery_model", Table),
+                    jetquery.fields.structFieldComptime("__jetquery_model", Model),
                     jetquery.fields.structFieldComptime("__jetquery_schema", Schema),
                 } ++ .{relation_field};
             }
@@ -1180,21 +1180,21 @@ fn Statement(
 }
 
 fn timestampsFields(
-    Table: type,
+    Model: type,
     comptime query_context: jetquery.fields.FieldContext,
-) [timestampsSize(Table, query_context)]jetquery.fields.FieldInfo {
-    const timestamps = detectTimestamps(Table);
+) [timestampsSize(Model, query_context)]jetquery.fields.FieldInfo {
+    const timestamps = detectTimestamps(Model);
     const has_created_at = std.mem.containsAtLeast(TimestampType, timestamps, 1, &.{.created_at});
     const has_updated_at = std.mem.containsAtLeast(TimestampType, timestamps, 1, &.{.updated_at});
     const updated_at = jetquery.fields.fieldInfo(
         jetquery.fields.structField(jetquery.default_column_names.updated_at, i64),
-        Table,
+        Model,
         jetquery.default_column_names.updated_at,
         query_context,
     );
     const created_at = jetquery.fields.fieldInfo(
         jetquery.fields.structField(jetquery.default_column_names.created_at, i64),
-        Table,
+        Model,
         jetquery.default_column_names.created_at,
         query_context,
     );
@@ -1217,9 +1217,9 @@ fn timestampsFields(
 
 const TimestampType = enum { created_at, updated_at };
 
-fn detectTimestamps(Table: type) []const TimestampType {
-    const has_created_at = @hasField(Table.Definition, jetquery.default_column_names.created_at);
-    const has_updated_at = @hasField(Table.Definition, jetquery.default_column_names.updated_at);
+fn detectTimestamps(Model: type) []const TimestampType {
+    const has_created_at = @hasField(Model.Definition, jetquery.default_column_names.created_at);
+    const has_updated_at = @hasField(Model.Definition, jetquery.default_column_names.updated_at);
 
     return if (has_created_at and has_updated_at)
         &.{ .created_at, .updated_at }
@@ -1231,8 +1231,8 @@ fn detectTimestamps(Table: type) []const TimestampType {
         &.{};
 }
 
-fn timestampsSize(Table: type, comptime query_context: jetquery.fields.FieldContext) u2 {
-    const timestamps = detectTimestamps(Table);
+fn timestampsSize(Model: type, comptime query_context: jetquery.fields.FieldContext) u2 {
+    const timestamps = detectTimestamps(Model);
 
     const has_updated_at = std.mem.containsAtLeast(TimestampType, timestamps, 1, &.{.updated_at});
 

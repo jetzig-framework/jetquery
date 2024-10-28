@@ -19,7 +19,7 @@ pub const Row = @import("jetquery/Row.zig");
 pub const Result = @import("jetquery/Result.zig").Result;
 pub const events = @import("jetquery/events.zig");
 pub const Query = @import("jetquery/Query.zig").Query;
-pub const Table = @import("jetquery/Table.zig").Table;
+pub const Model = @import("jetquery/Model.zig").Model;
 pub const Value = @import("jetquery/Value.zig").Value;
 pub const DateTime = jetcommon.types.DateTime;
 pub const debug = @import("jetquery/debug.zig");
@@ -82,7 +82,7 @@ test {
 
 test "select" {
     const Schema = struct {
-        pub const Cat = Table(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});
+        pub const Cat = Model(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});
     };
     const query = Query(TestAdapter, Schema, .Cat).select(.{ .name, .paws });
 
@@ -93,7 +93,7 @@ test "select" {
 
 test "select (all)" {
     const Schema = struct {
-        pub const Cat = Table(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});
+        pub const Cat = Model(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});
     };
     const query = Query(TestAdapter, Schema, .Cat).select(.{});
 
@@ -104,7 +104,7 @@ test "select (all)" {
 
 test "select (with `where`)" {
     const Schema = struct {
-        pub const Cat = Table(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});
+        pub const Cat = Model(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});
     };
 
     const paws = 4;
@@ -119,7 +119,7 @@ test "select (with `where`)" {
 
 test "where" {
     const Schema = struct {
-        pub const Cat = Table(@This(), "cats", struct { name: []const u8, paws: i32, color: []const u8 }, .{});
+        pub const Cat = Model(@This(), "cats", struct { name: []const u8, paws: i32, color: []const u8 }, .{});
     };
 
     const paws = 4;
@@ -133,7 +133,7 @@ test "where" {
 
 test "where (multiple)" {
     const Schema = struct {
-        pub const Cat = Table(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});
+        pub const Cat = Model(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});
     };
 
     const query = Query(TestAdapter, Schema, .Cat)
@@ -148,7 +148,7 @@ test "where (multiple)" {
 
 test "limit" {
     const Schema = struct {
-        pub const Cat = Table(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});
+        pub const Cat = Model(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});
     };
     const query = Query(TestAdapter, Schema, .Cat)
         .select(.{ .name, .paws })
@@ -161,7 +161,7 @@ test "limit" {
 
 test "offset" {
     const Schema = struct {
-        pub const Cat = Table(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});
+        pub const Cat = Model(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});
     };
     const query = Query(TestAdapter, Schema, .Cat)
         .select(.{ .name, .paws })
@@ -175,7 +175,7 @@ test "offset" {
 
 test "order by" {
     const Schema = struct {
-        pub const Cat = Table(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});
+        pub const Cat = Model(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});
     };
     const query = Query(TestAdapter, Schema, .Cat)
         .select(.{ .name, .paws })
@@ -188,7 +188,7 @@ test "order by" {
 
 test "order by (aliased desc = descending)" {
     const Schema = struct {
-        pub const Cat = Table(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});
+        pub const Cat = Model(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});
     };
     const query = Query(TestAdapter, Schema, .Cat)
         .select(.{ .name, .paws })
@@ -201,7 +201,7 @@ test "order by (aliased desc = descending)" {
 
 test "order by (aliased asc = ascending)" {
     const Schema = struct {
-        pub const Cat = Table(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});
+        pub const Cat = Model(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});
     };
     const query = Query(TestAdapter, Schema, .Cat)
         .select(.{ .name, .paws })
@@ -214,7 +214,7 @@ test "order by (aliased asc = ascending)" {
 
 test "order by (short-hand)" {
     const Schema = struct {
-        pub const Cat = Table(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});
+        pub const Cat = Model(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});
     };
     const query = Query(TestAdapter, Schema, .Cat)
         .select(.{ .name, .paws })
@@ -227,14 +227,14 @@ test "order by (short-hand)" {
 
 test "order by with relations (short-hand)" {
     const Schema = struct {
-        pub const Human = Table(
+        pub const Human = Model(
             @This(),
             "humans",
             struct { id: i32, cat_id: i32, name: []const u8 },
             .{ .relations = .{ .cat = relation.belongsTo(.Cat, .{}) } },
         );
 
-        pub const Cat = Table(
+        pub const Cat = Model(
             @This(),
             "cats",
             struct { id: i32, name: []const u8, paws: i32 },
@@ -255,14 +255,14 @@ test "order by with relations (short-hand)" {
 
 test "order by with relations (explicit form)" {
     const Schema = struct {
-        pub const Human = Table(
+        pub const Human = Model(
             @This(),
             "humans",
             struct { id: i32, cat_id: i32, name: []const u8 },
             .{ .relations = .{ .cat = relation.belongsTo(.Cat, .{}) } },
         );
 
-        pub const Cat = Table(
+        pub const Cat = Model(
             @This(),
             "cats",
             struct { id: i32, name: []const u8, paws: i32 },
@@ -283,7 +283,7 @@ test "order by with relations (explicit form)" {
 
 test "order by with relations and base table, short + explicit forms" {
     const Schema = struct {
-        pub const Human = Table(
+        pub const Human = Model(
             @This(),
             "humans",
             struct { id: i32, cat_id: i32, family_id: i32, name: []const u8 },
@@ -295,14 +295,14 @@ test "order by with relations and base table, short + explicit forms" {
             },
         );
 
-        pub const Cat = Table(
+        pub const Cat = Model(
             @This(),
             "cats",
             struct { id: i32, name: []const u8, paws: i32 },
             .{},
         );
 
-        pub const Family = Table(
+        pub const Family = Model(
             @This(),
             "families",
             struct { id: i32, name: []const u8 },
@@ -328,7 +328,7 @@ test "order by with relations and base table, short + explicit forms" {
 
 test "insert" {
     const Schema = struct {
-        pub const Cat = Table(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});
+        pub const Cat = Model(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});
     };
     const query = Query(TestAdapter, Schema, .Cat)
         .insert(.{ .name = "Hercules", .paws = 4 });
@@ -340,7 +340,7 @@ test "insert" {
 
 test "update" {
     const Schema = struct {
-        pub const Cat = Table(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});
+        pub const Cat = Model(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});
     };
     const query = Query(TestAdapter, Schema, .Cat)
         .update(.{ .name = "Heracles", .paws = 2 })
@@ -355,7 +355,7 @@ test "update" {
 
 test "delete" {
     const Schema = struct {
-        pub const Cat = Table(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});
+        pub const Cat = Model(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});
     };
     const query = Query(TestAdapter, Schema, .Cat)
         .delete()
@@ -368,7 +368,7 @@ test "delete" {
 
 test "delete (without where clause)" {
     const Schema = struct {
-        pub const Cat = Table(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});
+        pub const Cat = Model(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});
     };
     const query = Query(TestAdapter, Schema, .Cat).delete();
 
@@ -377,7 +377,7 @@ test "delete (without where clause)" {
 
 test "deleteAll" {
     const Schema = struct {
-        pub const Cat = Table(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});
+        pub const Cat = Model(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});
     };
     const query = Query(TestAdapter, Schema, .Cat)
         .deleteAll();
@@ -389,7 +389,7 @@ test "deleteAll" {
 
 test "find" {
     const Schema = struct {
-        pub const Cat = Table(@This(), "cats", struct { id: i32, name: []const u8, paws: i32 }, .{});
+        pub const Cat = Model(@This(), "cats", struct { id: i32, name: []const u8, paws: i32 }, .{});
     };
     const query = Query(TestAdapter, Schema, .Cat).find(1000);
 
@@ -400,7 +400,7 @@ test "find" {
 
 test "find (with coerced id)" {
     const Schema = struct {
-        pub const Cat = Table(@This(), "cats", struct { id: i32, name: []const u8, paws: i32 }, .{});
+        pub const Cat = Model(@This(), "cats", struct { id: i32, name: []const u8, paws: i32 }, .{});
     };
     const query = Query(TestAdapter, Schema, .Cat).find("1000");
 
@@ -411,7 +411,7 @@ test "find (with coerced id)" {
 
 test "findBy" {
     const Schema = struct {
-        pub const Cat = Table(@This(), "cats", struct { id: i32, name: []const u8, paws: i32 }, .{});
+        pub const Cat = Model(@This(), "cats", struct { id: i32, name: []const u8, paws: i32 }, .{});
     };
     const query = Query(TestAdapter, Schema, .Cat).findBy(.{ .name = "Hercules", .paws = 4 });
 
@@ -422,7 +422,7 @@ test "findBy" {
 
 test "count()" {
     const Schema = struct {
-        pub const Cat = Table(@This(), "cats", struct { id: i32, name: []const u8, paws: i32 }, .{});
+        pub const Cat = Model(@This(), "cats", struct { id: i32, name: []const u8, paws: i32 }, .{});
     };
     const query = Query(TestAdapter, Schema, .Cat).where(.{ .name = "Hercules", .paws = 4 }).count();
 
@@ -433,7 +433,7 @@ test "count()" {
 
 test "distinct().count()" {
     const Schema = struct {
-        pub const Cat = Table(@This(), "cats", struct { id: i32, name: []const u8, paws: i32 }, .{});
+        pub const Cat = Model(@This(), "cats", struct { id: i32, name: []const u8, paws: i32 }, .{});
     };
     const query = Query(TestAdapter, Schema, .Cat).where(.{ .name = "Hercules", .paws = 4 }).distinct(.{.name}).count();
 
@@ -444,8 +444,8 @@ test "distinct().count()" {
 
 test "nested distinct().count()" {
     const Schema = struct {
-        pub const Cat = Table(@This(), "cats", struct { id: i32, name: []const u8, paws: i32 }, .{});
-        pub const Human = Table(
+        pub const Cat = Model(@This(), "cats", struct { id: i32, name: []const u8, paws: i32 }, .{});
+        pub const Human = Model(
             @This(),
             "humans",
             struct { cat_id: i32, name: []const u8 },
@@ -463,7 +463,7 @@ test "nested distinct().count()" {
 
 test "combined" {
     const Schema = struct {
-        pub const Cat = Table(@This(), "cats", struct { id: i32, name: []const u8, paws: i32 }, .{});
+        pub const Cat = Model(@This(), "cats", struct { id: i32, name: []const u8, paws: i32 }, .{});
     };
     const query = Query(TestAdapter, Schema, .Cat)
         .select(.{ .name, .paws })
@@ -478,7 +478,7 @@ test "combined" {
 
 test "runtime field values" {
     const Schema = struct {
-        pub const Cat = Table(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});
+        pub const Cat = Model(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});
     };
     var hercules_buf: [8]u8 = undefined;
     const hercules = try std.fmt.bufPrint(&hercules_buf, "{s}", .{"Hercules"});
@@ -496,7 +496,7 @@ test "runtime field values" {
 
 test "boolean coercion" {
     const Schema = struct {
-        pub const Cat = Table(@This(), "cats", struct { name: []const u8, intelligent: bool }, .{});
+        pub const Cat = Model(@This(), "cats", struct { name: []const u8, intelligent: bool }, .{});
     };
     const query = Query(TestAdapter, Schema, .Cat)
         .select(.{.name})
@@ -507,7 +507,7 @@ test "boolean coercion" {
 
 test "integer coercion" {
     const Schema = struct {
-        pub const Cat = Table(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});
+        pub const Cat = Model(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});
     };
     const query = Query(TestAdapter, Schema, .Cat)
         .select(.{.name})
@@ -518,7 +518,7 @@ test "integer coercion" {
 
 test "float coercion" {
     const Schema = struct {
-        pub const Cat = Table(@This(), "cats", struct { name: []const u8, intelligence: f64 }, .{});
+        pub const Cat = Model(@This(), "cats", struct { name: []const u8, intelligence: f64 }, .{});
     };
     const query = Query(TestAdapter, Schema, .Cat)
         .select(.{.name})
@@ -529,7 +529,7 @@ test "float coercion" {
 
 test "toJetQuery()" {
     const Schema = struct {
-        pub const Cat = Table(@This(), "cats", struct { name: []const u8, paws: i32, color: []const u8 }, .{});
+        pub const Cat = Model(@This(), "cats", struct { name: []const u8, paws: i32, color: []const u8 }, .{});
     };
 
     const Name = struct {
@@ -578,7 +578,7 @@ test "toJetQuery()" {
 
 test "failed coercion (bool)" {
     const Schema = struct {
-        pub const Cat = Table(@This(), "cats", struct { name: []const u8, intelligent: bool }, .{});
+        pub const Cat = Model(@This(), "cats", struct { name: []const u8, intelligent: bool }, .{});
     };
     const query = Query(TestAdapter, Schema, .Cat)
         .select(.{.name})
@@ -589,7 +589,7 @@ test "failed coercion (bool)" {
 
 test "failed coercion (int)" {
     const Schema = struct {
-        pub const Cat = Table(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});
+        pub const Cat = Model(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});
     };
     const query = Query(TestAdapter, Schema, .Cat)
         .select(.{.name})
@@ -600,7 +600,7 @@ test "failed coercion (int)" {
 
 test "failed coercion (float)" {
     const Schema = struct {
-        pub const Cat = Table(@This(), "cats", struct { name: []const u8, intelligence: f64 }, .{});
+        pub const Cat = Model(@This(), "cats", struct { name: []const u8, intelligence: f64 }, .{});
     };
     const query = Query(TestAdapter, Schema, .Cat)
         .select(.{.name})
@@ -611,7 +611,7 @@ test "failed coercion (float)" {
 
 test "timestamps (create)" {
     const Schema = struct {
-        pub const Cat = Table(
+        pub const Cat = Model(
             @This(),
             "cats",
             struct { name: []const u8, paws: i32, created_at: i64, updated_at: i64 },
@@ -628,7 +628,7 @@ test "timestamps (create)" {
 
 test "timestamps (update)" {
     const Schema = struct {
-        pub const Cat = Table(
+        pub const Cat = Model(
             @This(),
             "cats",
             struct { name: []const u8, paws: i32, created_at: i64, updated_at: i64 },
@@ -648,14 +648,14 @@ test "timestamps (update)" {
 
 test "belongsTo" {
     const Schema = struct {
-        pub const Human = Table(
+        pub const Human = Model(
             @This(),
             "humans",
             struct { id: i32, cat_id: i32, name: []const u8 },
             .{ .relations = .{ .cat = relation.belongsTo(.Cat, .{}) } },
         );
 
-        pub const Cat = Table(
+        pub const Cat = Model(
             @This(),
             "cats",
             struct { id: i32, name: []const u8, paws: i32, created_at: i64, updated_at: i64 },
@@ -675,7 +675,7 @@ test "belongsTo" {
 
 test "belongsTo (multiple)" {
     const Schema = struct {
-        pub const Human = Table(
+        pub const Human = Model(
             @This(),
             "humans",
             struct { id: i32, family_id: i32, cat_id: i32, name: []const u8 },
@@ -687,14 +687,14 @@ test "belongsTo (multiple)" {
             },
         );
 
-        pub const Cat = Table(
+        pub const Cat = Model(
             @This(),
             "cats",
             struct { id: i32, name: []const u8, paws: i32, created_at: i64, updated_at: i64 },
             .{},
         );
 
-        pub const Family = Table(
+        pub const Family = Model(
             @This(),
             "families",
             struct { id: i32, name: []const u8 },
@@ -715,7 +715,7 @@ test "belongsTo (multiple)" {
 
 test "belongsTo (with specified columns)" {
     const Schema = struct {
-        pub const Human = Table(
+        pub const Human = Model(
             @This(),
             "humans",
             struct { id: i32, family_id: i32, cat_id: i32, name: []const u8 },
@@ -727,14 +727,14 @@ test "belongsTo (with specified columns)" {
             },
         );
 
-        pub const Cat = Table(
+        pub const Cat = Model(
             @This(),
             "cats",
             struct { id: i32, name: []const u8, paws: i32, created_at: i64, updated_at: i64 },
             .{},
         );
 
-        pub const Family = Table(
+        pub const Family = Model(
             @This(),
             "families",
             struct { id: i32, name: []const u8 },
@@ -756,14 +756,14 @@ test "belongsTo (with specified columns)" {
 
 test "hasMany" {
     const Schema = struct {
-        pub const Human = Table(
+        pub const Human = Model(
             @This(),
             "humans",
             struct { id: i32, cat_id: i32, name: []const u8 },
             .{ .relations = .{ .cat = relation.belongsTo(.Cat, .{}) } },
         );
 
-        pub const Cat = Table(
+        pub const Cat = Model(
             @This(),
             "cats",
             struct { id: i32, name: []const u8, paws: i32, created_at: i64, updated_at: i64 },
@@ -791,7 +791,7 @@ test "hasMany" {
 
 test "nested where" {
     const Schema = struct {
-        pub const Human = Table(
+        pub const Human = Model(
             @This(),
             "humans",
             struct { id: i32, family_id: i32, cat_id: i32, name: []const u8 },
@@ -803,14 +803,14 @@ test "nested where" {
             },
         );
 
-        pub const Cat = Table(
+        pub const Cat = Model(
             @This(),
             "cats",
             struct { id: i32, name: []const u8, paws: i32, created_at: i64, updated_at: i64 },
             .{},
         );
 
-        pub const Family = Table(
+        pub const Family = Model(
             @This(),
             "families",
             struct { id: i32, name: []const u8 },
@@ -835,7 +835,7 @@ test "nested where" {
 
 test "operator logic" {
     const Schema = struct {
-        pub const Human = Table(
+        pub const Human = Model(
             @This(),
             "humans",
             struct { id: i32, family_id: i32, cat_id: i32, name: []const u8 },
@@ -847,14 +847,14 @@ test "operator logic" {
             },
         );
 
-        pub const Cat = Table(
+        pub const Cat = Model(
             @This(),
             "cats",
             struct { id: i32, name: []const u8, paws: i32, created_at: i64, updated_at: i64 },
             .{},
         );
 
-        pub const Family = Table(
+        pub const Family = Model(
             @This(),
             "families",
             struct { id: i32, name: []const u8 },
@@ -883,7 +883,7 @@ test "operator logic" {
 
 test "slice of []const u8 in whereclause" {
     const Schema = struct {
-        pub const Human = Table(
+        pub const Human = Model(
             @This(),
             "humans",
             struct { name: []const u8 },
@@ -904,7 +904,7 @@ test "slice of []const u8 in whereclause" {
 
 test "slice of int in whereclause" {
     const Schema = struct {
-        pub const Human = Table(
+        pub const Human = Model(
             @This(),
             "humans",
             struct { cats: u128 },
@@ -925,7 +925,7 @@ test "slice of int in whereclause" {
 
 test "slice of float in whereclause" {
     const Schema = struct {
-        pub const Human = Table(
+        pub const Human = Model(
             @This(),
             "humans",
             struct { favorite_number: f64 },
@@ -946,7 +946,7 @@ test "slice of float in whereclause" {
 
 test "slice of bool in whereclause" {
     const Schema = struct {
-        pub const Human = Table(
+        pub const Human = Model(
             @This(),
             "humans",
             struct { has_cats: bool },
@@ -967,7 +967,7 @@ test "slice of bool in whereclause" {
 
 test "null in whereclause" {
     const Schema = struct {
-        pub const Human = Table(
+        pub const Human = Model(
             @This(),
             "humans",
             struct { name: []const u8 },
@@ -983,7 +983,7 @@ test "null in whereclause" {
 
 test "groupBy" {
     const Schema = struct {
-        pub const Cat = Table(
+        pub const Cat = Model(
             @This(),
             "cats",
             struct { name: []const u8 },
@@ -999,7 +999,7 @@ test "groupBy" {
 
 test "aggregate max()" {
     const Schema = struct {
-        pub const Cat = Table(
+        pub const Cat = Model(
             @This(),
             "cats",
             struct { name: []const u8, paws: usize },
@@ -1017,7 +1017,7 @@ test "aggregate max()" {
 
 test "aggregate min()" {
     const Schema = struct {
-        pub const Cat = Table(
+        pub const Cat = Model(
             @This(),
             "cats",
             struct { name: []const u8, paws: usize },
@@ -1035,7 +1035,7 @@ test "aggregate min()" {
 
 test "aggregate count()" {
     const Schema = struct {
-        pub const Cat = Table(
+        pub const Cat = Model(
             @This(),
             "cats",
             struct { name: []const u8, paws: usize },
@@ -1053,7 +1053,7 @@ test "aggregate count()" {
 
 test "aggregate avg()" {
     const Schema = struct {
-        pub const Cat = Table(
+        pub const Cat = Model(
             @This(),
             "cats",
             struct { name: []const u8, paws: usize },
@@ -1071,7 +1071,7 @@ test "aggregate avg()" {
 
 test "aggregate sum()" {
     const Schema = struct {
-        pub const Cat = Table(
+        pub const Cat = Model(
             @This(),
             "cats",
             struct { name: []const u8, paws: usize },
@@ -1089,7 +1089,7 @@ test "aggregate sum()" {
 
 test "like/ilike" {
     const Schema = struct {
-        pub const Cat = Table(
+        pub const Cat = Model(
             @This(),
             "cats",
             struct { name: []const u8, paws: usize },
@@ -1107,7 +1107,7 @@ test "like/ilike" {
 
 test "inner join" {
     const Schema = struct {
-        pub const Human = Table(
+        pub const Human = Model(
             @This(),
             "humans",
             struct { id: i32, family_id: i32, cat_id: i32, name: []const u8 },
@@ -1119,14 +1119,14 @@ test "inner join" {
             },
         );
 
-        pub const Cat = Table(
+        pub const Cat = Model(
             @This(),
             "cats",
             struct { id: i32, name: []const u8, paws: i32, created_at: i64, updated_at: i64 },
             .{},
         );
 
-        pub const Computer = Table(
+        pub const Computer = Model(
             @This(),
             "computers",
             struct { id: i32, human_id: i32 },
@@ -1145,7 +1145,7 @@ test "inner join" {
 
 test "outer join" {
     const Schema = struct {
-        pub const Human = Table(
+        pub const Human = Model(
             @This(),
             "humans",
             struct { id: i32, family_id: i32, cat_id: i32, name: []const u8 },
@@ -1157,14 +1157,14 @@ test "outer join" {
             },
         );
 
-        pub const Cat = Table(
+        pub const Cat = Model(
             @This(),
             "cats",
             struct { id: i32, name: []const u8, paws: i32, created_at: i64, updated_at: i64 },
             .{},
         );
 
-        pub const Computer = Table(
+        pub const Computer = Model(
             @This(),
             "computers",
             struct { id: i32, human_id: i32 },
@@ -1183,7 +1183,7 @@ test "outer join" {
 
 test "inner and outer join" {
     const Schema = struct {
-        pub const Human = Table(
+        pub const Human = Model(
             @This(),
             "humans",
             struct { id: i32, family_id: i32, cat_id: i32, name: []const u8 },
@@ -1195,14 +1195,14 @@ test "inner and outer join" {
             },
         );
 
-        pub const Cat = Table(
+        pub const Cat = Model(
             @This(),
             "cats",
             struct { id: i32, name: []const u8, paws: i32, created_at: i64, updated_at: i64 },
             .{},
         );
 
-        pub const Family = Table(
+        pub const Family = Model(
             @This(),
             "families",
             struct { id: i32, name: []const u8 },
@@ -1221,7 +1221,7 @@ test "inner and outer join" {
 
 test "inner and outer join with select on relation columns" {
     const Schema = struct {
-        pub const Human = Table(
+        pub const Human = Model(
             @This(),
             "humans",
             struct { id: i32, family_id: i32, cat_id: i32, name: []const u8 },
@@ -1233,14 +1233,14 @@ test "inner and outer join with select on relation columns" {
             },
         );
 
-        pub const Cat = Table(
+        pub const Cat = Model(
             @This(),
             "cats",
             struct { id: i32, name: []const u8, paws: i32, created_at: i64, updated_at: i64 },
             .{},
         );
 
-        pub const Family = Table(
+        pub const Family = Model(
             @This(),
             "families",
             struct { id: i32, name: []const u8 },
@@ -1259,7 +1259,7 @@ test "inner and outer join with select on relation columns" {
 
 test "default order by (no order clauses, default primary key present)" {
     const Schema = struct {
-        pub const Human = Table(
+        pub const Human = Model(
             @This(),
             "humans",
             struct { id: i32 },
@@ -1274,7 +1274,7 @@ test "default order by (no order clauses, default primary key present)" {
 
 test "default order by (no order clauses, default primary key not present)" {
     const Schema = struct {
-        pub const Human = Table(
+        pub const Human = Model(
             @This(),
             "humans",
             struct { name: []const u8 },
@@ -1289,7 +1289,7 @@ test "default order by (no order clauses, default primary key not present)" {
 
 test "default order by (no order clauses, custom primary key present)" {
     const Schema = struct {
-        pub const Human = Table(
+        pub const Human = Model(
             @This(),
             "humans",
             struct { name: []const u8 },
@@ -1304,7 +1304,7 @@ test "default order by (no order clauses, custom primary key present)" {
 
 test "default order by (no order clauses, custom primary key not present)" {
     const Schema = struct {
-        pub const Human = Table(
+        pub const Human = Model(
             @This(),
             "humans",
             struct { id: i32 },
@@ -1319,7 +1319,7 @@ test "default order by (no order clauses, custom primary key not present)" {
 
 test "raw whereclause" {
     const Schema = struct {
-        pub const Human = Table(
+        pub const Human = Model(
             @This(),
             "humans",
             struct { id: i32 },
@@ -1340,7 +1340,7 @@ test "raw whereclause" {
 
 test "raw select column" {
     const Schema = struct {
-        pub const Human = Table(
+        pub const Human = Model(
             @This(),
             "humans",
             struct { id: i32 },

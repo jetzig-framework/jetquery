@@ -7,7 +7,7 @@ const Migration = @import("migrations").Migration;
 const jetquery = @import("jetquery");
 
 const MigrateSchema = struct {
-    pub const Migrations = jetquery.Table(
+    pub const Migrations = jetquery.Model(
         @This(),
         "jetquery_migrations",
         struct {
@@ -111,7 +111,7 @@ test "migrate" {
     try resetDatabase();
 
     const TestSchema = struct {
-        pub const Cat = jetquery.Table(@This(), "cats", struct {
+        pub const Cat = jetquery.Model(@This(), "cats", struct {
             id: i32,
             name: []const u8,
             paws: i8,
@@ -119,7 +119,7 @@ test "migrate" {
             updated_at: jetcommon.types.DateTime,
             human_id: i32,
         }, .{});
-        pub const Human = jetquery.Table(
+        pub const Human = jetquery.Model(
             @This(),
             "humans",
             struct {
