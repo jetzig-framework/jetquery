@@ -105,6 +105,47 @@ fn renderUpdate(
     );
 }
 
+pub fn renderUpdateRuntime(
+    allocator: std.mem.Allocator,
+    comptime Adapter: type,
+    comptime Table: type,
+    comptime where_clauses: []const jetquery.sql.Where.Tree,
+    comptime Args: type,
+    field_states: []const jetquery.sql.FieldState,
+    first_value_index: usize,
+) ![]const u8 {
+    var value_index = first_value_index;
+
+    var params_buf = std.ArrayList(u8).init(allocator);
+    defer params_buf.deinit();
+    const params_writer = params_buf.writer();
+
+    inline for (std.meta.fields(Args), 0..) |field, index| {
+        if (field_states[index].modified) {
+            var param_buf: [8]u8 = undefined;
+            try params_writer.print(
+                "{s}{s} = {s}",
+                .{
+                    if (value_index > first_value_index) ", " else "",
+                    Adapter.identifier(field.name),
+                    try Adapter.paramSqlBuf(&param_buf, value_index),
+                },
+            );
+            value_index += 1;
+        }
+    }
+
+    return try std.fmt.allocPrint(
+        allocator,
+        "UPDATE {s} SET {s}{s}",
+        .{
+            Adapter.identifier(Table.name),
+            params_buf.items,
+            comptime renderWhere(Adapter, where_clauses),
+        },
+    );
+}
+
 fn renderInsert(
     Adapter: type,
     Table: type,

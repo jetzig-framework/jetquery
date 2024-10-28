@@ -201,22 +201,62 @@ pub const Connection = struct {
         const start_time = std.time.nanoTimestamp();
 
         const result = self.connection.queryOpts(sql, values, .{}) catch |err| {
-            if (self.connection.err) |connection_error| {
-                try repo.eventCallback(.{
-                    .sql = sql,
-                    .err = .{ .message = connection_error.message },
-                    .status = .fail,
-                    .caller_info = caller_info,
-                });
-            } else {
-                try repo.eventCallback(.{
-                    .sql = sql,
-                    .err = .{ .message = @errorName(err) },
-                    .status = .fail,
-                    .caller_info = caller_info,
-                });
-            }
+            try self.errorCallback(err, sql, repo, caller_info);
+            return err;
+        };
 
+        const duration: i64 = @intCast(std.time.nanoTimestamp() - start_time);
+
+        try repo.eventCallback(.{
+            .sql = sql,
+            .caller_info = caller_info,
+            .duration = duration,
+        });
+
+        return .{
+            .postgresql = .{
+                .allocator = repo.allocator,
+                .result = result,
+                .connection = self.connection,
+                .caller_info = caller_info,
+                .duration = duration,
+                .repo = repo,
+            },
+        };
+    }
+
+    /// Execute a query with runtime binding. Used internally by `Repo.save` so the API is not
+    /// intended for public use.
+    pub fn executeRuntimeBind(
+        self: Connection,
+        sql: []const u8,
+        values: anytype,
+        comptime Args: type,
+        args: Args,
+        field_states: []const jetquery.sql.FieldState,
+        caller_info: ?jetquery.debug.CallerInfo,
+        repo: anytype,
+    ) !jetquery.Result(@TypeOf(repo.*)) {
+        const start_time = std.time.nanoTimestamp();
+
+        var stmt = try pg.Stmt.init(self.connection, .{});
+        errdefer stmt.deinit();
+
+        stmt.prepare(sql) catch |err| {
+            try self.errorCallback(err, sql, repo, caller_info);
+            return err;
+        };
+
+        inline for (values) |value| {
+            try stmt.bind(value);
+        }
+
+        inline for (std.meta.fields(Args), 0..) |field, index| {
+            if (field_states[index].modified) try stmt.bind(@field(args, field.name));
+        }
+
+        const result = stmt.execute() catch |err| {
+            try self.errorCallback(err, sql, repo, caller_info);
             return err;
         };
 
@@ -242,6 +282,30 @@ pub const Connection = struct {
 
     pub fn release(self: Connection) void {
         self.connection.release();
+    }
+
+    fn errorCallback(
+        self: Connection,
+        err: anyerror,
+        sql: []const u8,
+        repo: anytype,
+        caller_info: ?jetquery.debug.CallerInfo,
+    ) !void {
+        if (self.connection.err) |connection_error| {
+            try repo.eventCallback(.{
+                .sql = sql,
+                .err = .{ .message = connection_error.message },
+                .status = .fail,
+                .caller_info = caller_info,
+            });
+        } else {
+            try repo.eventCallback(.{
+                .sql = sql,
+                .err = .{ .message = @errorName(err) },
+                .status = .fail,
+                .caller_info = caller_info,
+            });
+        }
     }
 };
 
@@ -313,6 +377,11 @@ pub fn notNullSql() []const u8 {
 /// SQL representing a bind parameter, e.g. `$1`.
 pub fn paramSql(comptime index: usize) []const u8 {
     return std.fmt.comptimePrint("${}", .{index + 1});
+}
+
+/// SQL representing a bind parameter, e.g. `$1`.
+pub fn paramSqlBuf(buf: []u8, index: usize) ![]const u8 {
+    return try std.fmt.bufPrint(buf, "${}", .{index + 1});
 }
 
 /// SQL representing an array bind parameter with an `ANY` call, e.g. `ANY ($1)`.

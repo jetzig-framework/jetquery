@@ -3,7 +3,13 @@ const std = @import("std");
 const jetquery = @import("../jetquery.zig");
 
 pub const render = @import("sql/render.zig").render;
+pub const renderUpdateRuntime = @import("sql/render.zig").renderUpdateRuntime;
 pub const Where = @import("sql/Where.zig");
+
+pub const FieldState = struct {
+    name: []const u8,
+    modified: bool,
+};
 
 pub const QueryContext = enum {
     select,

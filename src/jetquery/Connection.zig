@@ -83,4 +83,29 @@ pub const Connection = union(enum) {
             inline else => |connection| connection.release(),
         }
     }
+
+    pub fn executeVoidRuntimeBind(
+        self: Connection,
+        sql: []const u8,
+        values: anytype,
+        comptime Args: type,
+        args: Args,
+        field_states: []const jetquery.sql.FieldState,
+        caller_info: ?jetquery.debug.CallerInfo,
+        repo: anytype,
+    ) !void {
+        var result = switch (self) {
+            inline else => |connection| try connection.executeRuntimeBind(
+                sql,
+                values,
+                Args,
+                args,
+                field_states,
+                caller_info,
+                repo,
+            ),
+        };
+        try result.drain();
+        result.deinit();
+    }
 };

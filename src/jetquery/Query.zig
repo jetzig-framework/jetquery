@@ -347,6 +347,7 @@ fn Statement(
         pub const ResultType = QueryResultType();
         pub const ColumnInfos = QueryColumnInfos();
         pub const relations = options.relations;
+        pub const where_clauses = options.where_clauses;
 
         const Self = @This();
 

@@ -80,6 +80,13 @@ pub fn Adapter(comptime adapter_name: Name, AdaptedRepo: type) type {
             };
         }
 
+        /// Same as `paramSql` but writes to a buffer at runtime.
+        pub fn paramSqlBuf(self: Self, buf: []u8, index: usize) ![]const u8 {
+            return switch (self) {
+                inline else => |adapter| try @TypeOf(adapter).paramSqlBuf(buf, index),
+            };
+        }
+
         /// SQL representing an array bind parameter with an `ANY` call, e.g. `ANY ($1)`.
         pub fn anyParamSql(self: Self, comptime index: usize) []const u8 {
             return switch (self) {
