@@ -19,7 +19,10 @@ const ResultContext = enum { one, many, none };
 pub fn Query(adapter: jetquery.adapters.Name, Schema: type, comptime table: anytype) type {
     const Adapter = jetquery.adapters.Type(adapter);
     const Model = switch (@typeInfo(@TypeOf(table))) {
-        .enum_literal => @field(Schema, @tagName(std.enums.nameCast(jetquery.DeclEnum(Schema), table))),
+        .enum_literal => @field(Schema, @tagName(std.enums.nameCast(
+            std.meta.DeclEnum(Schema),
+            table,
+        ))),
         else => switch (@TypeOf(table)) {
             type => table,
             else => @compileError("Expected enum literal or type, found `" ++ @typeName(@TypeOf(table))),
@@ -241,7 +244,7 @@ fn InitialStatement(
     }){ .field_values = .{}, .field_errors = .{} };
 }
 
-fn SchemaTable(Schema: type, comptime name: jetquery.DeclEnum(Schema)) type {
+fn SchemaTable(Schema: type, comptime name: std.meta.DeclEnum(Schema)) type {
     return @field(Schema, @tagName(name));
 }
 

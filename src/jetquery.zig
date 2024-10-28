@@ -48,32 +48,6 @@ pub const CreateIndexOptions = struct {
 
 pub const original_prefix = "__original_";
 
-// Can be switched to `std.meta.DeclEnum` if https://github.com/ziglang/zig/pull/21331 is merged
-// (or fixed otherwise) to prevent overflow on empty struct.
-pub fn DeclEnum(T: type) type {
-    comptime {
-        const decls = std.meta.declarations(T);
-        var enum_fields: [decls.len]std.builtin.Type.EnumField = undefined;
-        const TagType = std.math.IntFittingRange(
-            0,
-            if (decls.len == 0) 0 else decls.len - 1,
-        );
-
-        for (decls, 0..) |decl, index| {
-            enum_fields[index] = .{ .name = decl.name, .value = index };
-        }
-
-        return @Type(.{
-            .@"enum" = .{
-                .tag_type = TagType,
-                .fields = &enum_fields,
-                .decls = &.{},
-                .is_exhaustive = true,
-            },
-        });
-    }
-}
-
 const TestAdapter: adapters.Name = .postgresql;
 
 test {

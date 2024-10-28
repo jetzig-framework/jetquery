@@ -297,15 +297,18 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
 
         /// Insert a model instance into the database.
         /// ```zig
-        /// const cat = Schema.Cat.init(.{ .name = "Hercules", .paws  = 4 });
-        /// try repo.insert(cat);
+        /// try repo.insert(.Cat, .{ .name = "Hercules", .paws = 4 });
         /// ```
-        pub fn insert(self: *AdaptedRepo, value: anytype) !void {
+        pub fn insert(
+            self: *AdaptedRepo,
+            comptime model_name: std.meta.DeclEnum(Schema),
+            args: anytype,
+        ) !void {
             const query = jetquery.Query(
                 adapter_name,
-                value.__jetquery_schema,
-                value.__jetquery_model,
-            ).insert(value.__jetquery.args);
+                Schema,
+                @field(Schema, @tagName(model_name)),
+            ).insert(args);
 
             try self.executeInternal(query, try jetquery.debug.getCallerInfo(@returnAddress()));
         }
@@ -807,18 +810,18 @@ test "relations" {
 
     try std.testing.expectEqualStrings("Hercules", bob.cats[0].name);
 
-    try repo.insert(Schema.Cat.init(.{
+    try repo.insert(.Cat, .{
         .id = 2,
         .name = "Princes",
         .paws = std.crypto.random.int(u3),
         .human_id = bob.id,
-    }));
-    try repo.insert(Schema.Cat.init(.{
+    });
+    try repo.insert(.Cat, .{
         .id = 3,
         .name = "Heracles",
         .paws = std.crypto.random.int(u3),
         .human_id = 1000,
-    }));
+    });
 
     const bob_with_more_cats = try repo.Query(.Human)
         .include(.cats, .{})
@@ -830,10 +833,10 @@ test "relations" {
     try std.testing.expectEqualStrings("Hercules", bob_with_more_cats.cats[0].name);
     try std.testing.expectEqualStrings("Princes", bob_with_more_cats.cats[1].name);
 
-    try repo.insert(Schema.Human.init(.{
+    try repo.insert(.Human, .{
         .id = 2,
         .name = "Jane",
-    }));
+    });
 
     const jane = try repo.Query(.Human)
         .include(.cats, .{})
@@ -843,26 +846,26 @@ test "relations" {
 
     try std.testing.expect(jane.cats.len == 0);
 
-    try repo.insert(Schema.Cat.init(.{
+    try repo.insert(.Cat, .{
         .id = 4,
         .human_id = jane.id,
         .name = "Cindy",
         .paws = std.crypto.random.int(u3),
-    }));
+    });
 
-    try repo.insert(Schema.Cat.init(.{
+    try repo.insert(.Cat, .{
         .id = 5,
         .human_id = jane.id,
         .name = "Garfield",
         .paws = std.crypto.random.int(u3),
-    }));
+    });
 
-    try repo.insert(Schema.Cat.init(.{
+    try repo.insert(.Cat, .{
         .id = 6,
         .human_id = jane.id,
         .name = "Felix",
         .paws = std.crypto.random.int(u3),
-    }));
+    });
 
     const humans = try repo.Query(.Human).include(.cats, .{}).orderBy(.name).all(&repo);
     defer repo.free(humans);
@@ -1055,12 +1058,12 @@ test "aggregate max()" {
 
     const sql = jetquery.sql;
 
-    try repo.insert(Schema.Cat.init(.{ .name = "Hercules", .paws = 2 }));
-    try repo.insert(Schema.Cat.init(.{ .name = "Hercules", .paws = 8 }));
-    try repo.insert(Schema.Cat.init(.{ .name = "Hercules", .paws = 4 }));
-    try repo.insert(Schema.Cat.init(.{ .name = "Princes", .paws = 100 }));
-    try repo.insert(Schema.Cat.init(.{ .name = "Princes", .paws = 5 }));
-    try repo.insert(Schema.Cat.init(.{ .name = "Princes", .paws = 2 }));
+    try repo.insert(.Cat, .{ .name = "Hercules", .paws = 2 });
+    try repo.insert(.Cat, .{ .name = "Hercules", .paws = 8 });
+    try repo.insert(.Cat, .{ .name = "Hercules", .paws = 4 });
+    try repo.insert(.Cat, .{ .name = "Princes", .paws = 100 });
+    try repo.insert(.Cat, .{ .name = "Princes", .paws = 5 });
+    try repo.insert(.Cat, .{ .name = "Princes", .paws = 2 });
 
     const cats = try repo.Query(.Cat)
         .select(.{ .name, sql.max(.paws) })
@@ -1106,12 +1109,12 @@ test "aggregate count() with HAVING" {
         jetquery.schema.table.column("paws", .integer, .{}),
     }, .{ .if_not_exists = true });
 
-    try repo.insert(Schema.Cat.init(.{ .name = "Hercules", .paws = 2 }));
-    try repo.insert(Schema.Cat.init(.{ .name = "Hercules", .paws = 8 }));
-    try repo.insert(Schema.Cat.init(.{ .name = "Hercules", .paws = 4 }));
-    try repo.insert(Schema.Cat.init(.{ .name = "Princes", .paws = 100 }));
-    try repo.insert(Schema.Cat.init(.{ .name = "Princes", .paws = 5 }));
-    try repo.insert(Schema.Cat.init(.{ .name = "Princes", .paws = 2 }));
+    try repo.insert(.Cat, .{ .name = "Hercules", .paws = 2 });
+    try repo.insert(.Cat, .{ .name = "Hercules", .paws = 8 });
+    try repo.insert(.Cat, .{ .name = "Hercules", .paws = 4 });
+    try repo.insert(.Cat, .{ .name = "Princes", .paws = 100 });
+    try repo.insert(.Cat, .{ .name = "Princes", .paws = 5 });
+    try repo.insert(.Cat, .{ .name = "Princes", .paws = 2 });
 
     const sql = jetquery.sql;
 
@@ -1169,7 +1172,7 @@ test "transactions" {
     }, .{ .if_not_exists = true });
 
     try repo.begin();
-    try repo.insert(Schema.Cat.init(.{ .name = "Hercules", .paws = 4 }));
+    try repo.insert(.Cat, .{ .name = "Hercules", .paws = 4 });
     try repo.rollback();
 
     const no_cat = try repo.Query(.Cat)
@@ -1179,7 +1182,7 @@ test "transactions" {
     try std.testing.expect(no_cat == null);
 
     try repo.begin();
-    try repo.insert(Schema.Cat.init(.{ .name = "Hercules", .paws = 4 }));
+    try repo.insert(.Cat, .{ .name = "Hercules", .paws = 4 });
     try repo.commit();
 
     const yes_cat = try repo.Query(.Cat)
