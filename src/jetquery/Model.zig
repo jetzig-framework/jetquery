@@ -10,6 +10,8 @@ const jetquery = @import("../jetquery.zig");
 /// ```
 pub fn Model(Schema: type, comptime table_name: []const u8, T: type, options: anytype) type {
     return struct {
+        // TODO: Implement `format()`
+
         pub const Definition = T;
         const Self = @This();
         pub const name = table_name;

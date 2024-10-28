@@ -442,7 +442,8 @@ fn timestamp(buf: []u8) ![]const u8 {
     const writer = stream.writer();
     try writer.print(
         "{d:04}-{d:02}-{d:02}_{d:02}-{d:02}-{d:02}",
-        .{ @as(u16, @intCast(date.year)), date.month, date.day, time.hour, time.min, time.sec },
+        // TODO: Fix jetcommon types to expose these directly
+        .{ @as(u16, @intCast(date.zul_date.year)), date.zul_date.month, date.zul_date.day, time.zul_time.hour, time.zul_time.min, time.zul_time.sec },
     );
     return stream.getWritten();
 }

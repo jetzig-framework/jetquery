@@ -6,7 +6,7 @@ const migrations = @import("migrations").migrations;
 const Migration = @import("migrations").Migration;
 const jetquery = @import("jetquery");
 
-const MigrateSchema = struct {
+pub const MigrateSchema = struct {
     pub const Migrations = jetquery.Model(
         @This(),
         "jetquery_migrations",
@@ -19,10 +19,10 @@ const MigrateSchema = struct {
     );
 };
 
-pub fn Migrate(adapter_name: jetquery.adapters.Name, Schema: type) type {
+pub fn Migrate(adapter_name: jetquery.adapters.Name) type {
     return struct {
         const Self = @This();
-        const AdaptedRepo = jetquery.Repo(adapter_name, Schema);
+        const AdaptedRepo = jetquery.Repo(adapter_name, MigrateSchema);
 
         repo: *AdaptedRepo,
 
@@ -144,7 +144,7 @@ test "migrate" {
     );
     defer migrate_repo.deinit();
 
-    const migrate = Migrate(.postgresql, MigrateSchema).init(&migrate_repo);
+    const migrate = Migrate(.postgresql).init(&migrate_repo);
     try migrate.run();
 
     var test_repo = try jetquery.Repo(.postgresql, TestSchema).init(

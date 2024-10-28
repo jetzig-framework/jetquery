@@ -34,7 +34,13 @@ pub fn coerce(
         .pointer => |info| switch (@typeInfo(T)) {
             .int => switch (@typeInfo(info.child)) {
                 .int => switch (info.size) {
-                    .Slice => .{ .value = value },
+                    // FIXME: For now we get away with this because postgres does not have a u8
+                    // type but we may need a better way to identify strings if another database
+                    // adapter does support u8.
+                    .Slice => if (@TypeOf(value) == []const u8)
+                        coerceInt(T, value)
+                    else
+                        .{ .value = value },
                     else => .{ .value = value },
                 },
                 else => if (comptime canCoerceDelegate(info.child))

@@ -310,6 +310,7 @@ pub const Connection = struct {
 };
 
 pub fn connect(self: *PostgresqlAdapter) !jetquery.Connection {
+    if (self.lazy_connect) self.pool = try initPool(self.allocator, self.options);
     return .{ .postgresql = .{ .connection = try self.pool.acquire() } };
 }
 
