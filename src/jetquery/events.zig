@@ -9,6 +9,7 @@ pub const Event = struct {
     // TODO: Make this a union for failed/successful queries etc.
     const Error = struct {
         message: []const u8,
+        err: anyerror,
     };
 
     context: enum { query, migration } = .query,
@@ -41,10 +42,10 @@ pub fn defaultCallback(event: Event) !void {
             \\| Query:
             \\|   {s}
             \\| Error:
-            \\|   {s}
+            \\|   {s}: {s}
             \\\
             \\
-        , .{ event.sql orelse "", err.message });
+        , .{ event.sql orelse "", @errorName(err.err), err.message });
     } else {
         var buf: [32]u8 = undefined;
         const formatted_duration = if (event.duration) |duration|

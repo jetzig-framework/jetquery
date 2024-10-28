@@ -294,14 +294,14 @@ pub const Connection = struct {
         if (self.connection.err) |connection_error| {
             try repo.eventCallback(.{
                 .sql = sql,
-                .err = .{ .message = connection_error.message },
+                .err = .{ .err = err, .message = connection_error.message },
                 .status = .fail,
                 .caller_info = caller_info,
             });
         } else {
             try repo.eventCallback(.{
                 .sql = sql,
-                .err = .{ .message = @errorName(err) },
+                .err = .{ .err = err, .message = "[unknown error]" },
                 .status = .fail,
                 .caller_info = caller_info,
             });
