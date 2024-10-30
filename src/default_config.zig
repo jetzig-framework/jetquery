@@ -1,3 +1,11 @@
 pub const database = .{
-    .adapter = .null,
+    .development = .{
+        .adapter = .null,
+    },
+    .testing = .{
+        .adapter = .null,
+    },
+    .production = .{
+        .adapter = .null,
+    },
 };

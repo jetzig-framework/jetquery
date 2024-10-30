@@ -677,7 +677,16 @@ fn initPool(allocator: std.mem.Allocator, options: Options) !*pg.Pool {
 }
 
 fn configError(comptime config_field: []const u8) error{JetQueryConfigError} {
-    const message = "Missing expected configuration value: `" ++ config_field ++ "`";
+    const template = "Missing database configuration value for: `{s}`. " ++
+        "Configure in JetQuery config file or `JETQUERY_{s}`.";
+    const message = comptime blk: {
+        var buf: [config_field.len]u8 = undefined;
+        break :blk std.fmt.comptimePrint(
+            template,
+            .{ config_field, std.ascii.upperString(&buf, config_field) },
+        );
+    };
+
     if (builtin.is_test) { // https://github.com/ziglang/zig/issues/5738
         std.log.warn(message, .{});
     } else {

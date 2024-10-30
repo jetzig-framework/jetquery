@@ -90,20 +90,33 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
 
         /// Initialize a new repo using a config file. Config file build path is configured by build
         /// option `jetquery_config_path`.
-        pub fn loadConfig(allocator: std.mem.Allocator, global_options: GlobalOptions) !AdaptedRepo {
+        pub fn loadConfig(
+            allocator: std.mem.Allocator,
+            comptime environment: jetquery.Environment,
+            global_options: GlobalOptions,
+        ) !AdaptedRepo {
+            const config = switch (environment) {
+                inline else => |tag| @field(jetquery.config.database, @tagName(tag)),
+            };
+
             const AdapterOptions = switch (Adapter.name) {
                 .postgresql => jetquery.adapters.PostgresqlAdapter.Options,
                 .null => jetquery.adapters.NullAdapter.Options,
             };
             var options: AdapterOptions = undefined;
             inline for (std.meta.fields(AdapterOptions)) |field| {
-                if (@hasField(@TypeOf(jetquery.config.database), field.name)) {
-                    @field(options, field.name) = @field(jetquery.config.database, field.name);
+                if (@hasField(@TypeOf(config), field.name)) {
+                    @field(options, field.name) = @field(config, field.name);
                 } else if (field.default_value) |default| {
                     const option: *field.type = @ptrCast(@alignCast(@constCast(default)));
                     @field(options, field.name) = option.*;
                 } else {
-                    @compileError("Missing database configuration value for: `" ++ field.name ++ "`");
+                    var buf: [field.name.len]u8 = undefined;
+                    @compileError(std.fmt.comptimePrint(
+                        "Missing database configuration value for: `{s}`. " ++
+                            "Configure in JetQuery config file or `JETQUERY_{s}`.",
+                        .{ field.name, std.ascii.upperString(&buf, field.name) },
+                    ));
                 }
             }
             var init_options: InitOptions = switch (Adapter.name) {
