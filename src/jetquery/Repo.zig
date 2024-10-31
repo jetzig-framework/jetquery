@@ -8,12 +8,15 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
         const Adapter = jetquery.adapters.Type(adapter_name);
         const Result = jetquery.Result(AdaptedRepo);
 
+        pub const RepoAdapter = jetquery.adapters.Adapter(adapter_name, @This());
+
         comptime adapter_name: jetquery.adapters.Name = adapter_name,
         allocator: std.mem.Allocator,
-        adapter: jetquery.adapters.Adapter(adapter_name, @This()),
+        adapter: RepoAdapter,
         eventCallback: *const fn (event: jetquery.events.Event) anyerror!void = jetquery.events.defaultCallback,
         connection: ?jetquery.Connection = null,
         result: ?jetquery.Result(AdaptedRepo) = null,
+        context: jetquery.Context = .query,
 
         // For convenience, allow users to call `repo.Query(...)` instead of
         // `@TypeOf(repo).Query(...)`
@@ -24,6 +27,8 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
                 adapter: jetquery.adapters.PostgresqlAdapter.Options,
                 eventCallback: *const fn (event: jetquery.events.Event) anyerror!void = jetquery.events.defaultCallback,
                 lazy_connect: bool = false,
+                admin: bool = false,
+                context: jetquery.Context = .query,
             },
             .null => null,
         };
@@ -54,10 +59,12 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
                             options.lazy_connect,
                         ),
                     },
+                    .context = options.context,
                 },
                 .null => .{
                     .allococator = allocator,
                     .adapter = .{ .null = jetquery.adapters.NullAdapter{} },
+                    .context = options.context,
                 },
             };
         }
@@ -86,6 +93,8 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
         const GlobalOptions = struct {
             eventCallback: *const fn (event: jetquery.events.Event) anyerror!void = jetquery.events.defaultCallback,
             lazy_connect: bool = false,
+            admin: bool = false,
+            context: jetquery.Context,
         };
 
         /// Initialize a new repo using a config file. Config file build path is configured by build
@@ -119,6 +128,15 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
                     ));
                 }
             }
+
+            if (global_options.admin) {
+                // XXX: pg.zig already applies this default but we may need to add specific logic
+                // for selecting an admin schema for different adapters. If needed, we can add an
+                // option to JetQuery config for setting the admin schema. We use this for
+                // creating/dropping databases.
+                options.database = options.username;
+            }
+
             var init_options: InitOptions = switch (Adapter.name) {
                 .postgresql => .{ .adapter = options },
                 .null => .{ .adapter = .null },
@@ -175,7 +193,7 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
         /// use `executeSql` and `executeVoid` to execute SQL and a values tuple (e.g. when using
         /// handwritten SQL statements).
         pub fn connect(self: *AdaptedRepo) !jetquery.Connection {
-            return try self.adapter.connect();
+            return try self.adapter.connect(.{ .context = self.context });
         }
 
         /// Used internally to create a managed connection which is released on `repo.deinit()`.
@@ -510,7 +528,11 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
                 self,
             );
 
-            try self.createIndexes(name, columns);
+            try self.createIndexes(
+                name,
+                columns,
+                .{ .if_not_exists = options.if_not_exists },
+            );
         }
 
         /// Drop a database table named `name`. Pass `.{ .if_exists = true }` to use
@@ -590,7 +612,11 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
                 self,
             );
 
-            try self.createIndexes(options.rename orelse name, options.columns.add);
+            try self.createIndexes(
+                options.rename orelse name,
+                options.columns.add,
+                .{ .if_not_exists = options.if_not_exists },
+            );
         }
 
         /// Create a new database in the current repo. Repo must be initialized with the appropriate user
@@ -671,14 +697,20 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
             );
         }
 
+        // Internally used by `createTable` - use `createIndex` to create a single index.
         fn createIndexes(
             self: *AdaptedRepo,
             comptime name: []const u8,
             comptime columns: []const jetquery.schema.Column,
+            comptime options: jetquery.CreateIndexOptions,
         ) !void {
             inline for (columns) |column| {
                 if (comptime !column.options.index) continue;
-                try self.createIndex(name, &.{column.name}, .{ .name = column.options.index_name });
+                try self.createIndex(
+                    name,
+                    &.{column.name},
+                    .{ .name = column.options.index_name, .if_not_exists = options.if_not_exists },
+                );
             }
 
             inline for (columns) |column| {
@@ -687,14 +719,14 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
                         try self.createIndex(
                             name,
                             &.{jetquery.default_column_names.created_at},
-                            .{},
+                            .{ .if_not_exists = options.if_not_exists },
                         );
                     }
                     if (timestamps.updated_at) {
                         try self.createIndex(
                             name,
                             &.{jetquery.default_column_names.updated_at},
-                            .{},
+                            .{ .if_not_exists = options.if_not_exists },
                         );
                     }
                 }

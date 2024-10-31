@@ -190,6 +190,7 @@ pub fn deinit(self: *PostgresqlAdapter) void {
 
 pub const Connection = struct {
     connection: *pg.Conn,
+    options: jetquery.adapters.ConnectionOptions,
 
     pub fn execute(
         self: Connection,
@@ -211,6 +212,7 @@ pub const Connection = struct {
             .sql = sql,
             .caller_info = caller_info,
             .duration = duration,
+            .context = self.options.context,
         });
 
         return .{
@@ -266,6 +268,7 @@ pub const Connection = struct {
             .sql = sql,
             .caller_info = caller_info,
             .duration = duration,
+            .context = self.options.context,
         });
 
         return .{
@@ -297,6 +300,7 @@ pub const Connection = struct {
                 .err = .{ .err = err, .message = connection_error.message },
                 .status = .fail,
                 .caller_info = caller_info,
+                .context = self.options.context,
             });
         } else {
             try repo.eventCallback(.{
@@ -304,14 +308,18 @@ pub const Connection = struct {
                 .err = .{ .err = err, .message = "[unknown error]" },
                 .status = .fail,
                 .caller_info = caller_info,
+                .context = self.options.context,
             });
         }
     }
 };
 
-pub fn connect(self: *PostgresqlAdapter) !jetquery.Connection {
+pub fn connect(
+    self: *PostgresqlAdapter,
+    options: jetquery.adapters.ConnectionOptions,
+) !jetquery.Connection {
     if (self.lazy_connect) self.pool = try initPool(self.allocator, self.options);
-    return .{ .postgresql = .{ .connection = try self.pool.acquire() } };
+    return .{ .postgresql = .{ .options = options, .connection = try self.pool.acquire() } };
 }
 
 pub fn release(self: *PostgresqlAdapter, connection: jetquery.Connection) void {
@@ -533,8 +541,13 @@ pub fn createIndexSql(
     comptime {
         var buf: [createIndexSqlSize(index_name, table_name, column_names, options)]u8 = undefined;
         const statement = std.fmt.comptimePrint(
-            "CREATE {s}INDEX {s} ON {s} (",
-            .{ if (options.unique) "UNIQUE " else "", identifier(index_name), identifier(table_name) },
+            "CREATE {s}INDEX{s} {s} ON {s} (",
+            .{
+                if (options.unique) "UNIQUE " else "",
+                if (options.if_not_exists) " IF NOT EXISTS" else "",
+                identifier(index_name),
+                identifier(table_name),
+            },
         );
         @memcpy(buf[0..statement.len], statement);
 
@@ -560,8 +573,13 @@ fn createIndexSqlSize(
     comptime {
         var size: usize = 0;
         size += std.fmt.comptimePrint(
-            "CREATE {s}INDEX {s} ON {s} (",
-            .{ if (options.unique) "UNIQUE " else "", identifier(index_name), identifier(table_name) },
+            "CREATE {s}INDEX{s} {s} ON {s} (",
+            .{
+                if (options.unique) "UNIQUE " else "",
+                if (options.if_not_exists) " IF NOT EXISTS" else "",
+                identifier(index_name),
+                identifier(table_name),
+            },
         ).len;
         for (column_names, 0..) |column_name, index| {
             const separator = if (index + 1 < column_names.len) ", " else "";

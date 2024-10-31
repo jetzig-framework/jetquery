@@ -45,7 +45,9 @@ pub const DropDatabaseOptions = struct { if_exists: bool = false };
 pub const CreateIndexOptions = struct {
     unique: bool = false,
     name: ?[]const u8 = null,
+    if_not_exists: bool = false,
 };
+pub const Context = enum { migration, query };
 
 pub const original_prefix = "__original_";
 

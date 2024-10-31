@@ -14,6 +14,8 @@ pub fn Type(adapter: Name) type {
     };
 }
 
+pub const ConnectionOptions = struct { context: jetquery.Context };
+
 pub fn Adapter(comptime adapter_name: Name, AdaptedRepo: type) type {
     const Union = union(enum) {
         postgresql: PostgresqlAdapter,
@@ -23,9 +25,9 @@ pub fn Adapter(comptime adapter_name: Name, AdaptedRepo: type) type {
 
         pub const name = adapter_name;
 
-        pub fn connect(self: *Self) !jetquery.Connection {
+        pub fn connect(self: *Self, options: ConnectionOptions) !jetquery.Connection {
             return switch (comptime adapter_name) {
-                inline else => |tag| try @field(self, @tagName(tag)).connect(),
+                inline else => |tag| try @field(self, @tagName(tag)).connect(options),
             };
         }
 

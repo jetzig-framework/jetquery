@@ -32,42 +32,36 @@ pub fn Migrate(adapter_name: jetquery.adapters.Name) type {
 
         /// Run migrations. Create `jetquery_migrations` table if it does not exist. Skip migrations
         /// already present in `jetquery_migrations`.
-        pub fn run(self: Self) !void {
+        pub fn migrate(self: Self) !void {
             try self.createMigrationsTable();
 
-            try self.repo.eventCallback(.{
-                .context = .migration,
-                .message = "Running migrations.",
-            });
+            log("\n* Running migrations.\n", .{});
+
+            var count: usize = 0;
 
             inline for (migrations) |migration| {
                 if (!try self.isMigrated(migration)) {
-                    try self.repo.eventCallback(.{
-                        .context = .migration,
-                        .message = "Executing migration: " ++ migration.name,
-                    });
+                    log("\nExecuting migration: === {s} ===\n", .{migration.name});
 
                     try self.repo.Query(.Migrations)
                         .insert(.{ .version = migration.version, .name = migration.name })
                         .execute(self.repo);
 
                     try migration.upFn(self.repo);
+                    count += 1;
 
-                    try self.repo.eventCallback(.{
-                        .context = .migration,
-                        .message = "Completed migration: " ++ migration.name,
-                    });
+                    log("\nCompleted migration: === {s} ===\n", .{migration.name});
                 }
             }
 
-            try self.repo.eventCallback(.{
-                .context = .migration,
-                .message = "Migrations completed.",
-            });
+            log("\n* Applied {} migration(s).\n", .{count});
         }
 
         pub fn rollback(self: Self) !void {
-            if (migrations.len == 0) return;
+            if (migrations.len == 0) {
+                log("No applied migrations detected. Exiting.", .{});
+                return;
+            }
 
             const last_migration = try self.repo.Query(.Migrations)
                 .orderBy(.{ .version = .desc })
@@ -77,11 +71,13 @@ pub fn Migrate(adapter_name: jetquery.adapters.Name) type {
             var applied = false;
             inline for (migrations) |migration| {
                 if (!applied and std.mem.eql(u8, migration.version, last_migration.version)) {
+                    log("\nRolling back migration: === {s} ===\n", .{migration.name});
                     try migration.downFn(self.repo);
                     try self.repo.delete(last_migration);
                     // Just in case we somehow end up with two migrations with the same version (e.g.
                     // user manually copied a file), we want to only apply one of them:
                     applied = true;
+                    log("\nCompleted rollback: === {s} ===\n", .{migration.name});
                 }
             }
         }
@@ -103,6 +99,10 @@ pub fn Migrate(adapter_name: jetquery.adapters.Name) type {
                 },
                 .{ .if_not_exists = true },
             );
+        }
+
+        fn log(comptime message: []const u8, args: anytype) void {
+            std.debug.print(message ++ "\n", args);
         }
     };
 }
@@ -145,7 +145,7 @@ test "migrate" {
     defer migrate_repo.deinit();
 
     const migrate = Migrate(.postgresql).init(&migrate_repo);
-    try migrate.run();
+    try migrate.migrate();
 
     var test_repo = try jetquery.Repo(.postgresql, TestSchema).init(
         std.testing.allocator,

@@ -12,7 +12,7 @@ pub const Event = struct {
         err: anyerror,
     };
 
-    context: enum { query, migration } = .query,
+    context: jetquery.Context = .query,
     level: enum { DEBUG, INFO, WARN, ERROR } = .INFO,
     message: ?[]const u8 = null,
     sql: ?[]const u8 = null,
@@ -24,15 +24,17 @@ pub const Event = struct {
 
 pub fn defaultCallback(event: Event) !void {
     if (event.caller_info) |info| {
-        const allocator = info.debug_info.allocator;
+        if (event.context == .query) {
+            const allocator = info.debug_info.allocator;
 
-        const cwd = try std.fs.cwd().realpathAlloc(allocator, ".");
-        defer allocator.free(cwd);
+            const cwd = try std.fs.cwd().realpathAlloc(allocator, ".");
+            defer allocator.free(cwd);
 
-        const relative = try std.fs.path.relative(allocator, cwd, info.file_name);
-        defer allocator.free(relative);
+            const relative = try std.fs.path.relative(allocator, cwd, info.file_name);
+            defer allocator.free(relative);
 
-        std.debug.print("[{s}:{}] ", .{ relative, info.line_number });
+            std.debug.print("[{s}:{}] ", .{ relative, info.line_number });
+        }
     }
 
     if (event.err) |err| {
