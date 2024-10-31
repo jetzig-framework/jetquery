@@ -94,7 +94,7 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
             eventCallback: *const fn (event: jetquery.events.Event) anyerror!void = jetquery.events.defaultCallback,
             lazy_connect: bool = false,
             admin: bool = false,
-            context: jetquery.Context,
+            context: jetquery.Context = .query,
         };
 
         /// Initialize a new repo using a config file. Config file build path is configured by build
