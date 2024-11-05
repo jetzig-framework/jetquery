@@ -5,15 +5,23 @@ const jetcommon = @import("jetcommon");
 
 const util = @import("util.zig");
 
+pub const ReflectOptions = struct {
+    header: []const u8 = "",
+    import_jetquery: []const u8 =
+        \\@import("jetquery")
+    ,
+};
+
 pub fn Reflect(adapter_name: jetquery.adapters.Name, Schema: type) type {
     return struct {
         const Self = @This();
         const AdaptedRepo = jetquery.Repo(adapter_name, Schema);
         allocator: std.mem.Allocator,
         repo: *AdaptedRepo,
+        options: ReflectOptions,
 
-        pub fn init(allocator: std.mem.Allocator, repo: *AdaptedRepo) Self {
-            return .{ .repo = repo, .allocator = allocator };
+        pub fn init(allocator: std.mem.Allocator, repo: *AdaptedRepo, options: ReflectOptions) Self {
+            return .{ .repo = repo, .allocator = allocator, .options = options };
         }
 
         pub fn generateSchema(self: Self) ![]const u8 {
@@ -28,9 +36,10 @@ pub fn Reflect(adapter_name: jetquery.adapters.Name, Schema: type) type {
             const writer = buf.writer();
 
             try writer.print(
-                \\const jetquery = @import("jetquery");
+                \\{s}
+                \\const jetquery = {s};
                 \\
-            , .{});
+            , .{ self.options.header, self.options.import_jetquery });
 
             const reflection = try self.repo.adapter.reflect(allocator, self.repo);
             const map = try reflection.tableMap(allocator);
