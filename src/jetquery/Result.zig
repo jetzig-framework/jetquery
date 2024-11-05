@@ -28,6 +28,8 @@ pub fn Result(AdaptedRepo: type) type {
             return switch (self.*) {
                 inline else => |*adapted_result| blk: {
                     var row = try adapted_result.next(query) orelse break :blk null;
+                    errdefer adapted_result.deinit();
+                    errdefer adapted_result.repo._freeRow(row);
 
                     extendInternalFields(@TypeOf(query), &row);
 

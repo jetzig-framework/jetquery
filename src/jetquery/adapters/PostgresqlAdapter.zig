@@ -227,7 +227,7 @@ pub const Connection = struct {
         };
     }
 
-    /// Execute a query with runtime binding. Used internally by `Repo.save` so the API is not
+    /// Execute a query with runtime binding. Used internally by `Repo.save`. This API is not
     /// intended for public use.
     pub fn executeRuntimeBind(
         self: Connection,

@@ -1,8 +1,10 @@
 pub const database = .{
-    .adapter = .postgresql,
-    .database = "postgres",
-    .username = "postgres",
-    .hostname = "127.0.0.1",
-    .password = "password",
-    .port = 5432,
+    .testing = .{
+        .adapter = .postgresql,
+        .database = "postgres",
+        .username = "postgres",
+        .hostname = "127.0.0.1",
+        .password = "password",
+        .port = 5432,
+    },
 };

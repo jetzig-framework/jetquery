@@ -287,10 +287,8 @@ pub const AuxiliaryQuery = struct {
 
     pub fn baseQuery(comptime self: AuxiliaryQuery) self.BaseQuery() {
         const q = self.query.select(.{});
-        // Order args are a dynamic type so we can't easily use an optional here like
-        // we can with `limit()`.
-        const q_order = if (comptime @TypeOf(self.relation.order_by) != @TypeOf(null))
-            q.orderBy(self.relation.order_by)
+        const q_order = if (self.relation.order_by) |order_by|
+            q._orderBy(order_by)
         else
             q;
 
@@ -304,8 +302,8 @@ pub const AuxiliaryQuery = struct {
 
     fn BaseQuery(comptime self: AuxiliaryQuery) type {
         const q = self.query.select(.{});
-        const q_order = if (comptime @TypeOf(self.relation.order_by) != @TypeOf(null))
-            q.orderBy(self.relation.order_by)
+        const q_order = if (self.relation.order_by) |order_by|
+            q._orderBy(order_by)
         else
             q;
 
@@ -845,8 +843,14 @@ fn Statement(
             .none => .select,
             else => |tag| tag,
         }, Schema, Model, .{
-            .relations = options.relations ++
-                .{jetquery.relation.Relation(Schema, Model, name, include_options, .include)},
+            .relations = jetquery.relation.concatRelations(
+                options.relations,
+                Schema,
+                Model,
+                name,
+                jetquery.relation.translateRelationOptions(Schema, Model, name, include_options),
+                .include,
+            ),
             .field_infos = options.field_infos,
             .columns = switch (query_context) {
                 .none => &Model.columns(),
@@ -865,8 +869,19 @@ fn Statement(
                 .none => .select,
                 else => |tag| tag,
             }, Schema, Model, .{
-                .relations = options.relations ++
-                    .{jetquery.relation.Relation(Schema, Model, name, include_options, .include)},
+                .relations = jetquery.relation.concatRelations(
+                    options.relations,
+                    Schema,
+                    Model,
+                    name,
+                    jetquery.relation.translateRelationOptions(
+                        Schema,
+                        Model,
+                        name,
+                        include_options,
+                    ),
+                    .include,
+                ),
                 .field_infos = options.field_infos,
                 .columns = switch (query_context) {
                     .none => &Model.columns(),
@@ -897,14 +912,19 @@ fn Statement(
             Schema,
             Model,
             .{
-                .relations = options.relations ++
-                    .{jetquery.relation.Relation(
+                .relations = jetquery.relation.concatRelations(
+                    options.relations,
                     Schema,
                     Model,
                     name,
-                    .{ .select = null },
+                    jetquery.relation.translateRelationOptions(
+                        Schema,
+                        Model,
+                        name,
+                        .{ .select = null },
+                    ),
                     join_context,
-                )},
+                ),
                 .field_infos = options.field_infos,
                 .columns = switch (query_context) {
                     .none => &Model.columns(),
@@ -920,32 +940,43 @@ fn Statement(
                 .having_clauses = options.having_clauses,
             },
         ) {
-            const S = Statement(Adapter, switch (query_context) {
-                .none => .select,
-                else => |tag| tag,
-            }, Schema, Model, .{
-                .relations = options.relations ++
-                    .{jetquery.relation.Relation(
-                    Schema,
-                    Model,
-                    name,
-                    .{ .select = null },
-                    join_context,
-                )},
-                .field_infos = options.field_infos,
-                .columns = switch (query_context) {
-                    .none => &Model.columns(),
-                    else => options.columns,
-                },
-                .order_clauses = options.order_clauses,
-                .result_context = switch (options.result_context) {
-                    .none => .many,
+            const S = Statement(
+                Adapter,
+                switch (query_context) {
+                    .none => .select,
                     else => |tag| tag,
                 },
-                .default_select = options.default_select,
-                .where_clauses = options.where_clauses,
-                .having_clauses = options.having_clauses,
-            });
+                Schema,
+                Model,
+                .{
+                    .relations = jetquery.relation.concatRelations(
+                        options.relations,
+                        Schema,
+                        Model,
+                        name,
+                        jetquery.relation.translateRelationOptions(
+                            Schema,
+                            Model,
+                            name,
+                            .{ .select = null },
+                        ),
+                        join_context,
+                    ),
+                    .field_infos = options.field_infos,
+                    .columns = switch (query_context) {
+                        .none => &Model.columns(),
+                        else => options.columns,
+                    },
+                    .order_clauses = options.order_clauses,
+                    .result_context = switch (options.result_context) {
+                        .none => .many,
+                        else => |tag| tag,
+                    },
+                    .default_select = options.default_select,
+                    .where_clauses = options.where_clauses,
+                    .having_clauses = options.having_clauses,
+                },
+            );
             return self.extend(S, .{}, .none);
         }
 
@@ -989,6 +1020,62 @@ fn Statement(
 
         pub fn validateDelete(self: Self) !void {
             if (query_context == .delete and !self.hasWhereClause()) return error.JetQueryUnsafeDelete;
+        }
+
+        pub fn _orderBy(
+            self: Self,
+            comptime order_clauses: []const jetquery.sql.OrderClause,
+        ) Statement(
+            Adapter,
+            switch (query_context) {
+                .none => .select,
+                else => query_context,
+            },
+            Schema,
+            Model,
+            .{
+                .relations = options.relations,
+                .field_infos = options.field_infos,
+                .columns = switch (query_context) {
+                    .none => &Model.columns(),
+                    else => options.columns,
+                },
+                .order_clauses = order_clauses,
+                .result_context = switch (options.result_context) {
+                    .none => .many,
+                    else => options.result_context,
+                },
+                .where_clauses = options.where_clauses,
+                .group_by = options.group_by,
+                .having_clauses = options.having_clauses,
+            },
+        ) {
+            const S = Statement(
+                Adapter,
+                switch (query_context) {
+                    .none => .select,
+                    else => query_context,
+                },
+                Schema,
+                Model,
+                .{
+                    .relations = options.relations,
+                    .field_infos = options.field_infos,
+                    .columns = switch (query_context) {
+                        .none => &Model.columns(),
+                        else => options.columns,
+                    },
+                    .order_clauses = order_clauses,
+                    .result_context = switch (options.result_context) {
+                        .none => .many,
+                        else => options.result_context,
+                    },
+                    .where_clauses = options.where_clauses,
+                    .group_by = options.group_by,
+                    .having_clauses = options.having_clauses,
+                },
+            );
+            return self.extend(S, .{}, .order);
         }
 
         fn auxiliaryQueries() [auxiliaryQueriesSize()]AuxiliaryQuery {

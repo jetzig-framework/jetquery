@@ -325,7 +325,7 @@ test "reflect" {
         jetquery.schema.table.timestamps(.{}),
     }, .{});
 
-    const reflect = Reflect(.postgresql, Schema).init(std.testing.allocator, &repo);
+    const reflect = Reflect(.postgresql, Schema).init(std.testing.allocator, &repo, .{});
     const schema = try reflect.generateSchema();
     defer std.testing.allocator.free(schema);
     try std.testing.expectEqualStrings(

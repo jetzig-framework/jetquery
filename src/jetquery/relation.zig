@@ -24,11 +24,34 @@ pub fn RelationTable(Schema: type, Table: type, comptime name: RelationsEnum(Tab
 
 pub const JoinContext = enum { inner, outer, include };
 
+pub fn concatRelations(
+    relations: []const type,
+    Schema: type,
+    Table: type,
+    comptime name: RelationsEnum(Table),
+    comptime relation_options: RelationOptions,
+    comptime join_context: JoinContext,
+) *const [1 + relations.len]type {
+    comptime {
+        var types: [1 + relations.len]type = undefined;
+        for (relations, 0..) |relation, index| types[index] = relation;
+        types[relations.len] = Relation(
+            Schema,
+            Table,
+            name,
+            relation_options,
+            join_context,
+        );
+        const final = types;
+        return &final;
+    }
+}
+
 pub fn Relation(
     Schema: type,
     Table: type,
     comptime name: RelationsEnum(Table),
-    comptime relation_options: anytype,
+    comptime relation_options: RelationOptions,
     comptime join_context: JoinContext,
 ) type {
     comptime {
@@ -39,19 +62,9 @@ pub fn Relation(
             pub const relation_type = relation.relation_type;
             pub const options = relation.options;
             pub const relation_name = @tagName(name);
-            pub const select_columns = jetquery.columns.translate(
-                Source,
-                &.{},
-                if (@hasField(@TypeOf(relation_options), "select"))
-                    relation_options.select
-                else
-                    .{},
-            );
-            pub const limit = detectLimit(relation_options, relation_type);
-            pub const order_by = if (@hasField(@TypeOf(relation_options), "order_by"))
-                relation_options.order_by
-            else
-                null;
+            pub const select_columns = relation_options.select;
+            pub const limit = relation_options.limit;
+            pub const order_by = relation_options.order_by;
             pub const primary_key = options.primary_key orelse "id";
             pub const foreign_key: ?[]const u8 = options.foreign_key orelse switch (relation_type) {
                 .belongs_to => relation_name ++ "_id",
@@ -59,6 +72,41 @@ pub fn Relation(
             };
         };
     }
+}
+
+pub const RelationOptions = struct {
+    select: []const jetquery.columns.Column = &.{},
+    limit: ?u64 = null,
+    order_by: ?[]const jetquery.sql.OrderClause = &.{},
+};
+
+pub fn translateRelationOptions(
+    Schema: type,
+    Model: type,
+    comptime name: RelationsEnum(Model),
+    comptime options: anytype,
+) RelationOptions {
+    var translated: RelationOptions = .{};
+
+    const Source = RelationTable(Schema, Model, name);
+
+    translated.select = &jetquery.columns.translate(
+        Source,
+        &.{},
+        if (@hasField(@TypeOf(options), "select")) options.select else .{},
+    );
+
+    translated.limit = if (@hasField(@TypeOf(options), "limit"))
+        options.limit
+    else
+        null;
+
+    translated.order_by = if (@hasField(@TypeOf(options), "order_by"))
+        &jetquery.sql.translateOrderBy(Source, &.{}, options.order_by)
+    else
+        null;
+
+    return translated;
 }
 
 pub const RelationType = enum { belongs_to, has_many };
