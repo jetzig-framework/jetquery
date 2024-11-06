@@ -26,6 +26,8 @@ pub const debug = @import("jetquery/debug.zig");
 pub const Reflection = @import("jetquery/reflection/Reflection.zig");
 pub const util = @import("jetquery/util.zig");
 pub const Environment = std.meta.FieldEnum(@TypeOf(config.database));
+pub const hasMany = relation.hasMany;
+pub const belongsTo = relation.belongsTo;
 
 pub const CreateTableOptions = struct { if_not_exists: bool = false };
 pub const DropTableOptions = struct { if_exists: bool = false };

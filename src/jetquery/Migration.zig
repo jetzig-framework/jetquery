@@ -83,6 +83,9 @@ const Command = struct {
 
                 try writer.writeAll("&.{");
 
+                try writer.writeAll(
+                    \\t.primaryKey("id", .{}),
+                );
                 for (columns) |column| {
                     try writeColumn(column, writer);
                 }
@@ -539,9 +542,10 @@ test "migration from command line: create table" {
         \\    try repo.createTable(
         \\        "cats",
         \\        &.{
+        \\            t.primaryKey("id", .{}),
         \\            t.column("name", .string, .{ .unique = true, .index = true }),
         \\            t.column("paws", .integer, .{}),
-        \\            t.column("human_id", .string, .{ .index = true, .reference = "humans.id" }),
+        \\            t.column("human_id", .string, .{ .index = true, .reference = .{ "humans", "id" }),
         \\            t.timestamps(.{}),
         \\        },
         \\        .{},
