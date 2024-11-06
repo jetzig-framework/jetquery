@@ -43,11 +43,11 @@ pub fn Migrate(adapter_name: jetquery.adapters.Name) type {
                 if (!try self.isMigrated(migration)) {
                     log("\nExecuting migration: === {s} ===\n", .{migration.name});
 
+                    try migration.upFn(self.repo);
                     try self.repo.Query(.Migrations)
                         .insert(.{ .version = migration.version, .name = migration.name })
                         .execute(self.repo);
 
-                    try migration.upFn(self.repo);
                     count += 1;
 
                     log("\nCompleted migration: === {s} ===\n", .{migration.name});

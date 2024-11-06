@@ -30,6 +30,7 @@ const Command = struct {
         type,
         index,
         unique,
+        reference,
     };
 
     pub const DataType = enum {
@@ -85,6 +86,7 @@ const Command = struct {
                 for (columns) |column| {
                     try writeColumn(column, writer);
                 }
+                try writer.writeAll("t.timestamps(.{}),");
                 try writer.writeAll("},");
                 try writer.writeAll(".{},);");
             }
@@ -197,6 +199,9 @@ const Command = struct {
                         if (option) options_count += 1;
                     }
                 }
+
+                if (column.reference_column) |_| options_count += 1;
+
                 var index: usize = 0;
                 inline for (comptime std.enums.values(Column.options)) |field| {
                     if (@field(column, @tagName(field))) |option| {
@@ -207,6 +212,13 @@ const Command = struct {
                         }
                     }
                 }
+
+                if (try column.referenceInfo()) |reference_info| {
+                    try writer.print(
+                        \\.reference = .{{"{s}", "{s}"}}
+                    , .{ reference_info[0], reference_info[1] });
+                }
+
                 try writer.writeAll("}),");
             }
         };
@@ -219,8 +231,24 @@ const Command = struct {
             index: ?bool = null,
             unique: ?bool = null,
             not_null: ?bool = null,
+            reference: ?bool = null,
+            reference_column: ?[]const u8 = null,
 
             pub const options = enum { unique, not_null, index };
+
+            pub fn referenceInfo(self: Column) !?[2][]const u8 {
+                if (self.reference_column == null) return null;
+
+                var info: [2][]const u8 = undefined;
+                var it = std.mem.tokenizeScalar(u8, self.reference_column.?, '.');
+                var index: usize = 0;
+                while (it.next()) |identifier| : (index += 1) {
+                    std.debug.assert(index < 2);
+                    info[index] = identifier;
+                }
+                std.debug.assert(index == 2);
+                return info;
+            }
         };
 
         pub fn hasName(self: Token) bool {
@@ -289,7 +317,7 @@ const Command = struct {
     const TokenIterator = struct {
         arg_iterator: *std.mem.TokenIterator(u8, .any),
 
-        pub fn next(self: TokenIterator) ?Token {
+        pub fn next(self: TokenIterator) !?Token {
             while (self.arg_iterator.next()) |arg| {
                 var modifiers_it = std.mem.tokenizeScalar(u8, arg, ':');
                 var maybe_token: ?Token = null;
@@ -305,9 +333,10 @@ const Command = struct {
                             token.set(.type, modifier);
                         } else if (token.isRename() and !token.hasRename()) {
                             token.set(.rename, modifier);
+                        } else if (token.* == .column and token.*.column.reference == true) {
+                            token.column.reference_column = modifier;
                         } else {
-                            std.log.err("Invalid migration command: {s}", .{arg});
-                            unreachable;
+                            return error.InvalidMigrationCommand;
                         }
                     } else {
                         maybe_token = if (std.mem.eql(u8, modifier, "table"))
@@ -317,8 +346,7 @@ const Command = struct {
                         else if (std.mem.eql(u8, modifier, "rename"))
                             Token{ .table = .{ .action = .alter, .rename = modifier } }
                         else {
-                            std.log.err("Invalid migration command: {s}", .{arg});
-                            unreachable;
+                            return error.InvalidMigrationCommand;
                         };
                     }
                 }
@@ -348,7 +376,7 @@ const Command = struct {
         var columns = std.ArrayList(Command.Token.Column).init(self.allocator);
         var maybe_table: ?Command.Token.Table = null;
 
-        while (token_iterator.next()) |token| {
+        while (try token_iterator.next()) |token| {
             switch (token) {
                 .table => |table| {
                     maybe_table = table;
@@ -396,7 +424,9 @@ const default_migration = std.fmt.comptimePrint(migration_template, .{
     \\    try repo.dropTable("my_table", .{{}});
 });
 
-pub fn save(self: Migration) !void {
+pub fn save(self: Migration) ![]const u8 {
+    const content = try self.render();
+
     var dir = if (self.options.migrations_path) |path|
         try std.fs.openDirAbsolute(path, .{})
     else
@@ -410,7 +440,10 @@ pub fn save(self: Migration) !void {
     defer migration_file.close();
 
     const writer = migration_file.writer();
-    try writer.writeAll(try self.render());
+    try writer.writeAll(content);
+    const realpath = try dir.realpathAlloc(self.allocator, filename);
+
+    return realpath;
 }
 
 pub fn render(self: Migration) ![]const u8 {
@@ -487,7 +520,7 @@ test "default migration" {
 }
 
 test "migration from command line: create table" {
-    const command = "table:create:cats column:name:string:index:unique column:paws:integer";
+    const command = "table:create:cats column:name:string:index:unique column:paws:integer column:human_id:index:reference:humans.id";
 
     const migration = Migration.init(
         std.testing.allocator,
@@ -508,6 +541,8 @@ test "migration from command line: create table" {
         \\        &.{
         \\            t.column("name", .string, .{ .unique = true, .index = true }),
         \\            t.column("paws", .integer, .{}),
+        \\            t.column("human_id", .string, .{ .index = true, .reference = "humans.id" }),
+        \\            t.timestamps(.{}),
         \\        },
         \\        .{},
         \\    );
