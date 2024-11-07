@@ -151,8 +151,8 @@ fn stringifyModelOptions(allocator: std.mem.Allocator, model: type) ![]const u8 
             , .{
                 try util.zigEscape(allocator, .id, field.name),
                 switch (relation.relation_type) {
-                    .belongs_to => "jetquery.relation.belongsTo",
-                    .has_many => "jetquery.relation.hasMany",
+                    .belongs_to => "jetquery.belongsTo",
+                    .has_many => "jetquery.hasMany",
                 },
                 try util.zigEscape(allocator, .id, relation.relation_model_name),
                 try stringifyRelationOptions(allocator, relation),
@@ -342,7 +342,7 @@ test "reflect" {
         \\    },
         \\    .{
         \\        .relations = .{
-        \\            .cats = jetquery.relation.hasMany(.Cat, .{ .foreign_key = "custom_foreign_key" }),
+        \\            .cats = jetquery.hasMany(.Cat, .{ .foreign_key = "custom_foreign_key" }),
         \\        },
         \\    },
         \\);
@@ -360,7 +360,7 @@ test "reflect" {
         \\    .{
         \\        .primary_key = "custom_primary_key",
         \\        .relations = .{
-        \\            .human = jetquery.relation.belongsTo(.Human, .{}),
+        \\            .human = jetquery.belongsTo(.Human, .{}),
         \\        },
         \\    },
         \\);

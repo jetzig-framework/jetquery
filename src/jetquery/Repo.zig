@@ -14,7 +14,7 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
         allocator: std.mem.Allocator,
         adapter: RepoAdapter,
         eventCallback: *const fn (event: jetquery.events.Event) anyerror!void = jetquery.events.defaultCallback,
-        connection: ?jetquery.Connection = null,
+        connections: std.AutoHashMap(std.Thread.Id, jetquery.Connection),
         result: ?jetquery.Result(AdaptedRepo) = null,
         context: jetquery.Context = .query,
 
@@ -60,11 +60,13 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
                         ),
                     },
                     .context = options.context,
+                    .connections = std.AutoHashMap(std.Thread.Id, jetquery.Connection).init(allocator),
                 },
                 .null => .{
                     .allococator = allocator,
                     .adapter = .{ .null = jetquery.adapters.NullAdapter{} },
                     .context = options.context,
+                    .connections = undefined,
                 },
             };
         }
@@ -154,6 +156,7 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
             switch (self.adapter) {
                 inline else => |*adapter| adapter.deinit(),
             }
+            self.connections.deinit();
         }
 
         /// Execute the given query and return results.
@@ -198,18 +201,16 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
 
         /// Used internally to create a managed connection which is released on `repo.deinit()`.
         pub fn connectManaged(self: *AdaptedRepo) !jetquery.Connection {
-            if (self.connection == null) {
-                self.connection = try self.connect();
-            }
-            return self.connection.?;
+            const entry = try self.connections.getOrPut(std.Thread.getCurrentId());
+            if (!entry.found_existing) entry.value_ptr.* = try self.connect();
+            return entry.value_ptr.*;
         }
 
         /// Release the repo's connection to the pool. If no connection is currently acquired then this
         /// is a no-op.
         pub fn release(self: *AdaptedRepo) void {
-            if (self.connection) |connection| {
-                self.connection = null;
-                self.adapter.release(connection);
+            if (self.connections.fetchRemove(std.Thread.getCurrentId())) |entry| {
+                self.adapter.release(entry.value);
             }
         }
 

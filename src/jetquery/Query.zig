@@ -509,26 +509,8 @@ fn Statement(
             return self.extend(S, args, .where);
         }
 
-        pub fn find(self: Self, id: anytype) Statement(Adapter, .select, Schema, Model, .{
-            .field_infos = &(jetquery.fields.fieldInfos(
-                Adapter,
-                Model,
-                options.relations,
-                @TypeOf(.{ .id = id }),
-                .where,
-            ) ++
-                jetquery.fields.fieldInfos(Adapter, Model, options.relations, @TypeOf(.{1}), .limit)),
-            .where_clauses = &.{sql.Where.tree(
-                Adapter,
-                Model,
-                &.{},
-                @TypeOf(.{ .id = id }),
-                .where,
-                options.field_infos.len,
-            )},
-            .columns = if (options.columns.len == 0) &Model.columns() else options.columns,
-            .result_context = .one,
-        }) {
+        pub fn find(self: Self, id: anytype) @TypeOf(self.findBy(.{ .id = id })) {
+            // TODO: Use configured primary key instead of `id`
             // No need to verify `id` presence as `jetquery.fields.fieldInfos` will reject unknown fields.
             return self.findBy(.{ .id = id });
         }

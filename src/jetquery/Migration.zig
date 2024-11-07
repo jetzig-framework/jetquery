@@ -545,7 +545,7 @@ test "migration from command line: create table" {
         \\            t.primaryKey("id", .{}),
         \\            t.column("name", .string, .{ .unique = true, .index = true }),
         \\            t.column("paws", .integer, .{}),
-        \\            t.column("human_id", .string, .{ .index = true, .reference = .{ "humans", "id" }),
+        \\            t.column("human_id", .string, .{ .index = true, .reference = .{ "humans", "id" } }),
         \\            t.timestamps(.{}),
         \\        },
         \\        .{},
