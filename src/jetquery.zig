@@ -1334,3 +1334,25 @@ test "raw select column" {
         \\SELECT foo(bar + baz), qux(quux, corge) FROM "humans" WHERE (1 = 1) ORDER BY "humans"."id" ASC
     , query.sql);
 }
+
+test "query" {
+    const Schema = struct {
+        pub const Cat = Model(
+            @This(),
+            "cats",
+            struct { id: i32, name: []const u8, age: i32, favorite_sport: []const u8 },
+            .{ .relations = .{ .homes = hasMany(.Home, .{}) } },
+        );
+
+        pub const Home = Model(@This(), "homes", struct { id: i32, cat_id: i32, zip_code: []const u8 }, .{});
+    };
+    const query = Query(TestAdapter, Schema, .Cat).join(.inner, .homes).where(.{
+        .{ .name = "Hercules" },                         .OR,                                               .{ .name = "Heracles" },
+        .{ .{ .age, .gt, 4 }, .{ .age, .lt, 10 } },      .{ .favorite_sport, .like, "%ball" },              .{ .favorite_sport, .not_eql, "basketball" },
+        .{ sql.raw("my_sql_function(age)"), .eql, 100 }, .{ .NOT, .{ .{ .age = 1 }, .OR, .{ .age = 2 } } }, .{ "age / paws = ? or age * paws < ?", .{ 2, 10 } },
+        .{ .homes = .{ .zip_code = "10304" } },
+    });
+    try std.testing.expectEqualStrings(
+        \\SELECT "cats"."id", "cats"."name", "cats"."age", "cats"."favorite_sport" FROM "cats" INNER JOIN "homes" ON "cats"."id" = "homes"."cat_id" WHERE ("cats"."name" = $1 OR "cats"."name" = $2 AND ("cats"."age" > $3 AND "cats"."age" < $4) AND "cats"."favorite_sport" LIKE $5 AND "cats"."favorite_sport" <> $6 AND my_sql_function(age) = $7 AND ( NOT ("cats"."age" = $8 OR "cats"."age" = $9)) AND age / paws = $10 or age * paws < $11 AND "homes"."zip_code" = $12) ORDER BY "cats"."id" ASC
+    , query.sql);
+}

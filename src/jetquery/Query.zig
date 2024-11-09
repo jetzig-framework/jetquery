@@ -33,6 +33,7 @@ pub fn Query(adapter: jetquery.adapters.Name, Schema: type, comptime model: anyt
         },
     };
 
+    @setEvalBranchQuota(10000);
     return struct {
         table: Model,
 
@@ -387,6 +388,7 @@ fn Statement(
                 statement.field_errors[index] = self.field_errors[index];
             }
 
+            @setEvalBranchQuota(10000);
             const tree = sql.Where.tree(
                 Adapter,
                 Model,

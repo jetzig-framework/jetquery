@@ -186,6 +186,7 @@ pub const Node = union(enum) {
         pub const Operand = union(enum) {
             value: Node.Value,
             column: columns.Column,
+            string: []const u8,
         };
     };
 
@@ -299,8 +300,8 @@ pub const Node = union(enum) {
                 for (group.children) |child| {
                     if (prev_child) |capture| {
                         const is_and = switch (child) {
-                            .group, .triplet => switch (capture) {
-                                .group, .value, .triplet => true,
+                            .group, .triplet, .sql_string => switch (capture) {
+                                .group, .value, .triplet, .sql_string => true,
                                 else => false,
                             },
                             else => false,
@@ -321,6 +322,10 @@ pub const Node = union(enum) {
                     },
                     .column => |column| {
                         writer.print("{s}", .{Adapter.columnSql(column)}) catch unreachable;
+                    },
+                    .string => |string| {
+                        // Raw strings are always comptime-known
+                        writer.print(string, .{}) catch unreachable;
                     },
                 }
 
@@ -343,6 +348,10 @@ pub const Node = union(enum) {
                     },
                     .column => |column| {
                         writer.print("{s}", .{Adapter.columnSql(column)}) catch unreachable;
+                    },
+                    .string => |string| {
+                        // Raw strings are always comptime-known
+                        writer.print(string, .{}) catch unreachable;
                     },
                 }
             },
@@ -387,6 +396,7 @@ pub const Node = union(enum) {
                         }
                     },
                     .column => {},
+                    .string => {},
                 }
                 switch (triplet.rhs) {
                     .value => |value| {
@@ -396,6 +406,7 @@ pub const Node = union(enum) {
                         }
                     },
                     .column => {},
+                    .string => {},
                 }
             },
             .sql_string => |sql_string| {
@@ -473,12 +484,14 @@ pub const Node = union(enum) {
                         appendValueField(value.type, value, len, fields_array, tuple_index);
                     },
                     .column => {},
+                    .string => {},
                 }
                 switch (triplet.rhs) {
                     .value => |value| {
                         appendValueField(value.type, value, len, fields_array, tuple_index);
                     },
                     .column => {},
+                    .string => {},
                 }
             },
             .sql_string => |sql_string| {
@@ -512,12 +525,14 @@ pub const Node = union(enum) {
                         if (!value.isNull()) count.* += 1;
                     },
                     .column => {},
+                    .string => {},
                 }
                 switch (triplet.rhs) {
                     .value => |value| {
                         if (!value.isNull()) count.* += 1;
                     },
                     .column => {},
+                    .string => {},
                 }
             },
             .sql_string => |sql_string| {
@@ -965,6 +980,8 @@ fn functionColumn(T: type, Table: type, relations: []const type) Node.Triplet.Op
             relations,
             .{T},
         )[0] }
+    else if (@hasDecl(T, "__jetquery_sql_string"))
+        .{ .string = T.__jetquery_sql_string }
     else
         @compileError("Unexpected type in clause: `" ++ @typeName(T) ++ "`");
 }

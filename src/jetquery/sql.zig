@@ -99,6 +99,12 @@ pub inline fn sum(comptime column_tag: anytype) type {
     return FunctionType(.sum, column_tag);
 }
 
+pub inline fn raw(comptime slice: []const u8) type {
+    return struct {
+        pub const __jetquery_sql_string = slice;
+    };
+}
+
 pub inline fn column(T: type, comptime sql: []const u8) jetquery.columns.Column {
     return jetquery.columns.Column{
         .name = undefined,
