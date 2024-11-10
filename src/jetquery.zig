@@ -410,6 +410,17 @@ test "count()" {
     , query.sql);
 }
 
+test "count() without whereclause" {
+    const Schema = struct {
+        pub const Cat = Model(@This(), "cats", struct { id: i32, name: []const u8, paws: i32 }, .{});
+    };
+    const query = Query(TestAdapter, Schema, .Cat).count();
+
+    try std.testing.expectEqualStrings(
+        \\SELECT COUNT(*) FROM "cats" WHERE (1 = 1)
+    , query.sql);
+}
+
 test "distinct().count()" {
     const Schema = struct {
         pub const Cat = Model(@This(), "cats", struct { id: i32, name: []const u8, paws: i32 }, .{});
@@ -1335,7 +1346,7 @@ test "raw select column" {
     , query.sql);
 }
 
-test "query" {
+test "complex whereclause" {
     const Schema = struct {
         pub const Cat = Model(
             @This(),
@@ -1347,9 +1358,9 @@ test "query" {
         pub const Home = Model(@This(), "homes", struct { id: i32, cat_id: i32, zip_code: []const u8 }, .{});
     };
     const query = Query(TestAdapter, Schema, .Cat).join(.inner, .homes).where(.{
-        .{ .name = "Hercules" },                         .OR,                                               .{ .name = "Heracles" },
-        .{ .{ .age, .gt, 4 }, .{ .age, .lt, 10 } },      .{ .favorite_sport, .like, "%ball" },              .{ .favorite_sport, .not_eql, "basketball" },
-        .{ sql.raw("my_sql_function(age)"), .eql, 100 }, .{ .NOT, .{ .{ .age = 1 }, .OR, .{ .age = 2 } } }, .{ "age / paws = ? or age * paws < ?", .{ 2, 10 } },
+        .{ .name = "Hercules" },                    .OR,                                               .{ .name = "Heracles" },
+        .{ .{ .age, .gt, 4 }, .{ .age, .lt, 10 } }, .{ .favorite_sport, .like, "%ball" },              .{ .favorite_sport, .not_eql, "basketball" },
+        .{ "my_sql_function(age)", .eql, 100 },     .{ .NOT, .{ .{ .age = 1 }, .OR, .{ .age = 2 } } }, .{ "age / paws = ? or age * paws < ?", .{ 2, 10 } },
         .{ .homes = .{ .zip_code = "10304" } },
     });
     try std.testing.expectEqualStrings(

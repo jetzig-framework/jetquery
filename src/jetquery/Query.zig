@@ -228,6 +228,11 @@ pub fn Query(adapter: jetquery.adapters.Name, Schema: type, comptime model: anyt
         ) @TypeOf(InitialStatement(Adapter, Schema, Model).orderBy(args)) {
             return InitialStatement(Adapter, Schema, Model).orderBy(args);
         }
+
+        /// Select a `COUNT` from the result set.
+        pub fn count() @TypeOf(InitialStatement(Adapter, Schema, Model).count()) {
+            return InitialStatement(Adapter, Schema, Model).count();
+        }
     };
 }
 

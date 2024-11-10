@@ -395,8 +395,7 @@ pub const Node = union(enum) {
                             index.* += 1;
                         }
                     },
-                    .column => {},
-                    .string => {},
+                    .column, .string => {},
                 }
                 switch (triplet.rhs) {
                     .value => |value| {
@@ -405,8 +404,7 @@ pub const Node = union(enum) {
                             index.* += 1;
                         }
                     },
-                    .column => {},
-                    .string => {},
+                    .column, .string => {},
                 }
             },
             .sql_string => |sql_string| {
@@ -483,15 +481,13 @@ pub const Node = union(enum) {
                     .value => |value| {
                         appendValueField(value.type, value, len, fields_array, tuple_index);
                     },
-                    .column => {},
-                    .string => {},
+                    .column, .string => {},
                 }
                 switch (triplet.rhs) {
                     .value => |value| {
                         appendValueField(value.type, value, len, fields_array, tuple_index);
                     },
-                    .column => {},
-                    .string => {},
+                    .column, .string => {},
                 }
             },
             .sql_string => |sql_string| {
@@ -524,15 +520,13 @@ pub const Node = union(enum) {
                     .value => |value| {
                         if (!value.isNull()) count.* += 1;
                     },
-                    .column => {},
-                    .string => {},
+                    .column, .string => {},
                 }
                 switch (triplet.rhs) {
                     .value => |value| {
                         if (!value.isNull()) count.* += 1;
                     },
-                    .column => {},
-                    .string => {},
+                    .column, .string => {},
                 }
             },
             .sql_string => |sql_string| {
@@ -744,17 +738,31 @@ fn assignValues(
                 );
             } else {
                 inline for (info.fields) |field| {
-                    assignValues(
-                        @field(arg, field.name),
-                        ValuesTuple,
-                        values_tuple,
-                        ErrorsTuple,
-                        errors_tuple,
-                        values_fields,
-                        idx,
-                        coerce,
-                    );
-                    comptime detectValues(field.type, &idx);
+                    if (comptime isTripletWithRawString(field.type)) {
+                        assignValues(
+                            arg[2],
+                            ValuesTuple,
+                            values_tuple,
+                            ErrorsTuple,
+                            errors_tuple,
+                            values_fields,
+                            idx,
+                            coerce,
+                        );
+                        comptime detectValues(@TypeOf(arg[2]), &idx);
+                    } else {
+                        assignValues(
+                            @field(arg, field.name),
+                            ValuesTuple,
+                            values_tuple,
+                            ErrorsTuple,
+                            errors_tuple,
+                            values_fields,
+                            idx,
+                            coerce,
+                        );
+                        comptime detectValues(field.type, &idx);
+                    }
                 }
             }
         },
@@ -841,7 +849,10 @@ fn assignValue(
 // ```zig
 // .{ .foo, .eql, .bar }
 // .{ sql.max(.foo), .lt, .bar }
+// ```
 fn isTriplet(T: type) bool {
+    if (@typeInfo(T) != .@"struct") return false;
+
     const struct_fields = std.meta.fields(T);
 
     if (struct_fields.len != 3) return false;
@@ -849,6 +860,15 @@ fn isTriplet(T: type) bool {
 
     const t: T = undefined;
     return @hasField(Node.Triplet.Operator, @tagName(t[1]));
+}
+
+// A triplet specifically where the left side is a comptime string, which we interpret as raw
+// SQL.
+// ```zig
+// .{ "count(foo) * 100 / 4", .eql, 5 }
+// ```
+fn isTripletWithRawString(T: type) bool {
+    return isTriplet(T) and isComptimeString(std.meta.fields(T)[0]);
 }
 
 // A pair of comptime SQL string and a tuple of values, e.g.:
@@ -881,6 +901,10 @@ fn isSqlString(T: type) bool {
     ) else true;
 }
 
+// A triplet of { operand, operator, operand }
+// The left operand can be a value or a comptime-known SQL string.
+// The right operand can be a value; comptime strings are treated as values.
+// `jetquery.sql.raw` can be used to force the right side to be treated as a raw SQL string.
 fn makeTriplet(
     Adapter: type,
     Table: type,
@@ -927,6 +951,9 @@ fn makeTriplet(
     };
 }
 
+// The left and right side of a triplet. We special-case for the left side to allow SQL strings,
+// the right side is always interpreted as a value.
+// `jetquery.sql.raw` can be used to force the right side to be treated as a raw SQL string.
 fn makeOperand(
     Adapter: type,
     Table: type,
@@ -949,6 +976,9 @@ fn makeOperand(
         },
         .type => functionColumn(arg[arg_index], Table, relations),
         else => blk: {
+            if (arg_index == 0 and isComptimeString(std.meta.fields(T)[0])) {
+                break :blk .{ .string = arg[0] };
+            }
             const A = switch (@typeInfo(Other)) {
                 .type => Adapter.Aggregate(functionColumn(Other).function.?),
                 .enum_literal => enum_blk: {
@@ -984,6 +1014,20 @@ fn functionColumn(T: type, Table: type, relations: []const type) Node.Triplet.Op
         .{ .string = T.__jetquery_sql_string }
     else
         @compileError("Unexpected type in clause: `" ++ @typeName(T) ++ "`");
+}
+
+fn isComptimeString(field: std.builtin.Type.StructField) bool {
+    if (!field.is_comptime) return false;
+
+    return switch (@typeInfo(field.type)) {
+        .pointer => |info| blk: {
+            if (!info.is_volatile and !info.is_allowzero and info.size == .Slice) break :blk true;
+            const child = @typeInfo(info.child);
+            if (!info.is_volatile and !info.is_allowzero and info.size == .One and child == .array and child.array.child == u8) break :blk true;
+            break :blk false;
+        },
+        else => false,
+    };
 }
 
 fn debugNode(comptime node: Node, comptime depth: usize) void {
