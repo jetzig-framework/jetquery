@@ -41,7 +41,7 @@ pub fn Migrate(adapter_name: jetquery.adapters.Name) type {
 
             inline for (migrations) |migration| {
                 if (!try self.isMigrated(migration)) {
-                    log("\nExecuting migration: === {s} ===\n", .{migration.name});
+                    log("\n=== [MIGRATE:BEGIN] {s} ===\n", .{migration.name});
 
                     try migration.upFn(self.repo);
                     try self.repo.Query(.Migrations)
@@ -50,7 +50,7 @@ pub fn Migrate(adapter_name: jetquery.adapters.Name) type {
 
                     count += 1;
 
-                    log("\nCompleted migration: === {s} ===\n", .{migration.name});
+                    log("\n=== [MIGRATE:COMPLETE] {s} ===\n", .{migration.name});
                 }
             }
 
@@ -71,13 +71,13 @@ pub fn Migrate(adapter_name: jetquery.adapters.Name) type {
             var applied = false;
             inline for (migrations) |migration| {
                 if (!applied and std.mem.eql(u8, migration.version, last_migration.version)) {
-                    log("\nRolling back migration: === {s} ===\n", .{migration.name});
+                    log("\n=== [ROLLBACK:BEGIN] {s} ===\n", .{migration.name});
                     try migration.downFn(self.repo);
                     try self.repo.delete(last_migration);
                     // Just in case we somehow end up with two migrations with the same version (e.g.
                     // user manually copied a file), we want to only apply one of them:
                     applied = true;
-                    log("\nCompleted rollback: === {s} ===\n", .{migration.name});
+                    log("\n=== [ROLLBACK:COMPLETE] {s} ===\n", .{migration.name});
                 }
             }
         }

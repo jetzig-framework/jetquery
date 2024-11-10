@@ -68,6 +68,7 @@ test "select" {
     try std.testing.expectEqualStrings(
         \\SELECT "cats"."name", "cats"."paws" FROM "cats" WHERE (1 = 1)
     , query.sql);
+    try std.testing.expect(query.isValid());
 }
 
 test "select (all)" {
@@ -79,6 +80,7 @@ test "select (all)" {
     try std.testing.expectEqualStrings(
         \\SELECT "cats"."name", "cats"."paws" FROM "cats" WHERE (1 = 1)
     , query.sql);
+    try std.testing.expect(query.isValid());
 }
 
 test "select (with `where`)" {
@@ -94,6 +96,7 @@ test "select (with `where`)" {
     try std.testing.expectEqualStrings(
         \\SELECT "cats"."name", "cats"."paws" FROM "cats" WHERE ("cats"."name" = $1 AND "cats"."paws" = $2)
     , query.sql);
+    try std.testing.expect(query.isValid());
 }
 
 test "where" {
@@ -108,6 +111,7 @@ test "where" {
     try std.testing.expectEqualStrings(
         \\SELECT "cats"."name", "cats"."paws", "cats"."color" FROM "cats" WHERE ("cats"."name" = $1 AND "cats"."paws" = $2)
     , query.sql);
+    try std.testing.expect(query.isValid());
 }
 
 test "where (multiple)" {
@@ -123,6 +127,7 @@ test "where (multiple)" {
     try std.testing.expectEqualStrings(
         \\SELECT "cats"."name", "cats"."paws" FROM "cats" WHERE "cats"."name" = $1 AND "cats"."paws" = $2
     , query.sql);
+    try std.testing.expect(query.isValid());
 }
 
 test "limit" {
@@ -136,6 +141,7 @@ test "limit" {
     try std.testing.expectEqualStrings(
         \\SELECT "cats"."name", "cats"."paws" FROM "cats" WHERE (1 = 1) LIMIT $1
     , query.sql);
+    try std.testing.expect(query.isValid());
 }
 
 test "offset" {
@@ -150,6 +156,7 @@ test "offset" {
     try std.testing.expectEqualStrings(
         \\SELECT "cats"."name", "cats"."paws" FROM "cats" WHERE (1 = 1) LIMIT $1 OFFSET $2
     , query.sql);
+    try std.testing.expect(query.isValid());
 }
 
 test "order by" {
@@ -163,6 +170,7 @@ test "order by" {
     try std.testing.expectEqualStrings(
         \\SELECT "cats"."name", "cats"."paws" FROM "cats" WHERE (1 = 1) ORDER BY "cats"."name" ASC
     , query.sql);
+    try std.testing.expect(query.isValid());
 }
 
 test "order by (aliased desc = descending)" {
@@ -176,6 +184,7 @@ test "order by (aliased desc = descending)" {
     try std.testing.expectEqualStrings(
         \\SELECT "cats"."name", "cats"."paws" FROM "cats" WHERE (1 = 1) ORDER BY "cats"."name" DESC
     , query.sql);
+    try std.testing.expect(query.isValid());
 }
 
 test "order by (aliased asc = ascending)" {
@@ -189,6 +198,7 @@ test "order by (aliased asc = ascending)" {
     try std.testing.expectEqualStrings(
         \\SELECT "cats"."name", "cats"."paws" FROM "cats" WHERE (1 = 1) ORDER BY "cats"."name" ASC
     , query.sql);
+    try std.testing.expect(query.isValid());
 }
 
 test "order by (short-hand)" {
@@ -202,109 +212,113 @@ test "order by (short-hand)" {
     try std.testing.expectEqualStrings(
         \\SELECT "cats"."name", "cats"."paws" FROM "cats" WHERE (1 = 1) ORDER BY "cats"."name" ASC
     , query.sql);
+    try std.testing.expect(query.isValid());
 }
 
-// test "order by with relations (short-hand)" {
-//     const Schema = struct {
-//         pub const Human = Model(
-//             @This(),
-//             "humans",
-//             struct { id: i32, cat_id: i32, name: []const u8 },
-//             .{ .relations = .{ .cat = relation.belongsTo(.Cat, .{}) } },
-//         );
-//
-//         pub const Cat = Model(
-//             @This(),
-//             "cats",
-//             struct { id: i32, name: []const u8, paws: i32 },
-//             .{},
-//         );
-//     };
-//
-//     const query = Query(TestAdapter, Schema, .Human)
-//         .join(.inner, .cat)
-//         .orderBy(.{ .cat = .name });
-//
-//     try std.testing.expectEqualStrings(
-//         \\SELECT "humans"."id", "humans"."cat_id", "humans"."name" FROM "humans" INNER JOIN "cats" ON "humans"."cat_id" = "cats"."id" WHERE (1 = 1) ORDER BY "cats"."name" ASC
-//     ,
-//         query.sql,
-//     );
-// }
-//
-// test "order by with relations (explicit form)" {
-//     const Schema = struct {
-//         pub const Human = Model(
-//             @This(),
-//             "humans",
-//             struct { id: i32, cat_id: i32, name: []const u8 },
-//             .{ .relations = .{ .cat = relation.belongsTo(.Cat, .{}) } },
-//         );
-//
-//         pub const Cat = Model(
-//             @This(),
-//             "cats",
-//             struct { id: i32, name: []const u8, paws: i32 },
-//             .{},
-//         );
-//     };
-//
-//     const query = Query(TestAdapter, Schema, .Human)
-//         .join(.inner, .cat)
-//         .orderBy(.{ .cat = .{ .name = .descending } });
-//
-//     try std.testing.expectEqualStrings(
-//         \\SELECT "humans"."id", "humans"."cat_id", "humans"."name" FROM "humans" INNER JOIN "cats" ON "humans"."cat_id" = "cats"."id" WHERE (1 = 1) ORDER BY "cats"."name" DESC
-//     ,
-//         query.sql,
-//     );
-// }
-//
-// test "order by with relations and base table, short + explicit forms" {
-//     const Schema = struct {
-//         pub const Human = Model(
-//             @This(),
-//             "humans",
-//             struct { id: i32, cat_id: i32, family_id: i32, name: []const u8 },
-//             .{
-//                 .relations = .{
-//                     .cat = relation.belongsTo(.Cat, .{}),
-//                     .family = relation.belongsTo(.Family, .{}),
-//                 },
-//             },
-//         );
-//
-//         pub const Cat = Model(
-//             @This(),
-//             "cats",
-//             struct { id: i32, name: []const u8, paws: i32 },
-//             .{},
-//         );
-//
-//         pub const Family = Model(
-//             @This(),
-//             "families",
-//             struct { id: i32, name: []const u8 },
-//             .{},
-//         );
-//     };
-//
-//     const query = Query(TestAdapter, Schema, .Human)
-//         .join(.inner, .cat)
-//         .join(.inner, .family)
-//         .orderBy(.{
-//         .id = .descending,
-//         .cat = .{ .name = .descending },
-//         .family = .{ .id, .name },
-//     });
-//
-//     try std.testing.expectEqualStrings(
-//         \\SELECT "humans"."id", "humans"."cat_id", "humans"."family_id", "humans"."name" FROM "humans" INNER JOIN "cats" ON "humans"."cat_id" = "cats"."id" INNER JOIN "families" ON "humans"."family_id" = "families"."id" WHERE (1 = 1) ORDER BY "humans"."id" DESC, "cats"."name" DESC, "families"."id" ASC, "families"."name" ASC
-//     ,
-//         query.sql,
-//     );
-// }
-//
+test "order by with relations (short-hand)" {
+    const Schema = struct {
+        pub const Human = Model(
+            @This(),
+            "humans",
+            struct { id: i32, cat_id: i32, name: []const u8 },
+            .{ .relations = .{ .cat = relation.belongsTo(.Cat, .{}) } },
+        );
+
+        pub const Cat = Model(
+            @This(),
+            "cats",
+            struct { id: i32, name: []const u8, paws: i32 },
+            .{},
+        );
+    };
+
+    const query = Query(TestAdapter, Schema, .Human)
+        .join(.inner, .cat)
+        .orderBy(.{ .cat = .name });
+
+    try std.testing.expectEqualStrings(
+        \\SELECT "humans"."id", "humans"."cat_id", "humans"."name" FROM "humans" INNER JOIN "cats" ON "humans"."cat_id" = "cats"."id" WHERE (1 = 1) ORDER BY "cats"."name" ASC
+    ,
+        query.sql,
+    );
+    try std.testing.expect(query.isValid());
+}
+
+test "order by with relations (explicit form)" {
+    const Schema = struct {
+        pub const Human = Model(
+            @This(),
+            "humans",
+            struct { id: i32, cat_id: i32, name: []const u8 },
+            .{ .relations = .{ .cat = relation.belongsTo(.Cat, .{}) } },
+        );
+
+        pub const Cat = Model(
+            @This(),
+            "cats",
+            struct { id: i32, name: []const u8, paws: i32 },
+            .{},
+        );
+    };
+
+    const query = Query(TestAdapter, Schema, .Human)
+        .join(.inner, .cat)
+        .orderBy(.{ .cat = .{ .name = .descending } });
+
+    try std.testing.expectEqualStrings(
+        \\SELECT "humans"."id", "humans"."cat_id", "humans"."name" FROM "humans" INNER JOIN "cats" ON "humans"."cat_id" = "cats"."id" WHERE (1 = 1) ORDER BY "cats"."name" DESC
+    ,
+        query.sql,
+    );
+    try std.testing.expect(query.isValid());
+}
+
+test "order by with relations and base table, short + explicit forms" {
+    const Schema = struct {
+        pub const Human = Model(
+            @This(),
+            "humans",
+            struct { id: i32, cat_id: i32, family_id: i32, name: []const u8 },
+            .{
+                .relations = .{
+                    .cat = relation.belongsTo(.Cat, .{}),
+                    .family = relation.belongsTo(.Family, .{}),
+                },
+            },
+        );
+
+        pub const Cat = Model(
+            @This(),
+            "cats",
+            struct { id: i32, name: []const u8, paws: i32 },
+            .{},
+        );
+
+        pub const Family = Model(
+            @This(),
+            "families",
+            struct { id: i32, name: []const u8 },
+            .{},
+        );
+    };
+
+    const query = Query(TestAdapter, Schema, .Human)
+        .join(.inner, .cat)
+        .join(.inner, .family)
+        .orderBy(.{
+        .id = .descending,
+        .cat = .{ .name = .descending },
+        .family = .{ .id, .name },
+    });
+
+    try std.testing.expectEqualStrings(
+        \\SELECT "humans"."id", "humans"."cat_id", "humans"."family_id", "humans"."name" FROM "humans" INNER JOIN "cats" ON "humans"."cat_id" = "cats"."id" INNER JOIN "families" ON "humans"."family_id" = "families"."id" WHERE (1 = 1) ORDER BY "humans"."id" DESC, "cats"."name" DESC, "families"."id" ASC, "families"."name" ASC
+    ,
+        query.sql,
+    );
+    try std.testing.expect(query.isValid());
+}
+
 test "insert" {
     const Schema = struct {
         pub const Cat = Model(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});
@@ -315,6 +329,7 @@ test "insert" {
     try std.testing.expectEqualStrings(
         \\INSERT INTO "cats" ("name", "paws") VALUES ($1, $2)
     , query.sql);
+    try std.testing.expect(query.isValid());
 }
 
 test "update" {
@@ -330,6 +345,38 @@ test "update" {
     ,
         query.sql,
     );
+    try std.testing.expect(query.isValid());
+}
+
+test "update (without whereclause)" {
+    const Schema = struct {
+        pub const Cat = Model(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});
+    };
+    const query = Query(TestAdapter, Schema, .Cat)
+        .update(.{ .name = "Heracles", .paws = 2 });
+
+    try std.testing.expectEqualStrings(
+        \\UPDATE "cats" SET "name" = $1, "paws" = $2 WHERE (1 = 1)
+    ,
+        query.sql,
+    );
+    try std.testing.expectEqual(false, query.isValid());
+    try std.testing.expectError(error.JetQueryUnsafeUpdate, query.validate());
+}
+
+test "updateAll" {
+    const Schema = struct {
+        pub const Cat = Model(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});
+    };
+    const query = Query(TestAdapter, Schema, .Cat)
+        .updateAll(.{ .name = "Heracles", .paws = 2 });
+
+    try std.testing.expectEqualStrings(
+        \\UPDATE "cats" SET "name" = $1, "paws" = $2 WHERE (1 = 1)
+    ,
+        query.sql,
+    );
+    try std.testing.expect(query.isValid());
 }
 
 test "delete" {
@@ -343,6 +390,7 @@ test "delete" {
     try std.testing.expectEqualStrings(
         \\DELETE FROM "cats" WHERE "cats"."name" = $1
     , query.sql);
+    try std.testing.expect(query.isValid());
 }
 
 test "delete (without where clause)" {
@@ -351,7 +399,8 @@ test "delete (without where clause)" {
     };
     const query = Query(TestAdapter, Schema, .Cat).delete();
 
-    try std.testing.expectError(error.JetQueryUnsafeDelete, query.validateDelete());
+    try std.testing.expectEqual(false, query.isValid());
+    try std.testing.expectError(error.JetQueryUnsafeDelete, query.validate());
 }
 
 test "deleteAll" {
@@ -364,6 +413,7 @@ test "deleteAll" {
     try std.testing.expectEqualStrings(
         \\DELETE FROM "cats" WHERE (1 = 1)
     , query.sql);
+    try std.testing.expect(query.isValid());
 }
 
 test "find" {
@@ -375,6 +425,7 @@ test "find" {
     try std.testing.expectEqualStrings(
         \\SELECT "cats"."id", "cats"."name", "cats"."paws" FROM "cats" WHERE "cats"."id" = $1 ORDER BY "cats"."id" ASC LIMIT $2
     , query.sql);
+    try std.testing.expect(query.isValid());
 }
 
 test "find (with coerced id)" {
@@ -386,6 +437,7 @@ test "find (with coerced id)" {
     try std.testing.expectEqualStrings(
         \\SELECT "cats"."id", "cats"."name", "cats"."paws" FROM "cats" WHERE "cats"."id" = $1 ORDER BY "cats"."id" ASC LIMIT $2
     , query.sql);
+    try std.testing.expect(query.isValid());
 }
 
 test "findBy" {
@@ -397,6 +449,7 @@ test "findBy" {
     try std.testing.expectEqualStrings(
         \\SELECT "cats"."id", "cats"."name", "cats"."paws" FROM "cats" WHERE ("cats"."name" = $1 AND "cats"."paws" = $2) ORDER BY "cats"."id" ASC LIMIT $3
     , query.sql);
+    try std.testing.expect(query.isValid());
 }
 
 test "count()" {
@@ -408,6 +461,7 @@ test "count()" {
     try std.testing.expectEqualStrings(
         \\SELECT COUNT(*) FROM "cats" WHERE ("cats"."name" = $1 AND "cats"."paws" = $2)
     , query.sql);
+    try std.testing.expect(query.isValid());
 }
 
 test "count() without whereclause" {
@@ -419,6 +473,7 @@ test "count() without whereclause" {
     try std.testing.expectEqualStrings(
         \\SELECT COUNT(*) FROM "cats" WHERE (1 = 1)
     , query.sql);
+    try std.testing.expect(query.isValid());
 }
 
 test "distinct().count()" {
@@ -430,6 +485,7 @@ test "distinct().count()" {
     try std.testing.expectEqualStrings(
         \\SELECT COUNT(DISTINCT("cats"."name")) FROM "cats" WHERE ("cats"."name" = $1 AND "cats"."paws" = $2)
     , query.sql);
+    try std.testing.expect(query.isValid());
 }
 
 test "nested distinct().count()" {
@@ -449,6 +505,7 @@ test "nested distinct().count()" {
     try std.testing.expectEqualStrings(
         \\SELECT COUNT(DISTINCT("humans"."name", "cats"."name")) FROM "humans" INNER JOIN "cats" ON "humans"."cat_id" = "cats"."id" WHERE "humans"."name" = $1
     , query.sql);
+    try std.testing.expect(query.isValid());
 }
 
 test "combined" {
@@ -464,6 +521,7 @@ test "combined" {
     try std.testing.expectEqualStrings(
         \\SELECT "cats"."name", "cats"."paws" FROM "cats" WHERE "cats"."name" = $1 ORDER BY "cats"."name" ASC LIMIT $2
     , query.sql);
+    try std.testing.expect(query.isValid());
 }
 
 test "runtime field values" {
@@ -481,6 +539,7 @@ test "runtime field values" {
     try std.testing.expectEqualStrings("Heracles", query.values.@"0");
     try std.testing.expectEqual(paws + 2, query.values.@"1");
     try std.testing.expectEqualStrings("Hercules", query.values.@"2");
+    try std.testing.expect(query.isValid());
 }
 
 test "boolean coercion" {
@@ -492,6 +551,7 @@ test "boolean coercion" {
         .where(.{ .intelligent = "1" });
 
     try std.testing.expectEqual(query.values.@"0", true);
+    try std.testing.expect(query.isValid());
 }
 
 test "integer coercion" {
@@ -503,6 +563,7 @@ test "integer coercion" {
         .where(.{ .paws = "4" });
 
     try std.testing.expectEqual(query.values.@"0", 4);
+    try std.testing.expect(query.isValid());
 }
 
 test "float coercion" {
@@ -514,6 +575,7 @@ test "float coercion" {
         .where(.{ .intelligence = "10.2" });
 
     try std.testing.expectEqual(query.values.@"0", 10.2);
+    try std.testing.expect(query.isValid());
 }
 
 test "toJetQuery()" {
@@ -562,6 +624,7 @@ test "toJetQuery()" {
     , query.sql);
     try std.testing.expectEqualStrings(query.values.@"0", "Hercules");
     try std.testing.expectEqual(query.values.@"1", 4);
+    try std.testing.expect(query.isValid());
 }
 
 test "failed coercion (bool)" {
@@ -573,6 +636,7 @@ test "failed coercion (bool)" {
         .where(.{ .intelligent = "not a bool" });
 
     try std.testing.expectError(error.JetQueryInvalidBooleanString, query.validateValues());
+    try std.testing.expectEqual(false, query.isValid());
 }
 
 test "failed coercion (int)" {
@@ -584,6 +648,7 @@ test "failed coercion (int)" {
         .where(.{ .paws = "not an int" });
 
     try std.testing.expectError(error.JetQueryInvalidIntegerString, query.validateValues());
+    try std.testing.expectEqual(false, query.isValid());
 }
 
 test "failed coercion (float)" {
@@ -595,6 +660,7 @@ test "failed coercion (float)" {
         .where(.{ .intelligence = "not a float" });
 
     try std.testing.expectError(error.JetQueryInvalidFloatString, query.validateValues());
+    try std.testing.expectEqual(false, query.isValid());
 }
 
 test "timestamps (create)" {
@@ -612,6 +678,7 @@ test "timestamps (create)" {
     try std.testing.expectEqualStrings(
         \\INSERT INTO "cats" ("name", "paws", "created_at", "updated_at") VALUES ($1, $2, $3, $4)
     , query.sql);
+    try std.testing.expect(query.isValid());
 }
 
 test "timestamps (update)" {
@@ -632,6 +699,7 @@ test "timestamps (update)" {
     ,
         query.sql,
     );
+    try std.testing.expect(query.isValid());
 }
 
 test "belongsTo" {
@@ -659,6 +727,7 @@ test "belongsTo" {
     ,
         query.sql,
     );
+    try std.testing.expect(query.isValid());
 }
 
 test "belongsTo (multiple)" {
@@ -699,6 +768,7 @@ test "belongsTo (multiple)" {
     ,
         query.sql,
     );
+    try std.testing.expect(query.isValid());
 }
 
 test "belongsTo (with specified columns)" {
@@ -740,6 +810,7 @@ test "belongsTo (with specified columns)" {
     ,
         query.sql,
     );
+    try std.testing.expect(query.isValid());
 }
 
 test "hasMany" {
@@ -775,6 +846,7 @@ test "hasMany" {
     // after fetching results of the first query. This is tested more thoroughly in `Repo.zig`
         query.auxiliary_queries[0].query.where(.{ .cat_id = 1 }).sql,
     );
+    try std.testing.expect(query.isValid());
 }
 
 test "nested where" {
@@ -819,6 +891,7 @@ test "nested where" {
     ,
         query.sql,
     );
+    try std.testing.expect(query.isValid());
 }
 
 test "operator logic" {
@@ -867,6 +940,7 @@ test "operator logic" {
     ,
         query.sql,
     );
+    try std.testing.expect(query.isValid());
 }
 
 test "slice of []const u8 in whereclause" {
@@ -888,6 +962,7 @@ test "slice of []const u8 in whereclause" {
     try std.testing.expectEqualStrings(
         \\SELECT "humans"."name" FROM "humans" WHERE "humans"."name" = ANY ($1)
     , query.sql);
+    try std.testing.expect(query.isValid());
 }
 
 test "slice of int in whereclause" {
@@ -909,6 +984,7 @@ test "slice of int in whereclause" {
     try std.testing.expectEqualStrings(
         \\SELECT "humans"."cats" FROM "humans" WHERE "humans"."cats" = ANY ($1)
     , query.sql);
+    try std.testing.expect(query.isValid());
 }
 
 test "slice of float in whereclause" {
@@ -930,6 +1006,7 @@ test "slice of float in whereclause" {
     try std.testing.expectEqualStrings(
         \\SELECT "humans"."favorite_number" FROM "humans" WHERE "humans"."favorite_number" = ANY ($1)
     , query.sql);
+    try std.testing.expect(query.isValid());
 }
 
 test "slice of bool in whereclause" {
@@ -951,6 +1028,7 @@ test "slice of bool in whereclause" {
     try std.testing.expectEqualStrings(
         \\SELECT "humans"."has_cats" FROM "humans" WHERE "humans"."has_cats" = ANY ($1)
     , query.sql);
+    try std.testing.expect(query.isValid());
 }
 
 test "null in whereclause" {
@@ -967,6 +1045,7 @@ test "null in whereclause" {
     try std.testing.expectEqualStrings(
         \\SELECT "humans"."name" FROM "humans" WHERE ("humans"."name" IS NULL OR "humans"."name" = $1)
     , query.sql);
+    try std.testing.expect(query.isValid());
 }
 
 test "groupBy" {
@@ -983,6 +1062,7 @@ test "groupBy" {
     try std.testing.expectEqualStrings(
         \\SELECT FROM "cats" WHERE (1 = 1) GROUP BY "cats"."name"
     , query.sql);
+    try std.testing.expect(query.isValid());
 }
 
 test "aggregate max()" {
@@ -1001,6 +1081,7 @@ test "aggregate max()" {
     try std.testing.expectEqualStrings(
         \\SELECT "cats"."name", MAX("cats"."paws") FROM "cats" WHERE (1 = 1) GROUP BY "cats"."name"
     , query.sql);
+    try std.testing.expect(query.isValid());
 }
 
 test "aggregate min()" {
@@ -1019,6 +1100,7 @@ test "aggregate min()" {
     try std.testing.expectEqualStrings(
         \\SELECT "cats"."name", MIN("cats"."paws") FROM "cats" WHERE (1 = 1) GROUP BY "cats"."name"
     , query.sql);
+    try std.testing.expect(query.isValid());
 }
 
 test "aggregate count()" {
@@ -1037,6 +1119,7 @@ test "aggregate count()" {
     try std.testing.expectEqualStrings(
         \\SELECT "cats"."name", COUNT("cats"."paws") FROM "cats" WHERE (1 = 1) GROUP BY "cats"."name"
     , query.sql);
+    try std.testing.expect(query.isValid());
 }
 
 test "aggregate avg()" {
@@ -1055,6 +1138,7 @@ test "aggregate avg()" {
     try std.testing.expectEqualStrings(
         \\SELECT "cats"."name", AVG("cats"."paws") FROM "cats" WHERE (1 = 1) GROUP BY "cats"."name"
     , query.sql);
+    try std.testing.expect(query.isValid());
 }
 
 test "aggregate sum()" {
@@ -1073,6 +1157,7 @@ test "aggregate sum()" {
     try std.testing.expectEqualStrings(
         \\SELECT "cats"."name", SUM("cats"."paws") FROM "cats" WHERE (1 = 1) GROUP BY "cats"."name"
     , query.sql);
+    try std.testing.expect(query.isValid());
 }
 
 test "like/ilike" {
@@ -1091,6 +1176,7 @@ test "like/ilike" {
     try std.testing.expectEqualStrings(
         \\SELECT "cats"."name" FROM "cats" WHERE ("cats"."name" LIKE $1 OR "cats"."name" ILIKE $2)
     , query.sql);
+    try std.testing.expect(query.isValid());
 }
 
 test "inner join" {
@@ -1129,6 +1215,7 @@ test "inner join" {
     try std.testing.expectEqualStrings(
         \\SELECT "humans"."name" FROM "humans" INNER JOIN "cats" ON "humans"."cat_id" = "cats"."id" INNER JOIN "computers" ON "humans"."id" = "computers"."human_id" WHERE (1 = 1) ORDER BY "humans"."id" ASC
     , query.sql);
+    try std.testing.expect(query.isValid());
 }
 
 test "outer join" {
@@ -1167,6 +1254,7 @@ test "outer join" {
     try std.testing.expectEqualStrings(
         \\SELECT "humans"."name" FROM "humans" LEFT OUTER JOIN "cats" ON "humans"."cat_id" = "cats"."id" LEFT OUTER JOIN "computers" ON "humans"."id" = "computers"."human_id" WHERE (1 = 1) ORDER BY "humans"."id" ASC
     , query.sql);
+    try std.testing.expect(query.isValid());
 }
 
 test "inner and outer join" {
@@ -1205,6 +1293,7 @@ test "inner and outer join" {
     try std.testing.expectEqualStrings(
         \\SELECT "humans"."name" FROM "humans" INNER JOIN "cats" ON "humans"."cat_id" = "cats"."id" LEFT OUTER JOIN "families" ON "humans"."family_id" = "families"."id" WHERE (1 = 1) ORDER BY "humans"."id" ASC
     , query.sql);
+    try std.testing.expect(query.isValid());
 }
 
 test "inner and outer join with select on relation columns" {
@@ -1243,6 +1332,7 @@ test "inner and outer join with select on relation columns" {
     try std.testing.expectEqualStrings(
         \\SELECT "humans"."name", "families"."id", "cats"."paws" FROM "humans" INNER JOIN "cats" ON "humans"."cat_id" = "cats"."id" LEFT OUTER JOIN "families" ON "humans"."family_id" = "families"."id" WHERE (1 = 1) ORDER BY "humans"."id" ASC
     , query.sql);
+    try std.testing.expect(query.isValid());
 }
 
 test "default order by (no order clauses, default primary key present)" {
@@ -1258,6 +1348,7 @@ test "default order by (no order clauses, default primary key present)" {
     try std.testing.expectEqualStrings(
         \\SELECT "humans"."id" FROM "humans" WHERE (1 = 1) ORDER BY "humans"."id" ASC
     , query.sql);
+    try std.testing.expect(query.isValid());
 }
 
 test "default order by (no order clauses, default primary key not present)" {
@@ -1273,6 +1364,7 @@ test "default order by (no order clauses, default primary key not present)" {
     try std.testing.expectEqualStrings(
         \\SELECT "humans"."name" FROM "humans" WHERE (1 = 1)
     , query.sql);
+    try std.testing.expect(query.isValid());
 }
 
 test "default order by (no order clauses, custom primary key present)" {
@@ -1288,6 +1380,7 @@ test "default order by (no order clauses, custom primary key present)" {
     try std.testing.expectEqualStrings(
         \\SELECT "humans"."name" FROM "humans" WHERE (1 = 1) ORDER BY "humans"."name" ASC
     , query.sql);
+    try std.testing.expect(query.isValid());
 }
 
 test "default order by (no order clauses, custom primary key not present)" {
@@ -1303,6 +1396,7 @@ test "default order by (no order clauses, custom primary key not present)" {
     try std.testing.expectEqualStrings(
         \\SELECT "humans"."id" FROM "humans" WHERE (1 = 1)
     , query.sql);
+    try std.testing.expect(query.isValid());
 }
 
 test "raw whereclause" {
@@ -1324,6 +1418,7 @@ test "raw whereclause" {
     try std.testing.expectEqualStrings(
         \\SELECT "humans"."id" FROM "humans" WHERE foo = $1 and bar = $2 or baz = $3 and qux = $4 and quux = $5 and a = $6 and b = $7 and c = $8 and d = $9 and e = $10 and f = $11 and g = $12 and h = $13 and i = $14 and j = $15 and k = $16 ORDER BY "humans"."id" ASC
     , query.sql);
+    try std.testing.expect(query.isValid());
 }
 
 test "raw select column" {
@@ -1342,6 +1437,7 @@ test "raw select column" {
     try std.testing.expectEqualStrings(
         \\SELECT foo(bar + baz), qux(quux, corge) FROM "humans" WHERE (1 = 1) ORDER BY "humans"."id" ASC
     , query.sql);
+    try std.testing.expect(query.isValid());
 }
 
 test "complex whereclause" {
@@ -1367,6 +1463,7 @@ test "complex whereclause" {
         .{ "my_sql_function(age)", .eql, 100 },                                              .{ .NOT, .{ .{ .age = 1 }, .OR, .{ .age = 2 } } }, .{ "age / paws = ? or age * paws < ?", .{ 2, 10 } },
         .{ .{ .status = null }, .OR, .{ .status = [_][]const u8{ "sleeping", "eating" } } }, .{ .homes = .{ .zip_code = "10304" } },
     });
+    try std.testing.expect(query.isValid());
     try std.testing.expectEqualStrings(
         \\SELECT "cats"."id", "cats"."name", "cats"."age", "cats"."favorite_sport", "cats"."status" FROM "cats" INNER JOIN "homes" ON "cats"."id" = "homes"."cat_id" WHERE ("cats"."name" = $1 OR "cats"."name" = $2 AND ("cats"."age" > $3 AND "cats"."age" < $4) AND "cats"."favorite_sport" LIKE $5 AND "cats"."favorite_sport" <> $6 AND my_sql_function(age) = $7 AND ( NOT ("cats"."age" = $8 OR "cats"."age" = $9)) AND age / paws = $10 or age * paws < $11 AND ("cats"."status" IS NULL OR "cats"."status" = ANY ($12)) AND "homes"."zip_code" = $13) ORDER BY "cats"."id" ASC
     , query.sql);

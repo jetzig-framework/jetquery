@@ -18,7 +18,9 @@ pub const Field = struct {
     name: []const u8,
     Table: type,
     column_type: type,
+    type: type,
     context: fields.FieldContext,
+    path: []const u8,
     index: usize,
 };
 
@@ -71,7 +73,7 @@ pub const Tree = struct {
             self.ErrorsTuple,
             &errors,
             self.values_fields,
-            0,
+            &.{},
             true,
         );
         return .{ .values = vals, .errors = errors };
@@ -124,9 +126,11 @@ pub const Node = union(enum) {
     pub const Value = struct {
         name: []const u8,
         type: type,
+        source_type: type,
         Table: type,
         field_info: std.builtin.Type.StructField,
         field_context: fields.FieldContext,
+        path: []const u8,
         index: usize,
         synthetic: bool = false,
 
@@ -453,7 +457,9 @@ pub const Node = union(enum) {
                 .name = value.name,
                 .context = value.field_context,
                 .column_type = T,
+                .type = value.source_type,
                 .index = tuple_index.*,
+                .path = value.path,
             };
             tuple_index.* += 1;
         }
@@ -547,7 +553,7 @@ fn nodeTree(
     T: type,
     comptime name: []const u8,
     field_info: std.builtin.Type.StructField,
-    comptime path: [][]const u8,
+    comptime path: []const []const u8,
     comptime field_context: fields.FieldContext,
     comptime value_index: *usize,
 ) Node {
@@ -558,7 +564,9 @@ fn nodeTree(
                 .Table = findRelation(Table, relations, path),
                 .name = name,
                 .type = T,
+                .source_type = T,
                 .field_info = field_info,
+                .path = makePath(path, null),
                 .index = value_index.*,
             };
             value_index.* += 1;
@@ -578,7 +586,7 @@ fn nodeTree(
                     path,
                     value_index,
                 ) };
-            } else if (isSqlString(T)) blk: {
+            } else if (isSqlStringWithArgsArray(T)) blk: {
                 const t: T = undefined;
                 const value_fields = std.meta.fields(@TypeOf(t[1]));
                 var nodes: [value_fields.len]Node = undefined;
@@ -589,9 +597,11 @@ fn nodeTree(
                             // have a target column so name is not useful.
                             .name = "_",
                             .type = fields.ComptimeErasedType(value_field.type),
+                            .source_type = value_field.type,
                             .Table = Table,
                             .field_info = fields.ComptimeErasedStructField(value_field),
                             .field_context = field_context,
+                            .path = makePath(path, std.fmt.comptimePrint("1.{d}", .{index})),
                             .index = value_index.*,
                         },
                     };
@@ -630,8 +640,10 @@ fn nodeTree(
                     .Table = findRelation(Table, relations, path),
                     .name = name,
                     .type = T,
+                    .source_type = T,
                     .field_info = field_info,
                     // We write `IS NULL` directly into the SQL without a bind param
+                    .path = undefined,
                     .index = undefined,
                 },
             },
@@ -641,7 +653,9 @@ fn nodeTree(
                     .Table = findRelation(Table, relations, path),
                     .name = name,
                     .type = T,
+                    .source_type = T,
                     .field_info = field_info,
+                    .path = makePath(path, null),
                     .index = value_index.*,
                 };
                 value_index.* += 1;
@@ -658,7 +672,7 @@ fn childNodes(
     OG: type,
     comptime field_info: std.builtin.Type.StructField,
     comptime struct_info: std.builtin.Type.Struct,
-    comptime path: [][]const u8,
+    comptime path: []const []const u8,
     comptime field_context: fields.FieldContext,
     comptime value_index: *usize,
 ) [struct_info.fields.len]Node {
@@ -685,7 +699,7 @@ fn childNodes(
     return nodes;
 }
 
-fn findRelation(Table: type, relations: []const type, comptime path: [][]const u8) type {
+fn findRelation(Table: type, relations: []const type, comptime path: []const []const u8) type {
     comptime {
         if (path.len <= 1) return Table;
         for (relations) |relation| {
@@ -702,7 +716,7 @@ fn assignValues(
     ErrorsTuple: type,
     errors_tuple: *ErrorsTuple,
     values_fields: []const Field,
-    comptime tuple_index: usize,
+    comptime path: []const u8,
     comptime coerce: bool,
 ) void {
     if (comptime coercion.canCoerceDelegate(@TypeOf(arg))) {
@@ -713,20 +727,17 @@ fn assignValues(
             ErrorsTuple,
             errors_tuple,
             values_fields,
-            tuple_index,
+            comptime concatPath(path, null),
             coerce,
         );
         return;
     }
 
-    comptime var idx: usize = tuple_index;
-
     switch (@typeInfo(@TypeOf(arg))) {
         .@"struct" => |info| {
-            // XXX: Note that we will always land here first because the first arg to `where` is
-            // is always a struct, so we can safely start here for incrementing our index
-            // counter.
-            if (comptime isSqlString(@TypeOf(arg))) {
+            // Note that we will always land here first because the first arg to `where` is is
+            // always a struct, so we can safely start here for incrementing our index counter.
+            if (comptime isSqlStringWithArgsArray(@TypeOf(arg))) {
                 assignValues(
                     arg[1],
                     ValuesTuple,
@@ -734,23 +745,26 @@ fn assignValues(
                     ErrorsTuple,
                     errors_tuple,
                     values_fields,
-                    idx,
+                    comptime concatPath(path, "1"),
                     false,
                 );
             } else {
                 inline for (info.fields) |field| {
                     if (comptime isTripletWithRawString(field.type)) {
+                        // The left side is a raw SQL string, let's evaluate the right side (arg
+                        // index 2).
                         assignValues(
-                            arg[2],
+                            @field(arg, field.name)[2],
                             ValuesTuple,
                             values_tuple,
                             ErrorsTuple,
                             errors_tuple,
                             values_fields,
-                            idx,
+                            comptime concatPath(path, field.name ++ ".2"),
                             coerce,
                         );
                     } else {
+                        // Recurse to evaluate whatever exists inside this struct.
                         assignValues(
                             @field(arg, field.name),
                             ValuesTuple,
@@ -758,17 +772,23 @@ fn assignValues(
                             ErrorsTuple,
                             errors_tuple,
                             values_fields,
-                            idx,
+                            comptime concatPath(path, field.name),
                             coerce,
                         );
-                        comptime detectValues(field.type, &idx);
                     }
                 }
             }
         },
+        // We inject our own types for SQL functions (e.g. `sql.max(.foo)` - no values to
+        // evaluate here.
         .type => {},
+        // A logical operator - `.OR`, `.NOT`, `.AND`
+        // Or a comparison operator - `.eql`, `.not_eql`, `.lt`, etc.
         .enum_literal => {},
+        // We generate `IS NULL` when a value type is `@TypeOf(null)` but we look directly at the
+        // values tuple type so we don't need to do anything with the actual value.
         .null => {},
+        // Finally, we have a value - assign it to the tuple.
         else => {
             assignValue(
                 arg,
@@ -777,26 +797,10 @@ fn assignValues(
                 ErrorsTuple,
                 errors_tuple,
                 values_fields,
-                tuple_index,
+                path,
                 coerce,
             );
         },
-    }
-}
-
-fn detectValues(T: type, index: *usize) void {
-    comptime {
-        if (coercion.canCoerceDelegate(T)) {
-            index.* += 1;
-            return;
-        }
-        switch (@typeInfo(T)) {
-            .@"struct" => |info| {
-                for (info.fields) |field| detectValues(field.type, index);
-            },
-            .type, .enum_literal, .null => {},
-            else => index.* += 1,
-        }
     }
 }
 
@@ -807,17 +811,23 @@ fn assignValue(
     ErrorsTuple: type,
     errors_tuple: *ErrorsTuple,
     values_fields: []const Field,
-    comptime tuple_index: usize,
+    comptime path: []const u8,
     comptime coerce: bool,
 ) void {
+    comptime var matched: bool = false;
     inline for (
         std.meta.fields(ValuesTuple),
         values_fields,
-        0..,
-    ) |field, value_field, index| {
-        const tuple_field_name = std.fmt.comptimePrint("{d}", .{tuple_index});
+    ) |field, value_field| {
+        const tuple_field_name = std.fmt.comptimePrint("{d}", .{value_field.index});
 
-        if (comptime tuple_index == index) {
+        // We store the path to each value when we generate the values tuple type, then we
+        // re-generate it using the same logic when we walk the values tree. A path is the
+        // sequential field names to a value, e.g. `.foo.0.1.bar.0.baz`. This means it does not
+        // matter which order we evaluate the values in - as long as the path generation logic
+        // matches, we are guaranteed to not mismatch values.
+        matched = comptime std.mem.eql(u8, path, value_field.path);
+        if (matched) {
             const field_info = comptime fields.fieldInfo(
                 field,
                 value_field.Table,
@@ -841,8 +851,10 @@ fn assignValue(
                 @field(values_tuple, tuple_field_name) = arg;
                 @field(errors_tuple, tuple_field_name) = null;
             }
+            break;
         }
     }
+    if (!matched) @compileError("Failed matching argument path: `" ++ path ++ "`");
 }
 
 // A triplet with an operator, e.g.:
@@ -875,7 +887,7 @@ fn isTripletWithRawString(T: type) bool {
 // ```zig
 // .{ "foo = ?", .{1} }
 // ```
-fn isSqlString(T: type) bool {
+fn isSqlStringWithArgsArray(T: type) bool {
     const struct_fields = std.meta.fields(T);
 
     if (struct_fields.len != 2) return false;
@@ -913,7 +925,7 @@ fn makeTriplet(
     comptime field_context: fields.FieldContext,
     comptime field_info: std.builtin.Type.StructField,
     comptime name: []const u8,
-    comptime path: [][]const u8,
+    comptime path: []const []const u8,
     comptime value_index: *usize,
 ) Node.Triplet {
     const arg: T = undefined;
@@ -964,7 +976,7 @@ fn makeOperand(
     relations: []const type,
     comptime field_context: fields.FieldContext,
     comptime name: []const u8,
-    comptime path: [][]const u8,
+    comptime path: []const []const u8,
     comptime field_info: std.builtin.Type.StructField,
     comptime value_index: *usize,
 ) Node.Triplet.Operand {
@@ -994,7 +1006,9 @@ fn makeOperand(
                 .Table = findRelation(Table, relations, path),
                 .name = name,
                 .type = A,
+                .source_type = @TypeOf(arg[arg_index]),
                 .field_info = field_info,
+                .path = makePath(path, std.fmt.comptimePrint("{d}", .{arg_index})),
                 .index = value_index.*,
             };
             value_index.* += 1;
@@ -1028,6 +1042,72 @@ fn isComptimeString(field: std.builtin.Type.StructField) bool {
         },
         else => false,
     };
+}
+
+fn makePathBuf(buf: []u8, base: []const []const u8, maybe_add: ?[]const u8) []const u8 {
+    var cursor: usize = 0;
+    for (base, 0..) |path, index| {
+        if (index == 0) {
+            @memcpy(buf[cursor .. cursor + 1], ".");
+            cursor += 1;
+        }
+        @memcpy(buf[cursor .. cursor + path.len], path);
+        cursor += path.len;
+        if (index + 1 < base.len) {
+            @memcpy(buf[cursor .. cursor + 1], ".");
+            cursor += 1;
+        }
+    }
+
+    const len = pathSize(base, maybe_add);
+    if (maybe_add) |add| {
+        @memcpy(buf[cursor .. cursor + add.len], add);
+        @memcpy(buf[len - 1 .. len], ".");
+    }
+    return buf[0..len];
+}
+
+fn concatPath(
+    comptime base: []const u8,
+    comptime maybe_add: ?[]const u8,
+) *const [base.len + if (maybe_add) |add| 1 + add.len else 0]u8 {
+    comptime {
+        var buf: [base.len + if (maybe_add) |add| 1 + add.len else 0]u8 = undefined;
+        @memcpy(buf[0..base.len], base);
+        if (maybe_add) |add| @memcpy(buf[base.len..], "." ++ add);
+        const final = buf;
+        return &final;
+    }
+}
+
+fn makePath(
+    comptime base: []const []const u8,
+    comptime maybe_add: ?[]const u8,
+) *const [pathSize(base, maybe_add)]u8 {
+    comptime {
+        var buf: [pathSize(base, maybe_add)]u8 = undefined;
+        var cursor: usize = 0;
+        for (base) |path| {
+            @memcpy(buf[cursor .. cursor + 1], ".");
+            cursor += 1;
+            @memcpy(buf[cursor .. cursor + path.len], path);
+            cursor += path.len;
+        }
+        if (maybe_add) |add| {
+            @memcpy(buf[cursor .. cursor + 1 + add.len], "." ++ add);
+        }
+        const final = buf;
+        return &final;
+    }
+}
+
+fn pathSize(base: []const []const u8, maybe_add: ?[]const u8) usize {
+    var size: usize = 0;
+    for (base) |path| {
+        size += 1 + path.len;
+    }
+    if (maybe_add) |add| size += 1 + add.len;
+    return size;
 }
 
 fn debugNode(comptime node: Node, comptime depth: usize) void {

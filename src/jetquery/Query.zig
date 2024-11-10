@@ -69,7 +69,9 @@ pub fn Query(adapter: jetquery.adapters.Name, Schema: type, comptime model: anyt
             return InitialStatement(Adapter, Schema, Model).where(args);
         }
 
-        /// Create an `UPDATE` query with the specified `args`, e.g.:
+        /// Create an `UPDATE` query with the specified `args`. As a safety measure, an
+        /// `update()` query **must** have a `.where()` clause attached or it will not be
+        /// executed. Use `deleteAll()` if you wish to delete all records.
         /// ```zig
         /// Query(.postgresql, Schema, .MyTable).update(.{ .foo = "bar", .baz = "qux" }).where(.{ .quux = "corge" });
         /// ```
@@ -77,6 +79,14 @@ pub fn Query(adapter: jetquery.adapters.Name, Schema: type, comptime model: anyt
             return InitialStatement(Adapter, Schema, Model).update(args);
         }
 
+        /// Create an `UPDATE` query that does not require a `WHERE` clause to update all records
+        /// in a table.
+        /// ```zig
+        /// Query(.postgresql, Schema, .MyTable).updateAll(.{ .foo = "bar", .baz = "qux" });
+        /// ```
+        pub fn updateAll(args: anytype) @TypeOf(InitialStatement(Adapter, Schema, Model).updateAll(args)) {
+            return InitialStatement(Adapter, Schema, Model).updateAll(args);
+        }
         /// Create an `INSERT` query with the specified `args`, e.g.:
         /// ```zig
         /// Query(.postgresql, Schema, .MyTable).insert(.{ .foo = "bar", .baz = "qux" });
@@ -286,7 +296,7 @@ fn StatementOptions(comptime query_context: sql.QueryContext) type {
 fn defaultResultContext(query_context: sql.QueryContext) ResultContext {
     return switch (query_context) {
         .select => .many,
-        .update, .insert, .delete, .delete_all, .none => .none,
+        .update, .update_all, .insert, .delete, .delete_all, .none => .none,
         .count => .one,
     };
 }
@@ -607,11 +617,23 @@ fn Statement(
 
             return self.extend(S, .{}, .none);
         }
+
         pub fn update(self: Self, args: anytype) Statement(Adapter, .update, Schema, Model, .{
             .field_infos = &(jetquery.fields.fieldInfos(Adapter, Model, &.{}, @TypeOf(args), .update) ++
                 timestampsFields(Model, .update)),
         }) {
             const S = Statement(Adapter, .update, Schema, Model, .{
+                .field_infos = &(jetquery.fields.fieldInfos(Adapter, Model, &.{}, @TypeOf(args), .update) ++
+                    timestampsFields(Model, .update)),
+            });
+            return self.extend(S, args, .update);
+        }
+
+        pub fn updateAll(self: Self, args: anytype) Statement(Adapter, .update_all, Schema, Model, .{
+            .field_infos = &(jetquery.fields.fieldInfos(Adapter, Model, &.{}, @TypeOf(args), .update) ++
+                timestampsFields(Model, .update)),
+        }) {
+            const S = Statement(Adapter, .update_all, Schema, Model, .{
                 .field_infos = &(jetquery.fields.fieldInfos(Adapter, Model, &.{}, @TypeOf(args), .update) ++
                     timestampsFields(Model, .update)),
             });
@@ -649,7 +671,7 @@ fn Statement(
             // TODO: Add support for `DELETE ... USING ...`
             if (comptime options.relations.len != 0) @compileError(
                 "Failed attempting to generate `DELETE` query with relations. " ++
-                    "This error occurred to prevent accidential deletion of potentially unexpected behaviour.",
+                    "This error occurred to prevent accidential deletion or potentially unexpected behaviour.",
             );
             const S = Statement(Adapter, .delete_all, Schema, Model, .{});
             return self.extend(S, .{}, .none);
@@ -1001,14 +1023,41 @@ fn Statement(
             return if (rows.len == 0) return null else rows[0];
         }
 
+        pub fn validate(self: Self) !void {
+            try self.validateDelete();
+            try self.validateUpdate();
+            try self.validateValues();
+        }
+
         pub fn validateValues(self: Self) !void {
             for (self.errors) |maybe_error| {
                 if (maybe_error) |err| return err;
             }
         }
 
+        pub fn isValid(self: Self) bool {
+            if (!self.isValidDelete()) return false;
+            if (!self.isValidUpdate()) return false;
+
+            return for (self.errors) |maybe_error| {
+                if (maybe_error) |_| break false;
+            } else true;
+        }
+
         pub fn validateDelete(self: Self) !void {
-            if (query_context == .delete and !self.hasWhereClause()) return error.JetQueryUnsafeDelete;
+            if (!self.isValidDelete()) return error.JetQueryUnsafeDelete;
+        }
+
+        fn isValidDelete(self: Self) bool {
+            return query_context != .delete or self.hasWhereClause();
+        }
+
+        pub fn validateUpdate(self: Self) !void {
+            if (!self.isValidUpdate()) return error.JetQueryUnsafeUpdate;
+        }
+
+        fn isValidUpdate(self: Self) bool {
+            return query_context != .update or self.hasWhereClause();
         }
 
         pub fn _orderBy(
@@ -1261,8 +1310,8 @@ fn Statement(
 
 fn timestampsFields(
     Model: type,
-    comptime query_context: jetquery.fields.FieldContext,
-) [timestampsSize(Model, query_context)]jetquery.fields.FieldInfo {
+    comptime field_context: jetquery.fields.FieldContext,
+) [timestampsSize(Model, field_context)]jetquery.fields.FieldInfo {
     const timestamps = detectTimestamps(Model);
     const has_created_at = std.mem.containsAtLeast(TimestampType, timestamps, 1, &.{.created_at});
     const has_updated_at = std.mem.containsAtLeast(TimestampType, timestamps, 1, &.{.updated_at});
@@ -1270,16 +1319,16 @@ fn timestampsFields(
         jetquery.fields.structField(jetquery.default_column_names.updated_at, i64),
         Model,
         jetquery.default_column_names.updated_at,
-        query_context,
+        field_context,
     );
     const created_at = jetquery.fields.fieldInfo(
         jetquery.fields.structField(jetquery.default_column_names.created_at, i64),
         Model,
         jetquery.default_column_names.created_at,
-        query_context,
+        field_context,
     );
 
-    return switch (query_context) {
+    return switch (field_context) {
         .update => if (has_updated_at) .{updated_at} else .{},
         .insert => if (has_created_at and has_updated_at)
             .{ created_at, updated_at }
@@ -1290,7 +1339,7 @@ fn timestampsFields(
         else
             .{},
         else => @compileError(
-            "Timestamps detection not relevant for `" ++ @tagName(query_context) ++ "` query. (This is a bug).",
+            "Timestamps detection not relevant for `" ++ @tagName(field_context) ++ "` query. (This is a bug).",
         ),
     };
 }
@@ -1311,16 +1360,16 @@ fn detectTimestamps(Model: type) []const TimestampType {
         &.{};
 }
 
-fn timestampsSize(Model: type, comptime query_context: jetquery.fields.FieldContext) u2 {
+fn timestampsSize(Model: type, comptime field_context: jetquery.fields.FieldContext) u2 {
     const timestamps = detectTimestamps(Model);
 
     const has_updated_at = std.mem.containsAtLeast(TimestampType, timestamps, 1, &.{.updated_at});
 
-    return switch (query_context) {
+    return switch (field_context) {
         .update => if (has_updated_at) 1 else 0,
         .insert => timestamps.len,
         else => @compileError(
-            "Timestamps detection not relevant for `" ++ @tagName(query_context) ++ "` query. (This is a bug).",
+            "Timestamps detection not relevant for `" ++ @tagName(field_context) ++ "` query. (This is a bug).",
         ),
     };
 }
@@ -1356,7 +1405,7 @@ fn updateTimestamps(
     comptime context: sql.QueryContext,
 ) void {
     switch (comptime context) {
-        .update => {
+        .update, .update_all => {
             const timestamp = now();
             inline for (statement.field_infos, 0..) |field_info, index| {
                 if (comptime std.mem.eql(

@@ -231,8 +231,7 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
             const connection = try self.connectManaged();
             errdefer self.release();
 
-            try query.validateValues();
-            try query.validateDelete();
+            try query.validate();
 
             return try connection.execute(query, caller_info, self);
         }
@@ -879,11 +878,11 @@ test "relations" {
         .{ .if_not_exists = true },
     );
 
-    try repo.Query(.Cat)
-        .insert(.{ .id = 1, .name = "Hercules", .paws = 4, .human_id = 1 })
-        .execute(&repo);
     try repo.Query(.Human)
         .insert(.{ .id = 1, .name = "Bob" })
+        .execute(&repo);
+    try repo.Query(.Cat)
+        .insert(.{ .id = 1, .name = "Hercules", .paws = 4, .human_id = 1 })
         .execute(&repo);
 
     const query = repo.Query(.Cat)

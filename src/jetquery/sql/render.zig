@@ -27,7 +27,7 @@ pub fn render(
             group_by,
             having_clauses,
         ),
-        .update => renderUpdate(
+        .update, .update_all => renderUpdate(
             Adapter,
             Table,
             where_clauses,

@@ -13,8 +13,9 @@ pub const FieldState = struct {
 
 pub const QueryContext = enum {
     select,
-    update,
     insert,
+    update,
+    update_all,
     delete,
     delete_all,
     count,
