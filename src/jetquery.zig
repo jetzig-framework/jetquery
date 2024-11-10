@@ -478,10 +478,9 @@ test "runtime field values" {
     const query = Query(TestAdapter, Schema, .Cat)
         .update(.{ .name = heracles, .paws = paws + 2 })
         .where(.{ .name = hercules, .paws = paws });
-    const values = query.values();
-    try std.testing.expectEqualStrings("Heracles", values.@"0");
-    try std.testing.expectEqual(paws + 2, values.@"1");
-    try std.testing.expectEqualStrings("Hercules", values.@"2");
+    try std.testing.expectEqualStrings("Heracles", query.values.@"0");
+    try std.testing.expectEqual(paws + 2, query.values.@"1");
+    try std.testing.expectEqualStrings("Hercules", query.values.@"2");
 }
 
 test "boolean coercion" {
@@ -492,7 +491,7 @@ test "boolean coercion" {
         .select(.{.name})
         .where(.{ .intelligent = "1" });
 
-    try std.testing.expectEqual(query.values().@"0", true);
+    try std.testing.expectEqual(query.values.@"0", true);
 }
 
 test "integer coercion" {
@@ -503,7 +502,7 @@ test "integer coercion" {
         .select(.{.name})
         .where(.{ .paws = "4" });
 
-    try std.testing.expectEqual(query.values().@"0", 4);
+    try std.testing.expectEqual(query.values.@"0", 4);
 }
 
 test "float coercion" {
@@ -514,7 +513,7 @@ test "float coercion" {
         .select(.{.name})
         .where(.{ .intelligence = "10.2" });
 
-    try std.testing.expectEqual(query.values().@"0", 10.2);
+    try std.testing.expectEqual(query.values.@"0", 10.2);
 }
 
 test "toJetQuery()" {
@@ -561,9 +560,8 @@ test "toJetQuery()" {
     try std.testing.expectEqualStrings(
         \\INSERT INTO "cats" ("name", "paws", "color") VALUES ($1, $2, $3)
     , query.sql);
-    const values = query.values();
-    try std.testing.expectEqualStrings(values.@"0", "Hercules");
-    try std.testing.expectEqual(values.@"1", 4);
+    try std.testing.expectEqualStrings(query.values.@"0", "Hercules");
+    try std.testing.expectEqual(query.values.@"1", 4);
 }
 
 test "failed coercion (bool)" {

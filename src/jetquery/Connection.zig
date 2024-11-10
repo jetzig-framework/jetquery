@@ -19,7 +19,7 @@ pub const Connection = union(enum) {
                 try query.validateDelete();
                 var result = try connection.execute(
                     query.sql,
-                    query.field_values,
+                    query.values,
                     caller_info,
                     repo,
                 );

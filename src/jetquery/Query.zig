@@ -251,7 +251,7 @@ fn InitialStatement(
     return Statement(Adapter, .none, Schema, Model, .{
         .result_context = .none,
         .default_select = true,
-    }){ .field_values = .{}, .field_errors = .{} };
+    }){ .values = .{}, .errors = .{} };
 }
 
 fn SchemaTable(Schema: type, comptime name: std.meta.DeclEnum(Schema)) type {
@@ -334,9 +334,9 @@ fn Statement(
     comptime options: StatementOptions(query_context),
 ) type {
     return struct {
-        field_values: jetquery.fields.FieldValues(Model, options.relations, options.field_infos),
+        values: jetquery.fields.FieldValues(Model, options.relations, options.field_infos),
         limit_bound: ?u64 = null,
-        field_errors: [options.field_infos.len]?anyerror,
+        errors: [options.field_infos.len]?anyerror,
 
         comptime query_context: sql.QueryContext = query_context,
         comptime field_infos: []const jetquery.fields.FieldInfo = options.field_infos,
@@ -388,9 +388,9 @@ fn Statement(
             var statement: S = undefined;
 
             inline for (0..self.field_infos.len) |index| {
-                const value = self.field_values[index];
-                @field(statement.field_values, std.fmt.comptimePrint("{}", .{index})) = value;
-                statement.field_errors[index] = self.field_errors[index];
+                const value = self.values[index];
+                @field(statement.values, std.fmt.comptimePrint("{}", .{index})) = value;
+                statement.errors[index] = self.errors[index];
             }
 
             @setEvalBranchQuota(10000);
@@ -408,9 +408,9 @@ fn Statement(
             const arg_errors = clause_values.errors;
 
             inline for (options.field_infos.len.., arg_values, arg_errors) |field_index, value, err| {
-                @field(statement.field_values, std.fmt.comptimePrint("{d}", .{field_index})) = value;
+                @field(statement.values, std.fmt.comptimePrint("{d}", .{field_index})) = value;
 
-                statement.field_errors[field_index] = err;
+                statement.errors[field_index] = err;
             }
 
             updateTimestamps(S, &statement, statement.query_context);
@@ -555,8 +555,8 @@ fn Statement(
             });
             var statement = self.extend(S, args, .where);
             const arg_fields = std.meta.fields(@TypeOf(args));
-            statement.field_values[options.field_infos.len + arg_fields.len] = 1;
-            statement.field_errors[options.field_infos.len + arg_fields.len] = null;
+            statement.values[options.field_infos.len + arg_fields.len] = 1;
+            statement.errors[options.field_infos.len + arg_fields.len] = null;
             return statement;
         }
 
@@ -1001,12 +1001,8 @@ fn Statement(
             return if (rows.len == 0) return null else rows[0];
         }
 
-        pub fn values(self: Self) jetquery.fields.FieldValues(Model, options.relations, options.field_infos) {
-            return self.field_values;
-        }
-
         pub fn validateValues(self: Self) !void {
-            for (self.field_errors) |maybe_error| {
+            for (self.errors) |maybe_error| {
                 if (maybe_error) |err| return err;
             }
         }
@@ -1369,10 +1365,10 @@ fn updateTimestamps(
                     jetquery.default_column_names.updated_at,
                 )) {
                     @field(
-                        statement.field_values,
+                        statement.values,
                         std.fmt.comptimePrint("{d}", .{index}),
                     ) = timestamp;
-                    statement.field_errors[index] = null;
+                    statement.errors[index] = null;
                 }
             }
         },
@@ -1385,20 +1381,20 @@ fn updateTimestamps(
                     jetquery.default_column_names.updated_at,
                 )) {
                     @field(
-                        statement.field_values,
+                        statement.values,
                         std.fmt.comptimePrint("{d}", .{index}),
                     ) = timestamp;
-                    statement.field_errors[index] = null;
+                    statement.errors[index] = null;
                 } else if (comptime std.mem.eql(
                     u8,
                     field_info.name,
                     jetquery.default_column_names.created_at,
                 )) {
                     @field(
-                        statement.field_values,
+                        statement.values,
                         std.fmt.comptimePrint("{d}", .{index}),
                     ) = timestamp;
-                    statement.field_errors[index] = null;
+                    statement.errors[index] = null;
                 }
             }
         },
