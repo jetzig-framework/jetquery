@@ -153,6 +153,7 @@ pub const Node = union(enum) {
                     true
                 else
                     false,
+                .array => |info| info.child == T,
                 else => false,
             };
         }
@@ -749,7 +750,6 @@ fn assignValues(
                             idx,
                             coerce,
                         );
-                        comptime detectValues(@TypeOf(arg[2]), &idx);
                     } else {
                         assignValues(
                             @field(arg, field.name),

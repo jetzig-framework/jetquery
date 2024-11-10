@@ -78,6 +78,7 @@ pub fn coerce(
                 @compileError("Incompatible types: `" ++
                     @typeName(T) ++ "` and `" ++ @typeName(info.child) ++ "`"),
         },
+        .array => .{ .value = &value },
         else => coerceDelegate(T, value),
     };
 }
@@ -115,6 +116,7 @@ pub fn CoercedValue(Target: type, Source: type) type {
             []const Target
         else
             Target,
+        .array => |info| if (info.child == Target) []const Target else Target,
         else => Target,
     };
 
