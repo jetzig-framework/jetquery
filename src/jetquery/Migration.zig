@@ -416,15 +416,15 @@ const default_migration = std.fmt.comptimePrint(migration_template, .{
     \\    try repo.createTable(
     \\        "my_table",
     \\        &.{
-    \\            t.primaryKey("id", .{{}}),
-    \\            t.column("my_string", .string, .{{}}),
-    \\            t.column("my_integer", .integer, .{{}}),
-    \\            t.timestamps(.{{}}),
+    \\            t.primaryKey("id", .{}),
+    \\            t.column("my_string", .string, .{}),
+    \\            t.column("my_integer", .integer, .{}),
+    \\            t.timestamps(.{}),
     \\        },
     \\        .{{}},
     \\    );
     ,
-    \\    try repo.dropTable("my_table", .{{}});
+    \\    try repo.dropTable("my_table", .{});
 });
 
 pub fn save(self: Migration) ![]const u8 {

@@ -23,18 +23,21 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
         comptime Query: fn (anytype) type = _Query,
 
         pub const InitOptions = switch (adapter_name) {
+            // All adapter options must be a superset of `GlobalOptions`
             .postgresql => struct {
                 adapter: jetquery.adapters.PostgresqlAdapter.Options,
                 eventCallback: *const fn (event: jetquery.events.Event) anyerror!void = jetquery.events.defaultCallback,
                 lazy_connect: bool = false,
                 admin: bool = false,
                 context: jetquery.Context = .query,
+                env: ?AdapterOptions = null,
             },
             .null => struct {
                 eventCallback: *const fn (event: jetquery.events.Event) anyerror!void = jetquery.events.defaultCallback,
                 admin: bool = false,
                 lazy_connect: bool = false,
                 context: jetquery.Context = .query,
+                env: ?AdapterOptions = null,
             },
         };
 
@@ -97,11 +100,17 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
             return options;
         }
 
+        const AdapterOptions = switch (Adapter.name) {
+            .postgresql => jetquery.adapters.PostgresqlAdapter.Options,
+            .null => jetquery.adapters.NullAdapter.Options,
+        };
+
         const GlobalOptions = struct {
             eventCallback: *const fn (event: jetquery.events.Event) anyerror!void = jetquery.events.defaultCallback,
             lazy_connect: bool = false,
             admin: bool = false,
             context: jetquery.Context = .query,
+            env: ?AdapterOptions = null,
         };
 
         /// Initialize a new repo using a config file. Config file build path is configured by build
@@ -115,10 +124,6 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
                 inline else => |tag| @field(jetquery.config.database, @tagName(tag)),
             };
 
-            const AdapterOptions = switch (Adapter.name) {
-                .postgresql => jetquery.adapters.PostgresqlAdapter.Options,
-                .null => jetquery.adapters.NullAdapter.Options,
-            };
             var options: AdapterOptions = undefined;
             inline for (std.meta.fields(AdapterOptions)) |field| {
                 if (@hasField(@TypeOf(config), field.name)) {
@@ -137,15 +142,19 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
             }
 
             if (global_options.admin and Adapter.name != .null) {
-                // XXX: pg.zig already applies this default but we may need to add specific logic
-                // for selecting an admin schema for different adapters. If needed, we can add an
-                // option to JetQuery config for setting the admin schema. We use this for
-                // creating/dropping databases.
-                options.database = options.username;
+                // If we are running in "admin" mode (i.e. creating or dropping a database),
+                // assume the database we are connecting to is the same as the admin schema, e.g.
+                // if username is `postgres`, connect to database `postgres`.
+                // If this option does not work then users must manually create/drop a database
+                // through their database's CLI/admin tooling - we take our best guess here.
+                options.database = if (global_options.env) |env|
+                    env.username orelse options.username
+                else
+                    options.username;
             }
 
             var init_options: InitOptions = switch (Adapter.name) {
-                .postgresql => .{ .adapter = options },
+                .postgresql => .{ .adapter = mergeOptions(global_options.env, options) },
                 .null => .{},
             };
 
@@ -153,6 +162,21 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
                 @field(init_options, field.name) = @field(global_options, field.name);
             }
             return AdaptedRepo.init(allocator, init_options);
+        }
+
+        // Allow an application to pass an `env` option containing database options. Any values
+        // passed here override anything defined in the config file. Jetzig uses this to read
+        // environment variables from an `.env` file and the process environment.
+        fn mergeOptions(maybe_env: ?AdapterOptions, options: AdapterOptions) AdapterOptions {
+            const env = maybe_env orelse return options;
+
+            var merged = AdapterOptions{};
+            inline for (std.meta.fields(AdapterOptions)) |field| {
+                const value = @field(env, field.name) orelse @field(options, field.name);
+                @field(merged, field.name) = value;
+            }
+
+            return merged;
         }
 
         /// Close connections and free resources.
@@ -823,6 +847,45 @@ test "Repo.loadConfig" {
     var repo = try Repo(.postgresql, void).loadConfig(std.testing.allocator, .testing, .{});
     defer repo.deinit();
     try std.testing.expect(repo.adapter == .postgresql);
+}
+
+test "Repo.loadConfig with env" {
+    try resetDatabase();
+
+    var repo = try Repo(.postgresql, void).loadConfig(
+        std.testing.allocator,
+        .testing,
+        .{
+            .lazy_connect = true,
+            .env = .{
+                .database = "database_from_env",
+                .password = "password_from_env",
+            },
+        },
+    );
+    defer repo.deinit();
+    try std.testing.expect(repo.adapter == .postgresql);
+    try std.testing.expectEqualStrings(
+        repo.adapter.postgresql.options.database.?,
+        "database_from_env",
+    );
+    try std.testing.expectEqualStrings(
+        repo.adapter.postgresql.options.password.?,
+        "password_from_env",
+    );
+    // Testing fallback to config file:
+    try std.testing.expectEqualStrings(
+        repo.adapter.postgresql.options.hostname.?,
+        "127.0.0.1",
+    );
+    try std.testing.expectEqual(
+        repo.adapter.postgresql.options.port.?,
+        5432,
+    );
+    try std.testing.expectEqualStrings(
+        repo.adapter.postgresql.options.username.?,
+        "postgres",
+    );
 }
 
 test "relations" {

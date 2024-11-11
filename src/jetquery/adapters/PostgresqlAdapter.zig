@@ -185,7 +185,7 @@ pub fn init(allocator: std.mem.Allocator, options: Options, lazy_connect: bool) 
 
 /// Close connections and free resources.
 pub fn deinit(self: *PostgresqlAdapter) void {
-    self.pool.deinit();
+    if (self.connected) self.pool.deinit();
 }
 
 pub const Connection = struct {
@@ -318,7 +318,10 @@ pub fn connect(
     self: *PostgresqlAdapter,
     options: jetquery.adapters.ConnectionOptions,
 ) !jetquery.Connection {
-    if (self.lazy_connect) self.pool = try initPool(self.allocator, self.options);
+    if (self.lazy_connect and !self.connected) {
+        self.pool = try initPool(self.allocator, self.options);
+        self.connected = true;
+    }
     return .{ .postgresql = .{ .options = options, .connection = try self.pool.acquire() } };
 }
 
