@@ -28,6 +28,7 @@ pub const util = @import("jetquery/util.zig");
 pub const Environment = std.meta.FieldEnum(@TypeOf(config.database));
 pub const hasMany = relation.hasMany;
 pub const belongsTo = relation.belongsTo;
+pub const CallbackFn = *const fn (event: events.Event) anyerror!void;
 
 pub const CreateTableOptions = struct { if_not_exists: bool = false };
 pub const DropTableOptions = struct { if_exists: bool = false };
@@ -49,7 +50,7 @@ pub const CreateIndexOptions = struct {
     name: ?[]const u8 = null,
     if_not_exists: bool = false,
 };
-pub const Context = enum { migration, query };
+pub const Context = enum { migration, query, cli };
 
 pub const original_prefix = "__original_";
 

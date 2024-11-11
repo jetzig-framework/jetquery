@@ -9,11 +9,23 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
         const Result = jetquery.Result(AdaptedRepo);
 
         pub const RepoAdapter = jetquery.adapters.Adapter(adapter_name, @This());
+        pub const AdapterOptions = switch (Adapter.name) {
+            .postgresql => jetquery.adapters.PostgresqlAdapter.Options,
+            .null => jetquery.adapters.NullAdapter.Options,
+        };
+
+        pub const GlobalOptions = struct {
+            eventCallback: jetquery.CallbackFn = jetquery.events.defaultCallback,
+            lazy_connect: bool = false,
+            admin: bool = false,
+            context: jetquery.Context = .query,
+            env: ?AdapterOptions = null,
+        };
 
         comptime adapter_name: jetquery.adapters.Name = adapter_name,
         allocator: std.mem.Allocator,
         adapter: RepoAdapter,
-        eventCallback: *const fn (event: jetquery.events.Event) anyerror!void = jetquery.events.defaultCallback,
+        eventCallback: jetquery.CallbackFn = jetquery.events.defaultCallback,
         connections: std.AutoHashMap(std.Thread.Id, jetquery.Connection),
         result: ?jetquery.Result(AdaptedRepo) = null,
         context: jetquery.Context = .query,
@@ -26,14 +38,14 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
             // All adapter options must be a superset of `GlobalOptions`
             .postgresql => struct {
                 adapter: jetquery.adapters.PostgresqlAdapter.Options,
-                eventCallback: *const fn (event: jetquery.events.Event) anyerror!void = jetquery.events.defaultCallback,
+                eventCallback: jetquery.CallbackFn = jetquery.events.defaultCallback,
                 lazy_connect: bool = false,
                 admin: bool = false,
                 context: jetquery.Context = .query,
                 env: ?AdapterOptions = null,
             },
             .null => struct {
-                eventCallback: *const fn (event: jetquery.events.Event) anyerror!void = jetquery.events.defaultCallback,
+                eventCallback: jetquery.CallbackFn = jetquery.events.defaultCallback,
                 admin: bool = false,
                 lazy_connect: bool = false,
                 context: jetquery.Context = .query,
@@ -99,19 +111,6 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
             }
             return options;
         }
-
-        const AdapterOptions = switch (Adapter.name) {
-            .postgresql => jetquery.adapters.PostgresqlAdapter.Options,
-            .null => jetquery.adapters.NullAdapter.Options,
-        };
-
-        const GlobalOptions = struct {
-            eventCallback: *const fn (event: jetquery.events.Event) anyerror!void = jetquery.events.defaultCallback,
-            lazy_connect: bool = false,
-            admin: bool = false,
-            context: jetquery.Context = .query,
-            env: ?AdapterOptions = null,
-        };
 
         /// Initialize a new repo using a config file. Config file build path is configured by build
         /// option `jetquery_config_path`.
