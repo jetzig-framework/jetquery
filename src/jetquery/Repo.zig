@@ -315,7 +315,12 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
             return try result.all(query);
         }
 
-        pub fn save(self: *AdaptedRepo, value: anytype) !void {
+        pub fn save(self: *AdaptedRepo, record: anytype) !void {
+            const value = switch (@typeInfo(@TypeOf(record))) {
+                .pointer => record.*,
+                else => record,
+            };
+
             // Unfortunately we need to make an exception to comptime SQL generation here as we
             // only want to update columns where the value has been modified, so the SQL cannot
             // be known at comptime. We use `Connection.executeVoidRuntimeBind` to achieve this,
@@ -1182,13 +1187,14 @@ test "save" {
         .insert(.{ .id = 1000, .name = "Hercules", .paws = 4 })
         .execute(&repo);
 
-    var cat = try repo.Query(.Cat)
+    var maybe_cat = try repo.Query(.Cat)
         .findBy(.{ .name = "Hercules" })
-        .execute(&repo) orelse return std.testing.expect(false);
-    defer repo.free(cat);
-
-    cat.name = "Princes";
-    try repo.save(cat);
+        .execute(&repo);
+    defer repo.free(maybe_cat);
+    if (maybe_cat) |*cat| {
+        cat.name = "Princes";
+        try repo.save(cat);
+    }
 
     const updated_cat = try repo.Query(.Cat)
         .find(1000)
