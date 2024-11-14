@@ -25,11 +25,20 @@ pub fn coerce(
         .null => .{ .value = null },
         .int, .comptime_int => switch (@typeInfo(T)) {
             .int => .{ .value = @intCast(value) },
+            .bool => .{ .value = value == 1 },
             else => coerceDelegate(T, value),
         },
         .float, .comptime_float => switch (@typeInfo(T)) {
             .float => .{ .value = @floatCast(value) },
+            .bool => .{ .value = value == 1.0 },
             else => coerceDelegate(T, value),
+        },
+        .bool => switch (@typeInfo(T)) {
+            .bool => .{ .value = value },
+            else => if (comptime canCoerceDelegate(@TypeOf(value)))
+                coerceDelegate(T, value.*)
+            else
+                coerceBool(T, value),
         },
         .pointer => |info| switch (@typeInfo(T)) {
             .int => switch (@typeInfo(info.child)) {
@@ -63,6 +72,8 @@ pub fn coerce(
                     .Slice => .{ .value = value },
                     else => .{ .value = value },
                 },
+                .int, .comptime_int => .{ .value = value.* == 1 },
+                .float, .comptime_float => .{ .value = value.* == 1.0 },
                 else => if (comptime canCoerceDelegate(info.child))
                     coerceDelegate(T, value.*)
                 else

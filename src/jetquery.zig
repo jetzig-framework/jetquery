@@ -1469,3 +1469,28 @@ test "complex whereclause" {
         \\SELECT "cats"."id", "cats"."name", "cats"."age", "cats"."favorite_sport", "cats"."status" FROM "cats" INNER JOIN "homes" ON "cats"."id" = "homes"."cat_id" WHERE ("cats"."name" = $1 OR "cats"."name" = $2 AND ("cats"."age" > $3 AND "cats"."age" < $4) AND "cats"."favorite_sport" LIKE $5 AND "cats"."favorite_sport" <> $6 AND my_sql_function(age) = $7 AND ( NOT ("cats"."age" = $8 OR "cats"."age" = $9)) AND age / paws = $10 or age * paws < $11 AND ("cats"."status" IS NULL OR "cats"."status" = ANY ($12)) AND "homes"."zip_code" = $13) ORDER BY "cats"."id" ASC
     , query.sql);
 }
+
+test "boolean coercion https://github.com/jetzig-framework/jetquery/issues/1" {
+    const Schema = struct {
+        pub const Cat = Model(
+            @This(),
+            "cats",
+            struct {
+                a: bool,
+                b: bool,
+                c: bool,
+                d: bool,
+            },
+            .{},
+        );
+    };
+    const query = Query(TestAdapter, Schema, .Cat).insert(.{ .a = false, .b = 1, .c = true, .d = "1" });
+    try std.testing.expect(query.isValid());
+    try std.testing.expectEqualStrings(
+        \\INSERT INTO "cats" ("a", "b", "c", "d") VALUES ($1, $2, $3, $4)
+    , query.sql);
+    try std.testing.expectEqual(query.values.@"0", false);
+    try std.testing.expectEqual(query.values.@"1", true);
+    try std.testing.expectEqual(query.values.@"2", true);
+    try std.testing.expectEqual(query.values.@"3", true);
+}
