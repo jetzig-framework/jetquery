@@ -413,6 +413,25 @@ const migration_template =
     \\
 ;
 const default_migration = std.fmt.comptimePrint(migration_template, .{
+    \\    // The `up` function runs when a migration is applied.
+    \\    //
+    \\    // This example migration creates a table named `my_table` with the following columns:
+    \\    // * `id`
+    \\    // * `my_string`
+    \\    // * `my_integer`
+    \\    // * `created_at`
+    \\    // * `updated_at`
+    \\    //
+    \\    // When present, `created_at` and `updated_at` are automatically populated by JetQuery
+    \\    // when a record is created/modified.
+    \\    //
+    \\    // See https://www.jetzig.dev/documentation/sections/database/migrations for more details.
+    \\    //
+    \\    // Run `jetzig database migrate` to apply migrations.
+    \\    //
+    \\    // Then run `jetzig database reflect` to auto-generate `src/app/database/Schema.zig`
+    \\    // (or manually edit the Schema to include your new table).
+    \\    //
     \\    try repo.createTable(
     \\        "my_table",
     \\        &.{
@@ -424,6 +443,11 @@ const default_migration = std.fmt.comptimePrint(migration_template, .{
     \\        .{{}},
     \\    );
     ,
+    \\    // The `down` function runs when a migration is rolled back.
+    \\    // In this case, we drop our example table `my_table`.
+    \\    //
+    \\    // Run `jetzig database rollback` to roll back a migration.
+    \\    //
     \\    try repo.dropTable("my_table", .{});
 });
 
