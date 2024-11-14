@@ -20,7 +20,7 @@ pub fn primaryKey(name: []const u8, options: PrimaryKeyOptions) Column {
     return .{
         .name = name,
         .type = options.type,
-        .options = .{ .not_null = true },
+        .options = .{ .optional = false },
         .primary_key = true,
     };
 }

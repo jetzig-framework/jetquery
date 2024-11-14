@@ -7,7 +7,7 @@ pub fn up(repo: anytype) !void {
         "cats",
         &.{
             t.primaryKey("id", .{}),
-            t.column("name", .string, .{ .not_null = true, .unique = true }),
+            t.column("name", .string, .{ .unique = true }),
             t.column("paws", .integer, .{ .index = true }),
             t.column("human_id", .integer, .{ .reference = .{ "humans", "id" } }),
             t.timestamps(.{}),

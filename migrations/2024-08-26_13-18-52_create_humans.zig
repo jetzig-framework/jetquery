@@ -7,7 +7,7 @@ pub fn up(repo: anytype) !void {
         "humans",
         &.{
             t.primaryKey("id", .{}),
-            t.column("name", .string, .{ .not_null = true, .unique = true }),
+            t.column("name", .string, .{ .unique = true }),
             t.timestamps(.{}),
         },
         .{},

@@ -237,7 +237,7 @@ pub fn Adapter(comptime adapter_name: Name, AdaptedRepo: type) type {
                         ""
                     else
                         self.columnTypeSql(column),
-                    if (!column.primary_key and column.options.not_null)
+                    if (!column.primary_key and !column.options.optional)
                         self.notNullSql()
                     else
                         "",

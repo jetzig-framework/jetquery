@@ -94,7 +94,7 @@ pub fn Migrate(adapter_name: jetquery.adapters.Name) type {
                 "jetquery_migrations",
                 &.{
                     jetquery.schema.table.primaryKey("version", .{ .type = .string }),
-                    jetquery.schema.table.column("name", .string, .{ .not_null = true, .length = 1024 }),
+                    jetquery.schema.table.column("name", .string, .{ .length = 1024 }),
                     jetquery.schema.table.timestamps(.{ .updated_at = false }),
                 },
                 .{ .if_not_exists = true },

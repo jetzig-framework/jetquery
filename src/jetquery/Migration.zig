@@ -31,6 +31,7 @@ const Command = struct {
         index,
         unique,
         reference,
+        optional,
     };
 
     pub const DataType = enum {
@@ -233,11 +234,11 @@ const Command = struct {
             type: ?DataType = null,
             index: ?bool = null,
             unique: ?bool = null,
-            not_null: ?bool = null,
+            optional: ?bool = null,
             reference: ?bool = null,
             reference_column: ?[]const u8 = null,
 
-            pub const options = enum { unique, not_null, index };
+            pub const options = enum { unique, optional, index };
 
             pub fn referenceInfo(self: Column) !?[2][]const u8 {
                 if (self.reference_column == null) return null;
@@ -547,7 +548,7 @@ test "default migration" {
 }
 
 test "migration from command line: create table" {
-    const command = "table:create:cats column:name:string:index:unique column:paws:integer column:human_id:index:reference:humans.id";
+    const command = "table:create:cats column:name:string:index:unique column:paws:integer column:human_id:index:optional:reference:humans.id";
 
     const migration = Migration.init(
         std.testing.allocator,
@@ -569,7 +570,7 @@ test "migration from command line: create table" {
         \\            t.primaryKey("id", .{}),
         \\            t.column("name", .string, .{ .unique = true, .index = true }),
         \\            t.column("paws", .integer, .{}),
-        \\            t.column("human_id", .string, .{ .index = true, .reference = .{ "humans", "id" } }),
+        \\            t.column("human_id", .string, .{ .optional = true, .index = true, .reference = .{ "humans", "id" } }),
         \\            t.timestamps(.{}),
         \\        },
         \\        .{},
