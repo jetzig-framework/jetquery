@@ -441,7 +441,7 @@ const default_migration = std.fmt.comptimePrint(migration_template, .{
     \\            t.column("my_integer", .integer, .{}),
     \\            t.timestamps(.{}),
     \\        },
-    \\        .{{}},
+    \\        .{},
     \\    );
     ,
     \\    // The `down` function runs when a migration is rolled back.
