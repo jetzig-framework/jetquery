@@ -659,18 +659,20 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
         /// credentials for creating new databases.
         pub fn createDatabase(
             self: *AdaptedRepo,
-            comptime name: []const u8,
+            name: []const u8,
             options: struct {},
         ) !void {
             _ = options;
             var buf = std.ArrayList(u8).init(self.allocator);
             defer buf.deinit();
+            const database = try self.adapter.identifierAlloc(self.allocator, name);
+            defer self.allocator.free(database);
 
             const writer = buf.writer();
 
             try writer.print(
                 \\CREATE DATABASE {s}
-            , .{self.adapter.identifier(name)});
+            , .{database});
 
             const connection = try self.connectManaged();
             try connection.executeVoid(
@@ -685,17 +687,22 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
         /// credentials for creating new databases.
         pub fn dropDatabase(
             self: *AdaptedRepo,
-            comptime name: []const u8,
+            name: []const u8,
             options: jetquery.DropDatabaseOptions,
         ) !void {
             var buf = std.ArrayList(u8).init(self.allocator);
             defer buf.deinit();
+            const database = try self.adapter.identifierAlloc(self.allocator, name);
+            defer self.allocator.free(database);
 
             const writer = buf.writer();
 
             try writer.print(
                 \\DROP DATABASE{s} {s}
-            , .{ if (options.if_exists) " IF EXISTS" else "", self.adapter.identifier(name) });
+            , .{
+                if (options.if_exists) " IF EXISTS" else "",
+                database,
+            });
 
             const connection = try self.connectManaged();
             try connection.executeVoid(

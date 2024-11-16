@@ -54,6 +54,12 @@ pub fn identifier(comptime value: []const u8) []const u8 {
     return "";
 }
 
+pub fn identifierAlloc(allocator: std.mem.Allocator, value: []const u8) ![]const u8 {
+    _ = allocator;
+    _ = value;
+    return "";
+}
+
 pub fn columnSql(Table: type, comptime column: jetquery.columnsColumn) []const u8 {
     _ = Table;
     _ = column;

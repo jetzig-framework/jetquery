@@ -349,6 +349,13 @@ pub fn identifier(comptime value: []const u8) []const u8 {
     , .{value});
 }
 
+/// Output quoted identifier.
+pub fn identifierAlloc(allocator: std.mem.Allocator, value: []const u8) ![]const u8 {
+    return std.fmt.allocPrint(allocator,
+        \\"{s}"
+    , .{value});
+}
+
 /// SQL fragment used to represent a column bound to a table, e.g. `"foo"."bar"`
 pub fn columnSql(comptime column: jetquery.columns.Column) []const u8 {
     return if (column.function) |function|

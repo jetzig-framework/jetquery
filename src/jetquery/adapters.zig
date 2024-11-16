@@ -51,6 +51,16 @@ pub fn Adapter(comptime adapter_name: Name, AdaptedRepo: type) type {
             };
         }
 
+        pub fn identifierAlloc(
+            self: Self,
+            allocator: std.mem.Allocator,
+            value: []const u8,
+        ) ![]const u8 {
+            return switch (self) {
+                inline else => |adapter| @TypeOf(adapter).identifierAlloc(allocator, value),
+            };
+        }
+
         /// Quote a column bound to a table suitable for the active adapter.
         pub fn columnSql(
             self: Self,
