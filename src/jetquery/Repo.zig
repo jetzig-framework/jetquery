@@ -147,20 +147,10 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
                 }
             }
 
-            if (global_options.admin and Adapter.name != .null) {
-                // If we are running in "admin" mode (i.e. creating or dropping a database),
-                // assume the database we are connecting to is the same as the admin schema, e.g.
-                // if username is `postgres`, connect to database `postgres`.
-                // If this option does not work then users must manually create/drop a database
-                // through their database's CLI/admin tooling - we take our best guess here.
-                options.database = if (global_options.env) |env|
-                    env.username orelse options.username
-                else
-                    options.username;
-            }
-
             var init_options: InitOptions = switch (Adapter.name) {
-                .postgresql => .{ .adapter = mergeOptions(global_options.env, options) },
+                .postgresql => .{
+                    .adapter = mergeOptions(global_options.admin, global_options.env, options),
+                },
                 .null => .{},
             };
 
@@ -173,12 +163,20 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
         // Allow an application to pass an `env` option containing database options. Any values
         // passed here override anything defined in the config file. Jetzig uses this to read
         // environment variables from an `.env` file and the process environment.
-        fn mergeOptions(maybe_env: ?AdapterOptions, options: AdapterOptions) AdapterOptions {
+        fn mergeOptions(admin: bool, maybe_env: ?AdapterOptions, options: AdapterOptions) AdapterOptions {
             const env = maybe_env orelse return options;
 
             var merged = AdapterOptions{};
             inline for (std.meta.fields(AdapterOptions)) |field| {
-                const value = @field(env, field.name) orelse @field(options, field.name);
+                const value = if (comptime std.mem.eql(u8, field.name, "database"))
+                    // If we are running in "admin" mode (i.e. creating or dropping a database),
+                    // assume the database we are connecting to is the same as the admin schema, e.g.
+                    // if username is `postgres`, connect to database `postgres`.
+                    // If this option does not work then users must manually create/drop a database
+                    // through their database's CLI/admin tooling - we take our best guess here.
+                    if (admin) env.username orelse options.username else env.database orelse options.database
+                else
+                    @field(env, field.name) orelse @field(options, field.name);
                 @field(merged, field.name) = value;
             }
 
