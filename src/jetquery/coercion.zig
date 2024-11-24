@@ -19,7 +19,7 @@ pub fn coerce(
 
     const T = fields.ColumnType(Table, field_info);
 
-    if (T == jetcommon.types.DateTime) return value.microseconds;
+    if (T == jetcommon.types.DateTime) return value.microseconds();
 
     return switch (@typeInfo(@TypeOf(value))) {
         .null => .{ .value = null },

@@ -366,6 +366,10 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
                 @field(update, field.name) = @field(value, field.name);
             }
 
+            if (@hasField(Update, "updated_at")) {
+                update.updated_at = jetquery.DateTime.now();
+            }
+
             const primary_key_field = jetquery.fields.structField(
                 primary_key,
                 @TypeOf(@field(value, primary_key)),
@@ -473,7 +477,9 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
 
             const originals = value.__jetquery.original_values;
             inline for (std.meta.fields(@TypeOf(originals))) |field| {
-                const modified = switch (@typeInfo(field.type)) {
+                const modified = if (field.type == jetquery.DateTime)
+                    @field(originals, field.name).eql(@field(value, field.name))
+                else switch (@typeInfo(field.type)) {
                     .pointer => |info| std.mem.eql(
                         info.child,
                         @field(originals, field.name),
@@ -490,11 +496,8 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
 
         fn fieldStatesSize(T: type) usize {
             comptime {
-                var size: usize = 0;
-                for (std.meta.fields(T)) |field| {
-                    if (std.mem.startsWith(u8, field.name, "__")) size += 1;
-                }
-                return size;
+                const t: T = undefined;
+                return std.meta.fields(@TypeOf(t.__jetquery.original_values)).len;
             }
         }
 

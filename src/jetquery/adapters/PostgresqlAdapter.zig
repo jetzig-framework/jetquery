@@ -250,11 +250,11 @@ pub const Connection = struct {
         };
 
         inline for (values) |value| {
-            try stmt.bind(value);
+            try stmt.bind(bindCoerce(value));
         }
 
         inline for (std.meta.fields(Args), 0..) |field, index| {
-            if (field_states[index].modified) try stmt.bind(@field(args, field.name));
+            if (field_states[index].modified) try stmt.bind(bindCoerce(@field(args, field.name)));
         }
 
         const result = stmt.execute() catch |err| {
@@ -721,4 +721,18 @@ fn configError(comptime config_field: []const u8) error{JetQueryConfigError} {
         std.log.err(message, .{});
     }
     return error.JetQueryConfigError;
+}
+
+fn bindCoerce(value: anytype) BindCoerce(@TypeOf(value)) {
+    return switch (@TypeOf(value)) {
+        jetquery.DateTime => value.microseconds(),
+        else => value,
+    };
+}
+
+fn BindCoerce(T: type) type {
+    return switch (T) {
+        jetquery.DateTime => i64,
+        else => T,
+    };
 }
