@@ -91,7 +91,7 @@ fn writeModel(
             \\{s}: {s},
             \\
         ,
-            .{ try util.zigEscape(allocator, .id, column.name), column.zigType() },
+            .{ try util.zigEscape(allocator, .id, column.name), column.zigType(reflection) },
         );
     }
 
@@ -304,15 +304,19 @@ test "reflect" {
     );
     defer repo.deinit();
 
-    try repo.createTable("cats", &.{
-        jetquery.schema.table.primaryKey("id", .{}),
-        jetquery.schema.table.column("name", .string, .{}),
-        jetquery.schema.table.column("human_id", .integer, .{ .optional = true }),
-        jetquery.schema.table.timestamps(.{}),
-    }, .{});
     try repo.createTable("humans", &.{
         jetquery.schema.table.primaryKey("id", .{}),
         jetquery.schema.table.column("name", .string, .{}),
+        jetquery.schema.table.timestamps(.{}),
+    }, .{});
+    try repo.createTable("cats", &.{
+        jetquery.schema.table.primaryKey("id", .{}),
+        jetquery.schema.table.column("name", .string, .{}),
+        jetquery.schema.table.column(
+            "human_id",
+            .integer,
+            .{ .optional = true, .reference = .{ "humans", "id" } },
+        ),
         jetquery.schema.table.timestamps(.{}),
     }, .{});
     try repo.createTable("dogs", &.{
@@ -335,7 +339,7 @@ test "reflect" {
         \\    @This(),
         \\    "humans",
         \\    struct {
-        \\        id: i32,
+        \\        id: u32,
         \\        name: []const u8,
         \\        created_at: jetquery.DateTime,
         \\        updated_at: jetquery.DateTime,
@@ -351,9 +355,9 @@ test "reflect" {
         \\    @This(),
         \\    "cats",
         \\    struct {
-        \\        id: i32,
+        \\        id: u32,
         \\        name: []const u8,
-        \\        human_id: ?i32,
+        \\        human_id: ?u32,
         \\        created_at: jetquery.DateTime,
         \\        updated_at: jetquery.DateTime,
         \\    },
@@ -366,11 +370,11 @@ test "reflect" {
         \\);
         \\
         \\pub const Dog = jetquery.Model(@This(), "dogs", struct {
-        \\    id: i32,
+        \\    id: u32,
         \\    name: []const u8,
         \\    is_woofy: bool,
         \\    description: []const u8,
-        \\    bark_rating: ?f64,
+        \\    bark_rating: ?f32,
         \\    food_budget: ?[]const u8,
         \\    created_at: jetquery.DateTime,
         \\    updated_at: jetquery.DateTime,
