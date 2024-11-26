@@ -41,6 +41,29 @@ test "-shes" {
     try std.testing.expectEqualStrings("bush", singular);
 }
 
+/// Convert `interesting_blog` to `InterestingBlog`.
+pub fn modelize(allocator: std.mem.Allocator, input: []const u8) ![]const u8 {
+    const singularized = try singularize(allocator, input);
+    defer allocator.free(singularized);
+
+    var it = std.mem.tokenizeScalar(u8, singularized, '_');
+    var buf = std.ArrayList(u8).init(allocator);
+    while (it.next()) |slice| {
+        const duped = try allocator.dupe(u8, slice);
+        defer allocator.free(duped);
+        duped[0] = std.ascii.toUpper(duped[0]);
+        try buf.appendSlice(duped);
+    }
+    return try buf.toOwnedSlice();
+}
+
+test "foreignKeyToModel" {
+    const input = "interesting_blog";
+    const output = try modelize(std.testing.allocator, input);
+    defer std.testing.allocator.free(output);
+    try std.testing.expectEqualStrings("InterestingBlog", output);
+}
+
 pub fn zigEscape(
     allocator: std.mem.Allocator,
     comptime context: enum { id, string },
