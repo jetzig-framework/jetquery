@@ -13,6 +13,7 @@ options: Options,
 connected: bool,
 lazy_connect: bool = false,
 
+pub const DateTimePrimitive = i64;
 pub const Count = i64;
 pub const Average = i64;
 pub const Sum = i64;
@@ -128,8 +129,15 @@ fn resolvedValue(
         []const u8,
         ?[]const u8,
         => |T| try maybeDupe(allocator, T, row.get(T, column_info.index)),
-        jetquery.jetcommon.types.DateTime => |T| try T.fromUnix(
-            row.get(i64, column_info.index),
+        ?jetquery.DateTime => if (row.get(?DateTimePrimitive, column_info.index)) |timestamp|
+            try jetquery.DateTime.fromUnix(
+                timestamp,
+                .microseconds,
+            )
+        else
+            null,
+        jetquery.DateTime => |T| try T.fromUnix(
+            row.get(DateTimePrimitive, column_info.index),
             .microseconds,
         ),
         else => |T| @compileError("Unsupported type: " ++ @typeName(T)),
@@ -732,7 +740,7 @@ fn bindCoerce(value: anytype) BindCoerce(@TypeOf(value)) {
 
 fn BindCoerce(T: type) type {
     return switch (T) {
-        jetquery.DateTime => i64,
+        jetquery.DateTime => DateTimePrimitive,
         else => T,
     };
 }

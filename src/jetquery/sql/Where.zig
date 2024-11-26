@@ -4,6 +4,7 @@ const fields = @import("../fields.zig");
 const coercion = @import("../coercion.zig");
 const columns = @import("../columns.zig");
 const sql = @import("../sql.zig");
+const DateTime = @import("jetcommon").types.DateTime;
 
 const Where = @This();
 
@@ -60,7 +61,7 @@ pub const Tree = struct {
         }
     }
 
-    pub fn values(comptime self: Tree, args: anytype) ClauseValues(self.ValuesTuple, self.ErrorsTuple) {
+    pub fn values(comptime self: Tree, Adapter: type, args: anytype) ClauseValues(self.ValuesTuple, self.ErrorsTuple) {
         var vals: self.ValuesTuple = undefined;
         var errors: self.ErrorsTuple = undefined;
         if (@typeInfo(@TypeOf(args)) != .@"struct") @compileError(
@@ -68,6 +69,7 @@ pub const Tree = struct {
         );
         assignValues(
             args,
+            Adapter,
             self.ValuesTuple,
             &vals,
             self.ErrorsTuple,
@@ -77,10 +79,6 @@ pub const Tree = struct {
             true,
         );
         return .{ .values = vals, .errors = errors };
-    }
-
-    pub fn fields(comptime self: Tree) [self.root.countValues()]Field {
-        return self.root.values_fields(self.Table, self.relations);
     }
 
     pub fn countValues(comptime self: Tree) usize {
@@ -115,8 +113,8 @@ pub fn tree(
         .Table = Table,
         .relations = relations,
         .values_count = root.countValues(),
-        .values_fields = &root.values_fields(Table, relations),
-        .ValuesTuple = root.ValuesTuple(),
+        .values_fields = &root.values_fields(Adapter, Table, relations),
+        .ValuesTuple = root.ValuesTuple(Adapter),
         .ErrorsTuple = root.ErrorsTuple(),
     };
 }
@@ -134,18 +132,18 @@ pub const Node = union(enum) {
         index: usize,
         synthetic: bool = false,
 
-        pub fn ColumnType(self: Value) type {
-            const T = fields.ColumnType(self.Table, fields.fieldInfo(
+        pub fn ColumnType(self: Value, Adapter: type) type {
+            const T = fields.ColumnType(Adapter, self.Table, fields.fieldInfo(
                 self.field_info,
                 self.Table,
                 self.name,
                 self.field_context,
             ));
-            return if (self.isArray()) []const T else T;
+            return if (self.isArray(Adapter)) []const T else T;
         }
 
-        pub fn isArray(self: Value) bool {
-            const T = fields.ColumnType(self.Table, fields.fieldInfo(
+        pub fn isArray(self: Value, Adapter: type) bool {
+            const T = fields.ColumnType(Adapter, self.Table, fields.fieldInfo(
                 self.field_info,
                 self.Table,
                 self.name,
@@ -286,7 +284,7 @@ pub const Node = union(enum) {
                         prefix,
                         Adapter.identifier(value.Table.name),
                         Adapter.identifier(value.name),
-                        if (value.isArray())
+                        if (value.isArray(Adapter))
                             // XXX: This is PostgreSQL-specific - one day we'll need to figure
                             // out how to generate SQL for unknown (at comptime) array length.
                             // MySQL has `ANY` but it expects a subquery so maybe we'll need a
@@ -366,16 +364,17 @@ pub const Node = union(enum) {
         }
     }
 
-    fn ValuesTuple(comptime self: Node) type {
+    fn ValuesTuple(comptime self: Node, Adapter: type) type {
         const len = self.countValues();
         var types: [len]type = undefined;
         var index: usize = 0;
 
-        appendValueType(self, len, &types, &index);
+        appendValueType(Adapter, self, len, &types, &index);
         return std.meta.Tuple(&types);
     }
 
     fn appendValueType(
+        Adapter: type,
         comptime node: Node,
         comptime len: usize,
         types: *[len]type,
@@ -385,12 +384,12 @@ pub const Node = union(enum) {
             .condition => {},
             .value => |value| {
                 if (!value.isNull()) {
-                    types[index.*] = value.ColumnType();
+                    types[index.*] = value.ColumnType(Adapter);
                     index.* += 1;
                 }
             },
             .group => |group| {
-                for (group.children) |child| appendValueType(child, len, types, index);
+                for (group.children) |child| appendValueType(Adapter, child, len, types, index);
             },
             .triplet => |triplet| {
                 switch (triplet.lhs) {
@@ -420,7 +419,7 @@ pub const Node = union(enum) {
                             .{sql_string.sql},
                         ));
                     }
-                    appendValueType(value_node, len, types, index);
+                    appendValueType(Adapter, value_node, len, types, index);
                 }
             },
         }
@@ -435,11 +434,16 @@ pub const Node = union(enum) {
         return std.meta.Tuple(&types);
     }
 
-    fn values_fields(comptime self: Node, Table: type, relations: []const type) [self.countValues()]Field {
+    fn values_fields(
+        comptime self: Node,
+        Adapter: type,
+        Table: type,
+        relations: []const type,
+    ) [self.countValues()]Field {
         const len = self.countValues();
         var fields_array: [len]Field = undefined;
         var tuple_index: usize = 0;
-        appendField(self, Table, relations, len, &fields_array, &tuple_index);
+        appendField(self, Adapter, Table, relations, len, &fields_array, &tuple_index);
 
         return fields_array;
     }
@@ -467,6 +471,7 @@ pub const Node = union(enum) {
 
     fn appendField(
         node: Node,
+        Adapter: type,
         Table: type,
         relations: []const type,
         comptime len: usize,
@@ -476,11 +481,11 @@ pub const Node = union(enum) {
         switch (node) {
             .condition => {},
             .value => |value| {
-                appendValueField(value.ColumnType(), value, len, fields_array, tuple_index);
+                appendValueField(value.ColumnType(Adapter), value, len, fields_array, tuple_index);
             },
             .group => |group| {
                 for (group.children) |child| {
-                    appendField(child, Table, relations, len, fields_array, tuple_index);
+                    appendField(child, Adapter, Table, relations, len, fields_array, tuple_index);
                 }
             },
             .triplet => |triplet| {
@@ -574,7 +579,20 @@ fn nodeTree(
         }
 
         return switch (@typeInfo(T)) {
-            .@"struct" => |info| if (isTriplet(T)) blk: {
+            .@"struct" => |info| if (T == DateTime) blk: {
+                const value = Node.Value{
+                    .field_context = field_context,
+                    .Table = findRelation(Table, relations, path),
+                    .name = name,
+                    .type = Adapter.DateTimePrimitive,
+                    .source_type = T,
+                    .field_info = field_info,
+                    .path = makePath(path, null),
+                    .index = value_index.*,
+                };
+                value_index.* += 1;
+                break :blk .{ .value = value };
+            } else if (isTriplet(T)) blk: {
                 break :blk .{ .triplet = makeTriplet(
                     Adapter,
                     Table,
@@ -711,6 +729,7 @@ fn findRelation(Table: type, relations: []const type, comptime path: []const []c
 
 fn assignValues(
     arg: anytype,
+    Adapter: type,
     ValuesTuple: type,
     values_tuple: *ValuesTuple,
     ErrorsTuple: type,
@@ -722,6 +741,7 @@ fn assignValues(
     if (comptime coercion.canCoerceDelegate(@TypeOf(arg))) {
         assignValue(
             arg,
+            Adapter,
             ValuesTuple,
             values_tuple,
             ErrorsTuple,
@@ -737,9 +757,22 @@ fn assignValues(
         .@"struct" => |info| {
             // Note that we will always land here first because the first arg to `where` is is
             // always a struct, so we can safely start here for incrementing our index counter.
-            if (comptime isSqlStringWithArgsArray(@TypeOf(arg))) {
+            if (comptime @TypeOf(arg) == DateTime) {
+                assignValue(
+                    arg,
+                    Adapter,
+                    ValuesTuple,
+                    values_tuple,
+                    ErrorsTuple,
+                    errors_tuple,
+                    values_fields,
+                    path,
+                    coerce,
+                );
+            } else if (comptime isSqlStringWithArgsArray(@TypeOf(arg))) {
                 assignValues(
                     arg[1],
+                    Adapter,
                     ValuesTuple,
                     values_tuple,
                     ErrorsTuple,
@@ -755,6 +788,7 @@ fn assignValues(
                         // index 2).
                         assignValues(
                             @field(arg, field.name)[2],
+                            Adapter,
                             ValuesTuple,
                             values_tuple,
                             ErrorsTuple,
@@ -767,6 +801,7 @@ fn assignValues(
                         // Recurse to evaluate whatever exists inside this struct.
                         assignValues(
                             @field(arg, field.name),
+                            Adapter,
                             ValuesTuple,
                             values_tuple,
                             ErrorsTuple,
@@ -792,6 +827,7 @@ fn assignValues(
         else => {
             assignValue(
                 arg,
+                Adapter,
                 ValuesTuple,
                 values_tuple,
                 ErrorsTuple,
@@ -806,6 +842,7 @@ fn assignValues(
 
 fn assignValue(
     arg: anytype,
+    Adapter: type,
     ValuesTuple: type,
     values_tuple: *ValuesTuple,
     ErrorsTuple: type,
@@ -836,9 +873,11 @@ fn assignValue(
             );
             if (comptime coerce) {
                 const coerced: coercion.CoercedValue(
+                    Adapter,
                     value_field.column_type,
                     @TypeOf(arg),
                 ) = coercion.coerce(
+                    Adapter,
                     value_field.Table,
                     field_info,
                     arg,

@@ -1454,6 +1454,51 @@ test "alterTable" {
     try std.testing.expect(dogs2.len == 0); // Empty table but valid select columns.
 }
 
+test "optional DateTime" {
+    try resetDatabase();
+
+    const Schema = struct {
+        pub const Thing = jetquery.Model(
+            @This(),
+            "things",
+            struct {
+                a: ?jetquery.DateTime,
+                b: ?jetquery.DateTime,
+            },
+            .{},
+        );
+    };
+    var repo = try Repo(.postgresql, Schema).init(std.testing.allocator, .{
+        .adapter = .{
+            .database = "repo_test",
+            .username = "postgres",
+            .hostname = "127.0.0.1",
+            .password = "password",
+            .port = 5432,
+        },
+    });
+    defer repo.deinit();
+
+    try repo.createTable("things", &.{
+        jetquery.schema.table.column("a", .datetime, .{ .optional = true }),
+        jetquery.schema.table.column("b", .datetime, .{ .optional = true }),
+    }, .{});
+
+    const now = jetquery.DateTime.now();
+
+    try repo.insert(.Thing, .{
+        .a = now,
+        .b = null,
+    });
+
+    if (try repo.Query(.Thing).findBy(.{ .a = now }).execute(&repo)) |thing| {
+        defer repo.free(thing);
+        try std.testing.expect(thing.a != null);
+        try std.testing.expect(thing.a.?.eql(now));
+        try std.testing.expect(thing.b == null);
+    } else try std.testing.expect(false);
+}
+
 fn resetDatabase() !void {
     var repo = try Repo(.postgresql, void).init(
         std.testing.allocator,

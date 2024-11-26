@@ -5,10 +5,11 @@ const jetcommon = @import("jetcommon");
 const fields = @import("fields.zig");
 
 pub fn coerce(
+    Adapter: type,
     Table: type,
     field_info: fields.FieldInfo,
     value: anytype,
-) CoercedValue(fields.ColumnType(Table, field_info), @TypeOf(value)) {
+) CoercedValue(Adapter, fields.ColumnType(Adapter, Table, field_info), @TypeOf(value)) {
     switch (field_info.context) {
         .limit, .offset => return switch (@typeInfo(@TypeOf(value))) {
             .int, .comptime_int => .{ .value = value },
@@ -17,28 +18,29 @@ pub fn coerce(
         else => {},
     }
 
-    const T = fields.ColumnType(Table, field_info);
+    const T = fields.ColumnType(Adapter, Table, field_info);
 
-    if (T == jetcommon.types.DateTime) return value.microseconds();
+    if (@TypeOf(value) == jetcommon.types.DateTime) return .{ .value = value.microseconds() };
+    if (@TypeOf(value) == ?jetcommon.types.DateTime) return if (value) .{ .value = value.microseconds() } else null;
 
     return switch (@typeInfo(@TypeOf(value))) {
         .null => .{ .value = null },
         .int, .comptime_int => switch (@typeInfo(T)) {
             .int => .{ .value = @intCast(value) },
             .bool => .{ .value = value == 1 },
-            else => coerceDelegate(T, value),
+            else => coerceDelegate(Adapter, T, value),
         },
         .float, .comptime_float => switch (@typeInfo(T)) {
             .float => .{ .value = @floatCast(value) },
             .bool => .{ .value = value == 1.0 },
-            else => coerceDelegate(T, value),
+            else => coerceDelegate(Adapter, T, value),
         },
         .bool => switch (@typeInfo(T)) {
             .bool => .{ .value = value },
             else => if (comptime canCoerceDelegate(@TypeOf(value)))
-                coerceDelegate(T, value.*)
+                coerceDelegate(Adapter, T, value.*)
             else
-                coerceBool(T, value),
+                coerceBool(Adapter, T, value),
         },
         .pointer => |info| switch (@typeInfo(T)) {
             .int => switch (@typeInfo(info.child)) {
@@ -47,15 +49,15 @@ pub fn coerce(
                     // type but we may need a better way to identify strings if another database
                     // adapter does support u8.
                     .Slice => if (@TypeOf(value) == []const u8)
-                        coerceInt(T, value)
+                        coerceInt(Adapter, T, value)
                     else
                         .{ .value = value },
                     else => .{ .value = value },
                 },
                 else => if (comptime canCoerceDelegate(info.child))
-                    coerceDelegate(T, value.*)
+                    coerceDelegate(Adapter, T, value.*)
                 else
-                    coerceInt(T, value),
+                    coerceInt(Adapter, T, value),
             },
             .float => switch (@typeInfo(info.child)) {
                 .float => switch (info.size) {
@@ -63,9 +65,9 @@ pub fn coerce(
                     else => .{ .value = value },
                 },
                 else => if (comptime canCoerceDelegate(info.child))
-                    coerceDelegate(T, value.*)
+                    coerceDelegate(Adapter, T, value.*)
                 else
-                    coerceFloat(T, value),
+                    coerceFloat(Adapter, T, value),
             },
             .bool => switch (@typeInfo(info.child)) {
                 .bool => switch (info.size) {
@@ -75,9 +77,9 @@ pub fn coerce(
                 .int, .comptime_int => .{ .value = value.* == 1 },
                 .float, .comptime_float => .{ .value = value.* == 1.0 },
                 else => if (comptime canCoerceDelegate(info.child))
-                    coerceDelegate(T, value.*)
+                    coerceDelegate(Adapter, T, value.*)
                 else
-                    coerceBool(T, value),
+                    coerceBool(Adapter, T, value),
             },
             .pointer => if (comptime canCoerceDelegate(info.child))
                 coerceDelegate(T, value.*)
@@ -90,7 +92,7 @@ pub fn coerce(
                     @typeName(T) ++ "` and `" ++ @typeName(info.child) ++ "`"),
         },
         .array => .{ .value = &value },
-        else => coerceDelegate(T, value),
+        else => coerceDelegate(Adapter, T, value),
     };
 }
 
@@ -100,7 +102,11 @@ pub fn coerce(
 // JetQuery, otherwise a typical Zig compile error will occur. This feature is used by
 // Zmpl for converting Zmpl Values, allowing e.g. request params in Jetzig to be used as
 // JetQuery whereclause/etc. params.
-pub fn coerceDelegate(Target: type, value: anytype) CoercedValue(Target, @TypeOf(value)) {
+pub fn coerceDelegate(
+    Adapter: type,
+    Target: type,
+    value: anytype,
+) CoercedValue(Adapter, Target, @TypeOf(value)) {
     const Source = @TypeOf(value);
     if (comptime canCoerceDelegate(Source)) {
         const coerced = value.toJetQuery(Target) catch |err| {
@@ -120,7 +126,7 @@ pub fn canCoerceDelegate(T: type) bool {
     };
 }
 
-pub fn CoercedValue(Target: type, Source: type) type {
+pub fn CoercedValue(Adapter: type, Target: type, Source: type) type {
     const T = switch (@typeInfo(Source)) {
         .null => @TypeOf(null),
         .pointer => |info| if (info.child == Target and info.size == .Slice)
@@ -128,7 +134,13 @@ pub fn CoercedValue(Target: type, Source: type) type {
         else
             Target,
         .array => |info| if (info.child == Target) []const Target else Target,
-        else => Target,
+        // TODO
+        else => if (Source == jetcommon.DateTime)
+            Adapter.DateTimePrimitive
+        else if (Source == ?jetcommon.DateTime)
+            ?Adapter.DateTimePrimitive
+        else
+            Target,
     };
 
     return struct {
@@ -137,7 +149,7 @@ pub fn CoercedValue(Target: type, Source: type) type {
     };
 }
 
-fn coerceInt(T: type, value: []const u8) CoercedValue(T, @TypeOf(value)) {
+fn coerceInt(Adapter: type, T: type, value: []const u8) CoercedValue(Adapter, T, @TypeOf(value)) {
     const coerced = std.fmt.parseInt(T, value, 10) catch |err| {
         return .{
             .err = switch (err) {
@@ -148,7 +160,7 @@ fn coerceInt(T: type, value: []const u8) CoercedValue(T, @TypeOf(value)) {
     return .{ .value = coerced };
 }
 
-fn coerceFloat(T: type, value: []const u8) CoercedValue(T, @TypeOf(value)) {
+fn coerceFloat(Adapter: type, T: type, value: []const u8) CoercedValue(Adapter, T, @TypeOf(value)) {
     const coerced = std.fmt.parseFloat(T, value) catch |err| {
         return .{
             .err = switch (err) {
@@ -159,7 +171,7 @@ fn coerceFloat(T: type, value: []const u8) CoercedValue(T, @TypeOf(value)) {
     return .{ .value = coerced };
 }
 
-fn coerceBool(T: type, value: []const u8) CoercedValue(T, @TypeOf(value)) {
+fn coerceBool(Adapter: type, T: type, value: []const u8) CoercedValue(Adapter, T, @TypeOf(value)) {
     if (value.len != 1) return .{ .err = error.JetQueryInvalidBooleanString };
 
     const maybe_boolean = switch (value[0]) {

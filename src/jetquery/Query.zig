@@ -412,7 +412,7 @@ fn Statement(
                 context,
                 self.field_infos.len,
             );
-            const clause_values = tree.values(args);
+            const clause_values = tree.values(Adapter, args);
 
             const arg_values = clause_values.values;
             const arg_errors = clause_values.errors;
@@ -620,33 +620,33 @@ fn Statement(
 
         pub fn update(self: Self, args: anytype) Statement(Adapter, .update, Schema, Model, .{
             .field_infos = &(jetquery.fields.fieldInfos(Adapter, Model, &.{}, @TypeOf(args), .update) ++
-                timestampsFields(Model, .update)),
+                timestampsFields(Adapter, Model, .update)),
         }) {
             const S = Statement(Adapter, .update, Schema, Model, .{
                 .field_infos = &(jetquery.fields.fieldInfos(Adapter, Model, &.{}, @TypeOf(args), .update) ++
-                    timestampsFields(Model, .update)),
+                    timestampsFields(Adapter, Model, .update)),
             });
             return self.extend(S, args, .update);
         }
 
         pub fn updateAll(self: Self, args: anytype) Statement(Adapter, .update_all, Schema, Model, .{
             .field_infos = &(jetquery.fields.fieldInfos(Adapter, Model, &.{}, @TypeOf(args), .update) ++
-                timestampsFields(Model, .update)),
+                timestampsFields(Adapter, Model, .update)),
         }) {
             const S = Statement(Adapter, .update_all, Schema, Model, .{
                 .field_infos = &(jetquery.fields.fieldInfos(Adapter, Model, &.{}, @TypeOf(args), .update) ++
-                    timestampsFields(Model, .update)),
+                    timestampsFields(Adapter, Model, .update)),
             });
             return self.extend(S, args, .update);
         }
 
         pub fn insert(self: Self, args: anytype) Statement(Adapter, .insert, Schema, Model, .{
             .field_infos = &(jetquery.fields.fieldInfos(Adapter, Model, &.{}, @TypeOf(args), .insert) ++
-                timestampsFields(Model, .insert)),
+                timestampsFields(Adapter, Model, .insert)),
         }) {
             const S = Statement(Adapter, .insert, Schema, Model, .{
                 .field_infos = &(jetquery.fields.fieldInfos(Adapter, Model, &.{}, @TypeOf(args), .insert) ++
-                    timestampsFields(Model, .insert)),
+                    timestampsFields(Adapter, Model, .insert)),
             });
             return self.extend(S, args, .insert);
         }
@@ -1309,6 +1309,7 @@ fn Statement(
 }
 
 fn timestampsFields(
+    Adapter: type,
     Model: type,
     comptime field_context: jetquery.fields.FieldContext,
 ) [timestampsSize(Model, field_context)]jetquery.fields.FieldInfo {
@@ -1322,7 +1323,7 @@ fn timestampsFields(
         field_context,
     );
     const created_at = jetquery.fields.fieldInfo(
-        jetquery.fields.structField(jetquery.default_column_names.created_at, i64),
+        jetquery.fields.structField(jetquery.default_column_names.created_at, Adapter.DateTimePrimitive),
         Model,
         jetquery.default_column_names.created_at,
         field_context,

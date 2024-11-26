@@ -62,7 +62,7 @@ pub fn FieldValues(Table: type, relations: []const type, comptime fields: []cons
     });
 }
 
-pub fn ColumnType(Table: type, comptime field_info: FieldInfo) type {
+pub fn ColumnType(Adapter: type, Table: type, comptime field_info: FieldInfo) type {
     switch (field_info.context) {
         .limit, .offset => return usize,
         .where, .update, .insert, .order, .none => {},
@@ -70,7 +70,12 @@ pub fn ColumnType(Table: type, comptime field_info: FieldInfo) type {
 
     if (comptime @hasField(Table.Definition, field_info.name)) {
         const FT = fieldType(Table.Definition, field_info.name);
-        if (FT == jetcommon.types.DateTime) return i64 else return FT;
+        return if (FT == jetcommon.types.DateTime)
+            Adapter.DateTimePrimitive
+        else if (FT == ?jetcommon.types.DateTime)
+            ?Adapter.DateTimePrimitive
+        else
+            FT;
     } else {
         // We only arrive here when we process triplets, e.g.
         // `.{ .foo, .lt_eql, 100 }`
