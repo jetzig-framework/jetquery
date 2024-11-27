@@ -114,6 +114,10 @@ fn resolvedValue(
         // TODO: pg.Numeric, pg.Cidr
         u8,
         ?u8,
+        u16,
+        ?u16,
+        u32,
+        ?u32,
         i16,
         ?i16,
         i32,
