@@ -135,23 +135,23 @@ fn stringifyOptions(
                 allocator,
                 foreign_key.foreign_table,
             );
-            const singularized = try util.singularize(allocator, foreign_key.table);
+            const singularized = try util.singularize(allocator, foreign_key.foreign_table);
             try relations_writer.print(
                 \\.{s} = jetquery.belongsTo(.{s}, .{{
             ,
-                .{ foreign_key.foreign_table, model_name },
+                .{ singularized, model_name },
             );
-            const expected_primary_key = try std.mem.concat(
+            const expected_foreign_key = try std.mem.concat(
                 allocator,
                 u8,
                 &.{ singularized, "_id" },
             );
-            if (!std.mem.eql(u8, foreign_key.foreign_column, expected_primary_key)) {
+            if (!std.mem.eql(u8, foreign_key.foreign_column, "id")) {
                 try relations_writer.print(
                     \\.primary_key = "{s}",
                 , .{foreign_key.foreign_column});
             }
-            if (!std.mem.eql(u8, foreign_key.column, "id")) {
+            if (!std.mem.eql(u8, foreign_key.column, expected_foreign_key)) {
                 try relations_writer.print(
                     \\.foreign_key = "{s}",
                 , .{foreign_key.column});
@@ -165,23 +165,23 @@ fn stringifyOptions(
                 allocator,
                 foreign_key.table,
             );
-            const singularized = try util.singularize(allocator, foreign_key.table);
+            const singularized = try util.singularize(allocator, foreign_key.foreign_table);
             try relations_writer.print(
                 \\.{s} = jetquery.hasMany(.{s}, .{{
             ,
                 .{ foreign_key.table, model_name },
             );
-            const expected_primary_key = try std.mem.concat(
-                allocator,
-                u8,
-                &.{ singularized, "_id" },
-            );
-            if (!std.mem.eql(u8, foreign_key.foreign_column, expected_primary_key)) {
+            if (!std.mem.eql(u8, foreign_key.foreign_column, "id")) {
                 try relations_writer.print(
                     \\.primary_key = "{s}",
                 , .{foreign_key.foreign_column});
             }
-            if (!std.mem.eql(u8, foreign_key.column, "id")) {
+            const expected_foreign_key = try std.mem.concat(
+                allocator,
+                u8,
+                &.{ singularized, "_id" },
+            );
+            if (!std.mem.eql(u8, foreign_key.column, expected_foreign_key)) {
                 try relations_writer.print(
                     \\.foreign_key = "{s}",
                 , .{foreign_key.column});
@@ -486,12 +486,8 @@ test "reflect" {
         \\    },
         \\    .{
         \\        .relations = .{
-        \\            .kennels = jetquery.belongsTo(.Kennel, .{
-        \\                .primary_key = "id",
-        \\                .foreign_key = "kennel_id",
-        \\            }),
-        \\            .kennels = jetquery.belongsTo(.Kennel, .{
-        \\                .primary_key = "id",
+        \\            .kennel = jetquery.belongsTo(.Kennel, .{}),
+        \\            .kennel = jetquery.belongsTo(.Kennel, .{
         \\                .foreign_key = "other_kennel_id",
         \\            }),
         \\        },
@@ -509,12 +505,8 @@ test "reflect" {
         \\    },
         \\    .{
         \\        .relations = .{
+        \\            .dogs = jetquery.hasMany(.Dog, .{}),
         \\            .dogs = jetquery.hasMany(.Dog, .{
-        \\                .primary_key = "id",
-        \\                .foreign_key = "kennel_id",
-        \\            }),
-        \\            .dogs = jetquery.hasMany(.Dog, .{
-        \\                .primary_key = "id",
         \\                .foreign_key = "other_kennel_id",
         \\            }),
         \\        },
