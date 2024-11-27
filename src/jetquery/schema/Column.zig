@@ -9,7 +9,18 @@ options: Options = .{},
 primary_key: bool = false,
 timestamps: ?table.TimestampsOptions = null,
 
-pub const Type = enum { string, integer, float, decimal, boolean, datetime, text };
+pub const Type = enum {
+    string,
+    integer,
+    float,
+    decimal,
+    boolean,
+    datetime,
+    text,
+    smallint,
+    bigint,
+    double_precision,
+};
 pub const Reference = [2][]const u8;
 pub const Options = struct {
     optional: bool = false,
@@ -18,6 +29,7 @@ pub const Options = struct {
     unique: bool = false,
     reference: ?Reference = null,
     length: ?u16 = null,
+    primary_key: bool = false,
 };
 
 pub fn init(

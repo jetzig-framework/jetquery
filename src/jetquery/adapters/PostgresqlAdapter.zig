@@ -351,6 +351,9 @@ pub fn columnTypeSql(comptime column: jetquery.schema.Column) []const u8 {
         .decimal => " NUMERIC",
         .datetime => " TIMESTAMP",
         .text => " TEXT",
+        .smallint => " SMALLINT",
+        .bigint => " BIGINT",
+        .double_precision => " DOUBLE PRECISION",
     };
 }
 
@@ -628,18 +631,24 @@ pub fn reflect(
     allocator: std.mem.Allocator,
     repo: anytype,
 ) !jetquery.Reflection {
-    const tables = try self.reflectTables(allocator, repo);
-    const columns = try self.reflectColumns(allocator, repo);
-    return .{ .allocator = self.allocator, .tables = tables, .columns = columns };
+    const tables = try reflectTables(allocator, repo);
+    const columns = try reflectColumns(allocator, repo);
+    const primary_keys = try reflectPrimaryKeys(allocator, repo);
+    const foreign_keys = try reflectForeignKeys(allocator, repo);
+
+    return .{
+        .allocator = self.allocator,
+        .tables = tables,
+        .columns = columns,
+        .primary_keys = primary_keys,
+        .foreign_keys = foreign_keys,
+    };
 }
 
 pub fn reflectTables(
-    self: *PostgresqlAdapter,
     allocator: std.mem.Allocator,
     repo: anytype,
 ) ![]const jetquery.Reflection.TableInfo {
-    _ = self;
-
     const sql =
         \\SELECT "table_name" FROM "information_schema"."tables" WHERE "table_schema" = 'public' AND "table_name" <> 'jetquery_migrations' ORDER BY "table_name"
     ;
@@ -658,7 +667,6 @@ pub fn reflectTables(
 }
 
 pub fn reflectColumns(
-    _: *PostgresqlAdapter,
     allocator: std.mem.Allocator,
     repo: anytype,
 ) ![]const jetquery.Reflection.ColumnInfo {
@@ -674,7 +682,7 @@ pub fn reflectColumns(
             .table = try allocator.dupe(u8, row.get([]const u8, 0)),
             .name = try allocator.dupe(u8, row.get([]const u8, 1)),
             .type = translateColumnType(row.get([]const u8, 2)),
-            .null = std.mem.eql(u8, row.get([]const u8, 3), "YES"),
+            .optional = std.mem.eql(u8, row.get([]const u8, 3), "YES"),
         });
     }
     try result.drain();
@@ -682,8 +690,72 @@ pub fn reflectColumns(
     return try columns.toOwnedSlice();
 }
 
+// TODO: Currently we do not support composite keys
+fn reflectPrimaryKeys(
+    allocator: std.mem.Allocator,
+    repo: anytype,
+) ![]const jetquery.Reflection.PrimaryKeyInfo {
+    var primary_keys = std.ArrayList(jetquery.Reflection.PrimaryKeyInfo).init(allocator);
+
+    var result = try repo.executeSql(
+        \\select "pg_class"."relname",
+        \\       "pg_attribute"."attname"
+        \\  from "pg_index"
+        \\  join "pg_attribute"
+        \\    on "pg_attribute"."attrelid" = "pg_index"."indrelid"
+        \\   and "pg_attribute"."attnum" = any("pg_index"."indkey")
+        \\  join "pg_class"
+        \\    on "pg_class"."oid" = "pg_index"."indrelid"::regclass
+        \\  join "pg_namespace" on "pg_namespace"."oid" = "pg_class"."relnamespace"
+        \\ where "pg_namespace"."nspname" = 'public'
+        \\   and "pg_index"."indisprimary";
+    , .{});
+    defer result.deinit();
+
+    while (try result.postgresql.result.next()) |row| {
+        try primary_keys.append(.{
+            .table = try allocator.dupe(u8, row.get([]const u8, 0)),
+            .column = try allocator.dupe(u8, row.get([]const u8, 1)),
+        });
+    }
+
+    return try primary_keys.toOwnedSlice();
+}
+
+fn reflectForeignKeys(
+    allocator: std.mem.Allocator,
+    repo: anytype,
+) ![]const jetquery.Reflection.ForeignKeyInfo {
+    var foreign_keys = std.ArrayList(jetquery.Reflection.ForeignKeyInfo).init(allocator);
+
+    var result = try repo.executeSql(
+        \\select "information_schema"."table_constraints"."table_name",
+        \\       "information_schema"."key_column_usage"."column_name",
+        \\       "information_schema"."constraint_column_usage"."table_name",
+        \\       "information_schema"."constraint_column_usage"."column_name"
+        \\  from "information_schema"."table_constraints"
+        \\  join "information_schema"."key_column_usage"
+        \\    on "information_schema"."table_constraints"."constraint_name" = "information_schema"."key_column_usage"."constraint_name"
+        \\   and "information_schema"."table_constraints"."table_schema" = "information_schema"."key_column_usage"."table_schema"
+        \\  join "information_schema"."constraint_column_usage"
+        \\    on "information_schema"."constraint_column_usage"."constraint_name" = "information_schema"."table_constraints"."constraint_name"
+        \\ where "information_schema"."table_constraints"."constraint_type" = 'FOREIGN KEY'
+        \\   and "information_schema"."table_constraints"."table_schema" = 'public'
+    , .{});
+    defer result.deinit();
+
+    while (try result.postgresql.result.next()) |row| {
+        try foreign_keys.append(.{
+            .table = try allocator.dupe(u8, row.get([]const u8, 0)),
+            .column = try allocator.dupe(u8, row.get([]const u8, 1)),
+            .foreign_table = try allocator.dupe(u8, row.get([]const u8, 2)),
+            .foreign_column = try allocator.dupe(u8, row.get([]const u8, 3)),
+        });
+    }
+
+    return try foreign_keys.toOwnedSlice();
+}
 fn translateColumnType(column_name: []const u8) jetquery.schema.Column.Type {
-    // TODO
     const types = std.StaticStringMap(jetquery.schema.Column.Type).initComptime(.{
         .{ "integer", jetquery.schema.Column.Type.integer },
         .{ "real", jetquery.schema.Column.Type.float },
@@ -693,6 +765,9 @@ fn translateColumnType(column_name: []const u8) jetquery.schema.Column.Type {
         .{ "text", jetquery.schema.Column.Type.text },
         .{ "timestamp without time zone", jetquery.schema.Column.Type.datetime },
         .{ "timestamp with time zone", jetquery.schema.Column.Type.datetime },
+        .{ "bigint", jetquery.schema.Column.Type.bigint },
+        .{ "smallint", jetquery.schema.Column.Type.smallint },
+        .{ "double precision", jetquery.schema.Column.Type.double_precision },
     });
     return types.get(column_name) orelse {
         std.log.err("Unsupported column type: `{s}`\n", .{column_name});

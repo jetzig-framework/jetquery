@@ -45,7 +45,8 @@ pub fn Reflect(adapter_name: jetquery.adapters.Name, Schema: type) type {
             const map = try reflection.tableMap(allocator);
             var written = std.BufSet.init(allocator);
 
-            // Write tables already defined in the schema first ...
+            // Write tables already defined in the schema first to preserve schema order if
+            // edited by user ....
             inline for (comptime std.meta.declarations(Schema)) |decl| {
                 if (map.get(@field(Schema, decl.name).name)) |table| {
                     try writeModel(allocator, Schema, reflection, table, writer);
@@ -53,7 +54,7 @@ pub fn Reflect(adapter_name: jetquery.adapters.Name, Schema: type) type {
                 }
             }
 
-            // ... then write any remaining tables to preserve schema order if edited by user.
+            // ... then write any remaining tables.
             for (reflection.tables) |table| {
                 if (written.contains(table.name)) continue;
                 try writeModel(allocator, Schema, reflection, table, writer);
@@ -91,7 +92,7 @@ fn writeModel(
             \\{s}: {s},
             \\
         ,
-            .{ try util.zigEscape(allocator, .id, column.name), column.zigType() },
+            .{ try util.zigEscape(allocator, .id, column.name), column.zigType(reflection) },
         );
     }
 
@@ -100,12 +101,13 @@ fn writeModel(
         \\{s}
         \\);
         \\
-    , .{try stringifyOptions(allocator, schema, table.name)});
+    , .{try stringifyOptions(allocator, schema, reflection, table.name)});
 }
 
 fn stringifyOptions(
     allocator: std.mem.Allocator,
     comptime schema: type,
+    reflection: jetquery.Reflection,
     table_name: []const u8,
 ) ![]const u8 {
     inline for (comptime std.meta.declarations(schema)) |decl| {
@@ -115,7 +117,84 @@ fn stringifyOptions(
         }
     }
 
-    return ".{}";
+    var relations_buf = std.ArrayList(u8).init(allocator);
+    defer relations_buf.deinit();
+
+    const relations_writer = relations_buf.writer();
+    // TODO: If there are multiple foreign keys to the same table, we don't try to guess the
+    // relation, e.g. `foo_id` and `other_foo_id`. We could guess `foo` and `other_foo` for
+    // `belongsTo` relations, but `hasMany` would require pluralization which is a bit awkward
+    // so, for now, we just use the table name (singularized for `belongsTo`) and users can
+    // adjust - we can do pluralization later but it starts to feel a bit overengineered for just
+    // generating an initial schema when a new table is discovered. Users are expected to do at
+    // least a bit of work here.
+    for (reflection.foreign_keys) |foreign_key| {
+        // belongsTo
+        if (std.mem.eql(u8, foreign_key.table, table_name)) {
+            const model_name = try util.modelize(
+                allocator,
+                foreign_key.foreign_table,
+            );
+            const singularized = try util.singularize(allocator, foreign_key.table);
+            try relations_writer.print(
+                \\.{s} = jetquery.belongsTo(.{s}, .{{
+            ,
+                .{ foreign_key.foreign_table, model_name },
+            );
+            const expected_primary_key = try std.mem.concat(
+                allocator,
+                u8,
+                &.{ singularized, "_id" },
+            );
+            if (!std.mem.eql(u8, foreign_key.foreign_column, expected_primary_key)) {
+                try relations_writer.print(
+                    \\.primary_key = "{s}",
+                , .{foreign_key.foreign_column});
+            }
+            if (!std.mem.eql(u8, foreign_key.column, "id")) {
+                try relations_writer.print(
+                    \\.foreign_key = "{s}",
+                , .{foreign_key.column});
+            }
+            try relations_writer.writeAll("}),");
+        }
+
+        // hasMany
+        if (std.mem.eql(u8, foreign_key.foreign_table, table_name)) {
+            const model_name = try util.modelize(
+                allocator,
+                foreign_key.table,
+            );
+            const singularized = try util.singularize(allocator, foreign_key.table);
+            try relations_writer.print(
+                \\.{s} = jetquery.hasMany(.{s}, .{{
+            ,
+                .{ foreign_key.table, model_name },
+            );
+            const expected_primary_key = try std.mem.concat(
+                allocator,
+                u8,
+                &.{ singularized, "_id" },
+            );
+            if (!std.mem.eql(u8, foreign_key.foreign_column, expected_primary_key)) {
+                try relations_writer.print(
+                    \\.primary_key = "{s}",
+                , .{foreign_key.foreign_column});
+            }
+            if (!std.mem.eql(u8, foreign_key.column, "id")) {
+                try relations_writer.print(
+                    \\.foreign_key = "{s}",
+                , .{foreign_key.column});
+            }
+            try relations_writer.writeAll("}),");
+        }
+    }
+
+    if (relations_buf.items.len == 0) return ".{}";
+
+    return try std.fmt.allocPrint(allocator,
+        \\.{{ .relations = .{{ {s} }}, }},
+    , .{relations_buf.items});
 }
 
 fn stringifyModelOptions(allocator: std.mem.Allocator, model: type) ![]const u8 {
@@ -304,24 +383,46 @@ test "reflect" {
     );
     defer repo.deinit();
 
-    try repo.createTable("cats", &.{
-        jetquery.schema.table.primaryKey("id", .{}),
-        jetquery.schema.table.column("name", .string, .{}),
-        jetquery.schema.table.column("human_id", .integer, .{ .optional = true }),
-        jetquery.schema.table.timestamps(.{}),
-    }, .{});
     try repo.createTable("humans", &.{
         jetquery.schema.table.primaryKey("id", .{}),
         jetquery.schema.table.column("name", .string, .{}),
         jetquery.schema.table.timestamps(.{}),
     }, .{});
-    try repo.createTable("dogs", &.{
+    try repo.createTable("cats", &.{
         jetquery.schema.table.primaryKey("id", .{}),
+        jetquery.schema.table.column("name", .string, .{}),
+        jetquery.schema.table.column(
+            "human_id",
+            .integer,
+            .{ .optional = true, .reference = .{ "humans", "id" } },
+        ),
+        jetquery.schema.table.timestamps(.{}),
+    }, .{});
+    try repo.createTable("kennels", &.{
+        jetquery.schema.table.primaryKey("id", .{}),
+        jetquery.schema.table.column("name", .string, .{}),
+        jetquery.schema.table.timestamps(.{}),
+    }, .{});
+    try repo.createTable("dogs", &.{
+        jetquery.schema.table.primaryKey("id", .{ .type = .bigint }),
+        jetquery.schema.table.column(
+            "kennel_id",
+            .integer,
+            .{ .reference = .{ "kennels", "id" } },
+        ),
+        jetquery.schema.table.column(
+            "other_kennel_id",
+            .integer,
+            .{ .reference = .{ "kennels", "id" } },
+        ),
         jetquery.schema.table.column("name", .string, .{}),
         jetquery.schema.table.column("is_woofy", .boolean, .{}),
         jetquery.schema.table.column("description", .text, .{}),
         jetquery.schema.table.column("bark_rating", .float, .{ .optional = true }),
         jetquery.schema.table.column("food_budget", .decimal, .{ .optional = true }),
+        jetquery.schema.table.column("paws", .smallint, .{}),
+        jetquery.schema.table.column("teeth", .bigint, .{}),
+        jetquery.schema.table.column("more_precise_bark_rating", .double_precision, .{}),
         jetquery.schema.table.timestamps(.{}),
     }, .{});
 
@@ -335,7 +436,7 @@ test "reflect" {
         \\    @This(),
         \\    "humans",
         \\    struct {
-        \\        id: i32,
+        \\        id: u32,
         \\        name: []const u8,
         \\        created_at: jetquery.DateTime,
         \\        updated_at: jetquery.DateTime,
@@ -351,9 +452,9 @@ test "reflect" {
         \\    @This(),
         \\    "cats",
         \\    struct {
-        \\        id: i32,
+        \\        id: u32,
         \\        name: []const u8,
-        \\        human_id: ?i32,
+        \\        human_id: ?u32,
         \\        created_at: jetquery.DateTime,
         \\        updated_at: jetquery.DateTime,
         \\    },
@@ -365,16 +466,60 @@ test "reflect" {
         \\    },
         \\);
         \\
-        \\pub const Dog = jetquery.Model(@This(), "dogs", struct {
-        \\    id: i32,
-        \\    name: []const u8,
-        \\    is_woofy: bool,
-        \\    description: []const u8,
-        \\    bark_rating: ?f64,
-        \\    food_budget: ?[]const u8,
-        \\    created_at: jetquery.DateTime,
-        \\    updated_at: jetquery.DateTime,
-        \\}, .{});
+        \\pub const Dog = jetquery.Model(
+        \\    @This(),
+        \\    "dogs",
+        \\    struct {
+        \\        id: u64,
+        \\        kennel_id: u32,
+        \\        other_kennel_id: u32,
+        \\        name: []const u8,
+        \\        is_woofy: bool,
+        \\        description: []const u8,
+        \\        bark_rating: ?f32,
+        \\        food_budget: ?[]const u8,
+        \\        paws: i16,
+        \\        teeth: i64,
+        \\        more_precise_bark_rating: f64,
+        \\        created_at: jetquery.DateTime,
+        \\        updated_at: jetquery.DateTime,
+        \\    },
+        \\    .{
+        \\        .relations = .{
+        \\            .kennels = jetquery.belongsTo(.Kennel, .{
+        \\                .primary_key = "id",
+        \\                .foreign_key = "kennel_id",
+        \\            }),
+        \\            .kennels = jetquery.belongsTo(.Kennel, .{
+        \\                .primary_key = "id",
+        \\                .foreign_key = "other_kennel_id",
+        \\            }),
+        \\        },
+        \\    },
+        \\);
+        \\
+        \\pub const Kennel = jetquery.Model(
+        \\    @This(),
+        \\    "kennels",
+        \\    struct {
+        \\        id: u32,
+        \\        name: []const u8,
+        \\        created_at: jetquery.DateTime,
+        \\        updated_at: jetquery.DateTime,
+        \\    },
+        \\    .{
+        \\        .relations = .{
+        \\            .dogs = jetquery.hasMany(.Dog, .{
+        \\                .primary_key = "id",
+        \\                .foreign_key = "kennel_id",
+        \\            }),
+        \\            .dogs = jetquery.hasMany(.Dog, .{
+        \\                .primary_key = "id",
+        \\                .foreign_key = "other_kennel_id",
+        \\            }),
+        \\        },
+        \\    },
+        \\);
         \\
     , schema);
 }
