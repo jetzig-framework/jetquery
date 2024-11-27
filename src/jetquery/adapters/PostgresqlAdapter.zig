@@ -114,10 +114,6 @@ fn resolvedValue(
         // TODO: pg.Numeric, pg.Cidr
         u8,
         ?u8,
-        u16,
-        ?u16,
-        u32,
-        ?u32,
         i16,
         ?i16,
         i32,
@@ -133,6 +129,10 @@ fn resolvedValue(
         []const u8,
         ?[]const u8,
         => |T| try maybeDupe(allocator, T, row.get(T, column_info.index)),
+        u16 => @intCast(row.get(i16, column_info.index)),
+        ?u16 => if (row.get(?u16, column_info.index)) |value| @intCast(value) else null,
+        u32 => @intCast(row.get(i32, column_info.index)),
+        ?u32 => if (row.get(?i32, column_info.index)) |value| @intCast(value) else null,
         ?jetquery.DateTime => if (row.get(?DateTimePrimitive, column_info.index)) |timestamp|
             try jetquery.DateTime.fromUnix(
                 timestamp,
