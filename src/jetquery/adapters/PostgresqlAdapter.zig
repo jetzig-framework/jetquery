@@ -295,6 +295,10 @@ pub const Connection = struct {
         self.connection.release();
     }
 
+    pub fn isAvailable(self: Connection) bool {
+        return self.connection._state == .idle or self.connection._state == .transaction;
+    }
+
     fn errorCallback(
         self: Connection,
         err: anyerror,

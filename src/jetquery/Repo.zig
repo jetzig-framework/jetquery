@@ -29,7 +29,8 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
         connections: std.AutoHashMap(std.Thread.Id, jetquery.Connection),
         result: ?jetquery.Result(AdaptedRepo) = null,
         context: jetquery.Context = .query,
-        connection_init_mutex: *std.Thread.Mutex,
+        connection_init_mutex: std.Thread.Mutex,
+        connection_release_mutex: std.Thread.Mutex,
 
         // For convenience, allow users to call `repo.Query(...)` instead of
         // `@TypeOf(repo).Query(...)`
@@ -69,9 +70,8 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
             var env = try std.process.getEnvMap(allocator);
             defer env.deinit();
 
-            const connection_init_mutex = try allocator.create(std.Thread.Mutex);
-            errdefer allocator.destroy(connection_init_mutex);
-            connection_init_mutex.* = std.Thread.Mutex{};
+            const connection_init_mutex = std.Thread.Mutex{};
+            const connection_release_mutex = std.Thread.Mutex{};
 
             return switch (comptime adapter_name) {
                 .postgresql => .{
@@ -87,6 +87,7 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
                     .context = options.context,
                     .connections = std.AutoHashMap(std.Thread.Id, jetquery.Connection).init(allocator),
                     .connection_init_mutex = connection_init_mutex,
+                    .connection_release_mutex = connection_release_mutex,
                 },
                 .null => .{
                     .allocator = allocator,
@@ -94,6 +95,7 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
                     .context = options.context,
                     .connections = undefined,
                     .connection_init_mutex = connection_init_mutex,
+                    .connection_release_mutex = connection_release_mutex,
                 },
             };
         }
@@ -190,7 +192,6 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
                 inline else => |*adapter| adapter.deinit(),
             }
             self.connections.deinit();
-            self.allocator.destroy(self.connection_init_mutex);
         }
 
         /// Execute the given query and return results.
@@ -238,10 +239,19 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
             const thread_id = std.Thread.getCurrentId();
 
             if (self.connections.get(thread_id)) |connection| {
-                return connection;
+                if (connection.isAvailable()) {
+                    return connection;
+                } else {
+                    self.connection_init_mutex.lock();
+                    defer self.connection_init_mutex.unlock();
+                    const new_connection = try self.connect();
+                    try self.connections.put(thread_id, new_connection);
+                    return new_connection;
+                }
             } else {
                 self.connection_init_mutex.lock();
                 defer self.connection_init_mutex.unlock();
+
                 const connection = try self.connect();
                 try self.connections.put(thread_id, connection);
                 return connection;
@@ -251,6 +261,9 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
         /// Release the repo's connection to the pool. If no connection is currently acquired then this
         /// is a no-op.
         pub fn release(self: *AdaptedRepo) void {
+            self.connection_release_mutex.lock();
+            defer self.connection_release_mutex.unlock();
+
             if (self.connections.fetchRemove(std.Thread.getCurrentId())) |entry| {
                 self.adapter.release(entry.value);
             }

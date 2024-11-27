@@ -84,6 +84,12 @@ pub const Connection = union(enum) {
         }
     }
 
+    pub fn isAvailable(self: Connection) bool {
+        return switch (self) {
+            inline else => |connection| connection.isAvailable(),
+        };
+    }
+
     pub fn executeVoidRuntimeBind(
         self: Connection,
         sql: []const u8,
