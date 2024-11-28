@@ -279,6 +279,15 @@ pub const Node = union(enum) {
                         Adapter.identifier(value.Table.name),
                         Adapter.identifier(value.name),
                     }) catch unreachable;
+                } else if (@typeInfo(value.type) == .optional) {
+                    // XXX: PostgreSQL-specific - we generate a query that is compatible with
+                    // both `NULL` and a non-null value for optional types.
+                    writer.print("{s}{s}.{s} IS NOT DISTINCT FROM {s}", .{
+                        prefix,
+                        Adapter.identifier(value.Table.name),
+                        Adapter.identifier(value.name),
+                        Adapter.paramSql(value.index),
+                    }) catch unreachable;
                 } else {
                     writer.print("{s}{s}.{s} = {s}", .{
                         prefix,

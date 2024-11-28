@@ -12,23 +12,7 @@ pub const ColumnInfo = struct {
     type: jetquery.schema.Column.Type,
     optional: bool,
 
-    pub fn zigType(self: ColumnInfo, reflection: Reflection) []const u8 {
-        if (self.isPrimaryKey(reflection.primary_keys)) return switch (self.type) {
-            .integer => "u32",
-            .bigint => "u64",
-            .smallint => "u16",
-            // TODO: uuid
-            else => unreachable,
-        };
-
-        if (self.isForeignKey(reflection.foreign_keys)) return switch (self.type) {
-            .integer => if (self.optional) "?u32" else "u32",
-            .bigint => if (self.optional) "?u64" else "u64",
-            .smallint => if (self.optional) "?u16" else "u16",
-            // TODO: uuid
-            else => unreachable,
-        };
-
+    pub fn zigType(self: ColumnInfo) []const u8 {
         return switch (self.type) {
             .string, .text => if (self.optional) "?[]const u8" else "[]const u8",
             .integer => if (self.optional) "?i32" else "i32",

@@ -83,7 +83,7 @@ pub fn ColumnType(Adapter: type, Table: type, comptime field_info: FieldInfo) ty
         // the specific case that two values (i.e. not a column or SQL function) are used on both
         // sides of the triplet, e.g.:
         // `.{ 1, .lt, 100 }`
-        // Without a know coercion target the only thing we can do here is use the value's type
+        // Without a known coercion target the only thing we can do here is use the value's type
         // and assume the database adapter will know what to do with it, otherwise we get a
         // compile error and the user has to do an explicit cast. This is all an edge case of an
         // edge case.
@@ -144,10 +144,7 @@ pub fn structType(comptime fields: []const std.builtin.Type.StructField) type {
 pub fn fieldType(T: type, comptime name: []const u8) type {
     const tag = std.enums.nameCast(std.meta.FieldEnum(T), name);
     const FT = std.meta.fieldInfo(T, tag).type;
-    return switch (@typeInfo(FT)) {
-        .optional => |optional| optional.child,
-        else => FT,
-    };
+    return FT;
 }
 
 // We need to ensure that we don't store a comptime value otherwise our

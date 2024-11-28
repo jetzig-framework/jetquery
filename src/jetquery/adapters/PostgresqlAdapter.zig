@@ -122,6 +122,8 @@ fn resolvedValue(
         ?i64,
         f32,
         ?f32,
+        f64,
+        ?f64,
         []u8,
         ?[]u8,
         bool,
@@ -133,6 +135,8 @@ fn resolvedValue(
         ?u16 => if (row.get(?u16, column_info.index)) |value| @intCast(value) else null,
         u32 => @intCast(row.get(i32, column_info.index)),
         ?u32 => if (row.get(?i32, column_info.index)) |value| @intCast(value) else null,
+        u64 => @intCast(row.get(i64, column_info.index)),
+        ?u64 => if (row.get(?i64, column_info.index)) |value| @intCast(value) else null,
         ?jetquery.DateTime => if (row.get(?DateTimePrimitive, column_info.index)) |timestamp|
             try jetquery.DateTime.fromUnix(
                 timestamp,

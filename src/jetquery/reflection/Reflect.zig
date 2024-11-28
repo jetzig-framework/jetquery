@@ -92,7 +92,7 @@ fn writeModel(
             \\{s}: {s},
             \\
         ,
-            .{ try util.zigEscape(allocator, .id, column.name), column.zigType(reflection) },
+            .{ try util.zigEscape(allocator, .id, column.name), column.zigType() },
         );
     }
 
@@ -436,7 +436,7 @@ test "reflect" {
         \\    @This(),
         \\    "humans",
         \\    struct {
-        \\        id: u32,
+        \\        id: i32,
         \\        name: []const u8,
         \\        created_at: jetquery.DateTime,
         \\        updated_at: jetquery.DateTime,
@@ -452,9 +452,9 @@ test "reflect" {
         \\    @This(),
         \\    "cats",
         \\    struct {
-        \\        id: u32,
+        \\        id: i32,
         \\        name: []const u8,
-        \\        human_id: ?u32,
+        \\        human_id: ?i32,
         \\        created_at: jetquery.DateTime,
         \\        updated_at: jetquery.DateTime,
         \\    },
@@ -470,9 +470,9 @@ test "reflect" {
         \\    @This(),
         \\    "dogs",
         \\    struct {
-        \\        id: u64,
-        \\        kennel_id: u32,
-        \\        other_kennel_id: u32,
+        \\        id: i64,
+        \\        kennel_id: i32,
+        \\        other_kennel_id: i32,
         \\        name: []const u8,
         \\        is_woofy: bool,
         \\        description: []const u8,
@@ -498,7 +498,7 @@ test "reflect" {
         \\    @This(),
         \\    "kennels",
         \\    struct {
-        \\        id: u32,
+        \\        id: i32,
         \\        name: []const u8,
         \\        created_at: jetquery.DateTime,
         \\        updated_at: jetquery.DateTime,

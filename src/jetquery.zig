@@ -1494,3 +1494,63 @@ test "boolean coercion https://github.com/jetzig-framework/jetquery/issues/1" {
     try std.testing.expectEqual(query.values.@"2", true);
     try std.testing.expectEqual(query.values.@"3", true);
 }
+
+test "optionals" {
+    const Schema = struct {
+        pub const Thing = Model(
+            @This(),
+            "things",
+            struct {
+                a: ?bool,
+                b: ?[]const u8,
+                c: ?i32,
+                d: ?i64,
+                e: ?f32,
+                f: ?f64,
+                g: ?DateTime,
+            },
+            .{},
+        );
+    };
+    const query1 = Query(TestAdapter, Schema, .Thing).insert(.{
+        .a = @as(?bool, false),
+        .b = @as(?[]const u8, "foo"),
+        .c = @as(?i32, 100),
+        .d = @as(?i64, 10000000000000),
+        .e = @as(?f32, 100.1),
+        .f = @as(?f64, 10000000000000.1),
+        .g = @as(?DateTime, DateTime.now()),
+    });
+    try std.testing.expect(query1.isValid());
+    try std.testing.expectEqualStrings(
+        \\INSERT INTO "things" ("a", "b", "c", "d", "e", "f", "g") VALUES ($1, $2, $3, $4, $5, $6, $7)
+    , query1.sql);
+
+    const query2 = Query(TestAdapter, Schema, .Thing).where(.{
+        .a = @as(?bool, false),
+        .b = @as(?[]const u8, "foo"),
+        .c = @as(?i32, 100),
+        .d = @as(?i64, 10000000000000),
+        .e = @as(?f32, 100.1),
+        .f = @as(?f64, 10000000000000.1),
+        .g = @as(?DateTime, DateTime.now()),
+    });
+    try std.testing.expect(query2.isValid());
+    try std.testing.expectEqualStrings(
+        \\SELECT "things"."a", "things"."b", "things"."c", "things"."d", "things"."e", "things"."f", "things"."g" FROM "things" WHERE ("things"."a" IS NOT DISTINCT FROM $1 AND "things"."b" IS NOT DISTINCT FROM $2 AND "things"."c" IS NOT DISTINCT FROM $3 AND "things"."d" IS NOT DISTINCT FROM $4 AND "things"."e" IS NOT DISTINCT FROM $5 AND "things"."f" IS NOT DISTINCT FROM $6 AND "things"."g" IS NOT DISTINCT FROM $7)
+    , query2.sql);
+
+    const query3 = Query(TestAdapter, Schema, .Thing).where(.{
+        .a = @as(?bool, null),
+        .b = @as(?[]const u8, null),
+        .c = @as(?i32, null),
+        .d = @as(?i64, null),
+        .e = @as(?f32, null),
+        .f = @as(?f64, null),
+        .g = @as(?DateTime, null),
+    });
+    try std.testing.expect(query3.isValid());
+    try std.testing.expectEqualStrings(
+        \\SELECT "things"."a", "things"."b", "things"."c", "things"."d", "things"."e", "things"."f", "things"."g" FROM "things" WHERE ("things"."a" IS NOT DISTINCT FROM $1 AND "things"."b" IS NOT DISTINCT FROM $2 AND "things"."c" IS NOT DISTINCT FROM $3 AND "things"."d" IS NOT DISTINCT FROM $4 AND "things"."e" IS NOT DISTINCT FROM $5 AND "things"."f" IS NOT DISTINCT FROM $6 AND "things"."g" IS NOT DISTINCT FROM $7)
+    , query3.sql);
+}

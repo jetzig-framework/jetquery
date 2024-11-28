@@ -796,20 +796,45 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
             // messes with internals and modifies original values then they will run into
             // trouble.
             inline for (std.meta.fields(@TypeOf(value.__jetquery.original_values))) |field| {
-                switch (@typeInfo(field.type)) {
-                    .pointer => |info| {
-                        switch (info.child) {
-                            // TODO: Couple this with `maybeDupe` logic to make sure we stay
-                            // consistent in which types need to be freed.
-                            u8 => {
-                                self.allocator.free(@field(value.__jetquery.original_values, field.name));
+                self._freeValue(field.name, field.type, value);
+            }
+        }
+
+        fn _freeValue(
+            self: *AdaptedRepo,
+            comptime field_name: []const u8,
+            T: type,
+            value: anytype,
+        ) void {
+            switch (@typeInfo(T)) {
+                .pointer => |info| {
+                    switch (info.child) {
+                        // TODO: Couple this with `maybeDupe` logic to make sure we stay
+                        // consistent in which types need to be freed.
+                        u8 => {
+                            self.allocator.free(@field(
+                                value.__jetquery.original_values,
+                                field_name,
+                            ));
+                        },
+                        else => {},
+                    }
+                },
+                .optional => |info| {
+                    if (@field(value.__jetquery.original_values, field_name)) |capture| {
+                        switch (@typeInfo(info.child)) {
+                            .pointer => |pointer| switch (pointer.child) {
+                                u8 => {
+                                    self.allocator.free(capture);
+                                },
+                                else => {},
                             },
                             else => {},
                         }
-                    },
-                    .@"struct" => self.free(@field(value, field.name)),
-                    else => {},
-                }
+                    }
+                },
+                .@"struct" => self.free(@field(value, field_name)),
+                else => {},
             }
         }
     };
@@ -936,7 +961,7 @@ test "relations" {
         pub const Cat = jetquery.Model(
             @This(),
             "cats",
-            struct { id: i32, human_id: ?i32, name: []const u8, paws: i32 },
+            struct { id: i32, human_id: i32, name: []const u8, paws: i32 },
             .{ .relations = .{ .human = jetquery.relation.belongsTo(.Human, .{}) } },
         );
 
@@ -1510,6 +1535,112 @@ test "optional DateTime" {
         try std.testing.expect(thing.a.?.eql(now));
         try std.testing.expect(thing.b == null);
     } else try std.testing.expect(false);
+}
+
+test "optionals" {
+    try resetDatabase();
+
+    const Schema = struct {
+        pub const Thing = jetquery.Model(
+            @This(),
+            "things",
+            struct {
+                a: ?bool,
+                b: ?[]const u8,
+                c: ?i32,
+                d: ?i64,
+                e: ?f32,
+                f: ?f64,
+                g: ?jetquery.DateTime,
+            },
+            .{},
+        );
+    };
+    var repo = try Repo(.postgresql, Schema).init(std.testing.allocator, .{
+        .adapter = .{
+            .database = "repo_test",
+            .username = "postgres",
+            .hostname = "127.0.0.1",
+            .password = "password",
+            .port = 5432,
+        },
+    });
+    defer repo.deinit();
+
+    try repo.createTable("things", &.{
+        jetquery.schema.table.column("a", .boolean, .{ .optional = true }),
+        jetquery.schema.table.column("b", .string, .{ .optional = true }),
+        jetquery.schema.table.column("c", .integer, .{ .optional = true }),
+        jetquery.schema.table.column("d", .bigint, .{ .optional = true }),
+        jetquery.schema.table.column("e", .float, .{ .optional = true }),
+        jetquery.schema.table.column("f", .double_precision, .{ .optional = true }),
+        jetquery.schema.table.column("g", .datetime, .{ .optional = true }),
+    }, .{});
+
+    const now = jetquery.DateTime.now();
+
+    const insert1 = repo.Query(.Thing).insert(.{
+        .a = @as(?bool, null),
+        .b = @as(?[]const u8, null),
+        .c = @as(?i32, null),
+        .d = @as(?i64, null),
+        .e = @as(?f32, null),
+        .f = @as(?f64, null),
+        .g = @as(?jetquery.DateTime, null),
+    });
+    const select1 = repo.Query(.Thing).where(.{
+        .a = @as(?bool, null),
+        .b = @as(?[]const u8, null),
+        .c = @as(?i32, null),
+        .d = @as(?i64, null),
+        .e = @as(?f32, null),
+        .f = @as(?f64, null),
+        .g = @as(?jetquery.DateTime, null),
+    });
+
+    const insert2 = repo.Query(.Thing).insert(.{
+        .a = @as(?bool, true),
+        .b = @as(?[]const u8, "foo"),
+        .c = @as(?i32, 123),
+        .d = @as(?i64, 456),
+        .e = @as(?f32, 123.4),
+        .f = @as(?f64, 567.8),
+        .g = @as(?jetquery.DateTime, now),
+    });
+    const select2 = repo.Query(.Thing).where(.{
+        .a = @as(?bool, true),
+        .b = @as(?[]const u8, "foo"),
+        .c = @as(?i32, 123),
+        .d = @as(?i64, 456),
+        .e = @as(?f32, 123.4),
+        .f = @as(?f64, 567.8),
+        .g = @as(?jetquery.DateTime, now),
+    });
+
+    try repo.execute(insert1);
+    try repo.execute(insert2);
+
+    const things1 = try repo.all(select1);
+    defer repo.free(things1);
+
+    try std.testing.expect(things1[0].a == null);
+    try std.testing.expect(things1[0].b == null);
+    try std.testing.expect(things1[0].c == null);
+    try std.testing.expect(things1[0].d == null);
+    try std.testing.expect(things1[0].e == null);
+    try std.testing.expect(things1[0].f == null);
+    try std.testing.expect(things1[0].g == null);
+
+    const things2 = try repo.all(select2);
+    defer repo.free(things2);
+
+    try std.testing.expect(things2[0].a.? == true);
+    try std.testing.expectEqualStrings(things2[0].b.?, "foo");
+    try std.testing.expect(things2[0].c.? == 123);
+    try std.testing.expect(things2[0].d.? == 456);
+    try std.testing.expect(things2[0].e.? == 123.4);
+    try std.testing.expect(things2[0].f.? == 567.8);
+    try std.testing.expect(things2[0].g.?.eql(now));
 }
 
 fn resetDatabase() !void {

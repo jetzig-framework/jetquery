@@ -18,10 +18,17 @@ pub fn coerce(
         else => {},
     }
 
-    const T = fields.ColumnType(Adapter, Table, field_info);
+    const MaybeT = fields.ColumnType(Adapter, Table, field_info);
+    const T = if (@typeInfo(MaybeT) == .optional)
+        @typeInfo(MaybeT).optional.child
+    else
+        MaybeT;
 
     if (@TypeOf(value) == jetcommon.types.DateTime) return .{ .value = value.microseconds() };
-    if (@TypeOf(value) == ?jetcommon.types.DateTime) return if (value) .{ .value = value.microseconds() } else null;
+    if (@TypeOf(value) == ?jetcommon.types.DateTime) return if (value) |capture|
+        .{ .value = @as(MaybeT, capture.microseconds()) }
+    else
+        .{ .value = @as(MaybeT, null) };
 
     return switch (@typeInfo(@TypeOf(value))) {
         .null => .{ .value = null },
@@ -92,6 +99,18 @@ pub fn coerce(
                     @typeName(T) ++ "` and `" ++ @typeName(info.child) ++ "`"),
         },
         .array => .{ .value = &value },
+        .optional => |info| if (value) |capture| blk: {
+            comptime var source_info = field_info.info;
+            source_info.type = @typeInfo(field_info.info.type).optional.child;
+            const optional_field_info = fields.fieldInfo(
+                source_info,
+                field_info.Table,
+                field_info.name,
+                field_info.context,
+            );
+            const coerced = coerce(Adapter, Table, optional_field_info, capture);
+            break :blk .{ .value = @as(?T, coerced.value), .err = coerced.err };
+        } else .{ .value = @as(?info.child, null) },
         else => coerceDelegate(Adapter, T, value),
     };
 }
@@ -127,25 +146,29 @@ pub fn canCoerceDelegate(T: type) bool {
 }
 
 pub fn CoercedValue(Adapter: type, Target: type, Source: type) type {
-    const T = switch (@typeInfo(Source)) {
+    const T = CoercedValueType(Adapter, Target, Source);
+
+    return struct {
+        value: T = undefined, // Never used if `err` is present
+        err: ?anyerror = null,
+    };
+}
+
+fn CoercedValueType(Adapter: type, Target: type, Source: type) type {
+    return switch (@typeInfo(Source)) {
         .null => @TypeOf(null),
         .pointer => |info| if (info.child == Target and info.size == .Slice)
             []const Target
         else
             Target,
         .array => |info| if (info.child == Target) []const Target else Target,
-        // TODO
-        else => if (Source == jetcommon.DateTime)
+        .optional => |info| CoercedValueType(Adapter, Target, info.child),
+        else => if (Target == jetcommon.DateTime)
             Adapter.DateTimePrimitive
-        else if (Source == ?jetcommon.DateTime)
+        else if (Target == ?jetcommon.DateTime)
             ?Adapter.DateTimePrimitive
         else
             Target,
-    };
-
-    return struct {
-        value: T = undefined, // Never used if `err` is present
-        err: ?anyerror = null,
     };
 }
 
