@@ -31,11 +31,12 @@ pub const Connection = union(enum) {
                             const unary = try result.unary(@TypeOf(query).ResultType);
                             try result.drain();
                             return unary;
+                        } else {
+                            const row = try result.next(query);
+                            defer result.deinit();
+                            try result.drain();
+                            break :blk row;
                         }
-                        const row = try result.next(query);
-                        defer result.deinit();
-                        try result.drain();
-                        break :blk row;
                     },
                     .many => result,
                     .none => blk: {

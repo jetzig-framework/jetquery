@@ -11,8 +11,11 @@ pub const CallerInfo = struct {
     }
 };
 
-pub fn getCallerInfo(address: usize) !?CallerInfo {
-    if (builtin.mode != .Debug) return null;
+pub fn getCallerInfo(mutex: *std.Thread.Mutex, address: usize) !?CallerInfo {
+    if (comptime builtin.mode != .Debug) return null;
+
+    mutex.lock();
+    defer mutex.unlock();
 
     const debug_info = try std.debug.getSelfDebugInfo();
     const module = debug_info.getModuleForAddress(address) catch |err| switch (err) {
