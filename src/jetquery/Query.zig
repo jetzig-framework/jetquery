@@ -1000,14 +1000,14 @@ fn Statement(
             .many => jetquery.Result(@TypeOf(repo.*)),
             .none => void,
         } {
-            const caller_info = try jetquery.debug.getCallerInfo(@returnAddress());
+            const caller_info = try jetquery.debug.getCallerInfo(repo.debugMutex(), @returnAddress());
             return try repo.executeInternal(self, caller_info);
         }
 
         pub fn all(self: Self, repo: anytype) ![]ResultType {
             var result = try repo.executeInternal(
                 self,
-                try jetquery.debug.getCallerInfo(@returnAddress()),
+                try jetquery.debug.getCallerInfo(repo.debugMutex(), @returnAddress()),
             );
             return try result.all(self);
         }
@@ -1016,7 +1016,7 @@ fn Statement(
             const query = self.limit(1);
             var result = try repo.executeInternal(
                 query,
-                try jetquery.debug.getCallerInfo(@returnAddress()),
+                try jetquery.debug.getCallerInfo(repo.debugMutex(), @returnAddress()),
             );
             const rows = try result.all(query);
             defer repo.allocator.free(rows);

@@ -24,13 +24,13 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
 
         comptime adapter_name: jetquery.adapters.Name = adapter_name,
         allocator: std.mem.Allocator,
-        adapter: RepoAdapter,
+        adapter: *RepoAdapter,
         eventCallback: jetquery.CallbackFn = jetquery.events.defaultCallback,
-        connections: std.AutoHashMap(std.Thread.Id, jetquery.Connection),
         result: ?jetquery.Result(AdaptedRepo) = null,
         context: jetquery.Context = .query,
-        connection_init_mutex: std.Thread.Mutex,
-        connection_release_mutex: std.Thread.Mutex,
+        connection: ?jetquery.Connection = null,
+        debug_mutex: std.Thread.Mutex = .{},
+        child_debug_mutex: ?*std.Thread.Mutex = null,
 
         // For convenience, allow users to call `repo.Query(...)` instead of
         // `@TypeOf(repo).Query(...)`
@@ -70,33 +70,25 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
             var env = try std.process.getEnvMap(allocator);
             defer env.deinit();
 
-            const connection_init_mutex = std.Thread.Mutex{};
-            const connection_release_mutex = std.Thread.Mutex{};
-
-            return switch (comptime adapter_name) {
+            const adapter: RepoAdapter = switch (comptime adapter_name) {
                 .postgresql => .{
-                    .allocator = allocator,
-                    .eventCallback = options.eventCallback,
-                    .adapter = .{
-                        .postgresql = try jetquery.adapters.PostgresqlAdapter.init(
-                            allocator,
-                            try applyDefaultOptions(@TypeOf(options.adapter), options.adapter, env),
-                            options.lazy_connect,
-                        ),
-                    },
-                    .context = options.context,
-                    .connections = std.AutoHashMap(std.Thread.Id, jetquery.Connection).init(allocator),
-                    .connection_init_mutex = connection_init_mutex,
-                    .connection_release_mutex = connection_release_mutex,
+                    .postgresql = try jetquery.adapters.PostgresqlAdapter.init(
+                        allocator,
+                        try applyDefaultOptions(@TypeOf(options.adapter), options.adapter, env),
+                        options.lazy_connect,
+                    ),
                 },
-                .null => .{
-                    .allocator = allocator,
-                    .adapter = .{ .null = jetquery.adapters.NullAdapter{} },
-                    .context = options.context,
-                    .connections = undefined,
-                    .connection_init_mutex = connection_init_mutex,
-                    .connection_release_mutex = connection_release_mutex,
-                },
+                .null => .{ .null = jetquery.adapters.NullAdapter{} },
+            };
+
+            const adapter_ptr = try allocator.create(RepoAdapter);
+            adapter_ptr.* = adapter;
+
+            return .{
+                .allocator = allocator,
+                .adapter = adapter_ptr,
+                .eventCallback = options.eventCallback,
+                .context = options.context,
             };
         }
 
@@ -188,10 +180,10 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
         /// Close connections and free resources.
         pub fn deinit(self: *AdaptedRepo) void {
             self.release();
-            switch (self.adapter) {
+            switch (self.adapter.*) {
                 inline else => |*adapter| adapter.deinit(),
             }
-            self.connections.deinit();
+            self.allocator.destroy(self.adapter);
         }
 
         /// Execute the given query and return results.
@@ -203,7 +195,7 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
             .many => Result,
             .none => void,
         } {
-            const caller_info = try jetquery.debug.getCallerInfo(@returnAddress());
+            const caller_info = try jetquery.debug.getCallerInfo(self.debugMutex(), @returnAddress());
             defer if (caller_info) |info| info.deinit();
 
             return try self.executeInternal(query, caller_info);
@@ -217,8 +209,28 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
             values: anytype,
         ) !Result {
             const connection = try self.connectManaged();
-            const caller_info = try jetquery.debug.getCallerInfo(@returnAddress());
+            const caller_info = try jetquery.debug.getCallerInfo(self.debugMutex(), @returnAddress());
             return try connection.executeSql(sql, values, caller_info, self);
+        }
+
+        pub const BindConnectOptions = struct {
+            allocator: ?std.mem.Allocator = null,
+        };
+
+        /// Return a new Repo bound to a connection. e.g. when a database connection is needed
+        /// per request in a web server, use this function to create a new Repo and deinit after
+        /// the request has processed to free the connection back to the pool.
+        pub fn bindConnect(self: *AdaptedRepo, options: BindConnectOptions) !AdaptedRepo {
+            if (self.adapter.* == .null) return self.*;
+
+            return .{
+                .allocator = options.allocator orelse self.allocator,
+                .adapter = self.adapter,
+                .eventCallback = self.eventCallback,
+                .context = self.context,
+                .connection = try self.connect(),
+                .child_debug_mutex = &self.debug_mutex,
+            };
         }
 
         /// Establish a new connection. Caller is responsible for calling `connection.release()` when
@@ -236,36 +248,21 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
 
         /// Used internally to create a managed connection which is released on `repo.deinit()`.
         pub fn connectManaged(self: *AdaptedRepo) !jetquery.Connection {
-            const thread_id = std.Thread.getCurrentId();
-
-            if (self.connections.get(thread_id)) |connection| {
-                if (connection.isAvailable()) {
-                    return connection;
-                } else {
-                    self.connection_init_mutex.lock();
-                    defer self.connection_init_mutex.unlock();
-                    const new_connection = try self.connect();
-                    try self.connections.put(thread_id, new_connection);
-                    return new_connection;
-                }
-            } else {
-                self.connection_init_mutex.lock();
-                defer self.connection_init_mutex.unlock();
-
+            return if (self.connection) |connection|
+                connection
+            else blk: {
                 const connection = try self.connect();
-                try self.connections.put(thread_id, connection);
-                return connection;
-            }
+                self.connection = connection;
+                break :blk connection;
+            };
         }
 
         /// Release the repo's connection to the pool. If no connection is currently acquired then this
         /// is a no-op.
         pub fn release(self: *AdaptedRepo) void {
-            self.connection_release_mutex.lock();
-            defer self.connection_release_mutex.unlock();
-
-            if (self.connections.fetchRemove(std.Thread.getCurrentId())) |entry| {
-                self.adapter.release(entry.value);
+            if (self.connection) |connection| {
+                defer self.connection = null;
+                connection.release();
             }
         }
 
@@ -278,10 +275,9 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
             .many => Result,
             .none => void,
         } {
-            const connection = try self.connectManaged();
-            errdefer self.release();
-
             try query.validate();
+
+            const connection = try self.connectManaged();
 
             return try connection.execute(query, caller_info, self);
         }
@@ -291,7 +287,7 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
             try connection.executeVoid(
                 "BEGIN",
                 .{},
-                try jetquery.debug.getCallerInfo(@returnAddress()),
+                try jetquery.debug.getCallerInfo(self.debugMutex(), @returnAddress()),
                 self,
             );
         }
@@ -301,7 +297,7 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
             try connection.executeVoid(
                 "COMMIT",
                 .{},
-                try jetquery.debug.getCallerInfo(@returnAddress()),
+                try jetquery.debug.getCallerInfo(self.debugMutex(), @returnAddress()),
                 self,
             );
         }
@@ -311,7 +307,7 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
             try connection.executeVoid(
                 "ROLLBACK",
                 .{},
-                try jetquery.debug.getCallerInfo(@returnAddress()),
+                try jetquery.debug.getCallerInfo(self.debugMutex(), @returnAddress()),
                 self,
             );
         }
@@ -321,7 +317,7 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
         pub fn all(self: *AdaptedRepo, query: anytype) ![]@TypeOf(query).ResultType {
             var result = try self.executeInternal(
                 query,
-                try jetquery.debug.getCallerInfo(@returnAddress()),
+                try jetquery.debug.getCallerInfo(self.debugMutex(), @returnAddress()),
             );
             return try result.all(query);
         }
@@ -425,7 +421,7 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
                 Update,
                 update,
                 &field_states,
-                try jetquery.debug.getCallerInfo(@returnAddress()),
+                try jetquery.debug.getCallerInfo(self.debugMutex(), @returnAddress()),
                 self,
             );
         }
@@ -445,7 +441,7 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
                 @field(Schema, @tagName(model_name)),
             ).insert(args);
 
-            try self.executeInternal(query, try jetquery.debug.getCallerInfo(@returnAddress()));
+            try self.executeInternal(query, try jetquery.debug.getCallerInfo(self.debugMutex(), @returnAddress()));
         }
 
         /// Delete a fetched record from the database. Record must have a primary key.
@@ -471,7 +467,7 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
                 value.__jetquery_schema,
                 value.__jetquery_model,
             ).delete().where(args);
-            try self.executeInternal(query, try jetquery.debug.getCallerInfo(@returnAddress()));
+            try self.executeInternal(query, try jetquery.debug.getCallerInfo(self.debugMutex(), @returnAddress()));
         }
 
         pub fn isModified(value: anytype) bool {
@@ -578,7 +574,7 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
             try connection.executeVoid(
                 buf.items,
                 &.{},
-                try jetquery.debug.getCallerInfo(@returnAddress()),
+                try jetquery.debug.getCallerInfo(self.debugMutex(), @returnAddress()),
                 self,
             );
 
@@ -609,7 +605,7 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
             try connection.executeVoid(
                 buf.items,
                 &.{},
-                try jetquery.debug.getCallerInfo(@returnAddress()),
+                try jetquery.debug.getCallerInfo(self.debugMutex(), @returnAddress()),
                 self,
             );
         }
@@ -662,7 +658,7 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
             try connection.executeVoid(
                 buf.items,
                 &.{},
-                try jetquery.debug.getCallerInfo(@returnAddress()),
+                try jetquery.debug.getCallerInfo(self.debugMutex(), @returnAddress()),
                 self,
             );
 
@@ -692,7 +688,7 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
             try connection.executeVoid(
                 buf.items,
                 &.{},
-                try jetquery.debug.getCallerInfo(@returnAddress()),
+                try jetquery.debug.getCallerInfo(self.debugMutex(), @returnAddress()),
                 self,
             );
         }
@@ -722,7 +718,7 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
             try connection.executeVoid(
                 buf.items,
                 &.{},
-                try jetquery.debug.getCallerInfo(@returnAddress()),
+                try jetquery.debug.getCallerInfo(self.debugMutex(), @returnAddress()),
                 self,
             );
         }
@@ -749,7 +745,7 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
             try connection.executeVoid(
                 sql,
                 .{},
-                try jetquery.debug.getCallerInfo(@returnAddress()),
+                try jetquery.debug.getCallerInfo(self.debugMutex(), @returnAddress()),
                 self,
             );
         }
@@ -788,6 +784,10 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
                     }
                 }
             }
+        }
+
+        pub fn debugMutex(self: *AdaptedRepo) *std.Thread.Mutex {
+            return self.child_debug_mutex orelse &self.debug_mutex;
         }
 
         /// Use `Repo.free()` to free a row. This function is for internal use only.
@@ -912,7 +912,7 @@ test "Repo.loadConfig" {
     // Loads default config file: `jetquery.config.zig`
     var repo = try Repo(.postgresql, void).loadConfig(std.testing.allocator, .testing, .{});
     defer repo.deinit();
-    try std.testing.expect(repo.adapter == .postgresql);
+    try std.testing.expect(repo.adapter.* == .postgresql);
 }
 
 test "Repo.loadConfig with env" {
@@ -930,7 +930,7 @@ test "Repo.loadConfig with env" {
         },
     );
     defer repo.deinit();
-    try std.testing.expect(repo.adapter == .postgresql);
+    try std.testing.expect(repo.adapter.* == .postgresql);
     try std.testing.expectEqualStrings(
         repo.adapter.postgresql.options.database.?,
         "database_from_env",

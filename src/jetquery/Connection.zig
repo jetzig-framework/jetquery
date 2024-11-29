@@ -1,3 +1,5 @@
+const std = @import("std");
+
 const jetquery = @import("../jetquery.zig");
 
 pub const Connection = union(enum) {
@@ -30,12 +32,21 @@ pub const Connection = union(enum) {
                             defer result.deinit();
                             const unary = try result.unary(@TypeOf(query).ResultType);
                             try result.drain();
-                            return unary;
+                            break :blk unary;
+                        } else {
+                            // We use `all` instead of `next` here because we only expect one
+                            // result. Using `next` when we are preloading relations (e.g. with
+                            // `include`) creates an extra connection so that we can continue
+                            // streaming the results of the primary query with subsequent calls
+                            // to `next()`. Since there is only one expected result, `all()`
+                            // should always return a slice with length 1, so we can use a single
+                            // connection to fetch the primary result row + relations, freeing up
+                            // a connection from the pool.
+                            const results = try result.all(query);
+                            defer repo.allocator.free(results);
+                            std.debug.assert(results.len == 1 or results.len == 0);
+                            break :blk if (results.len == 1) results[0] else null;
                         }
-                        const row = try result.next(query);
-                        defer result.deinit();
-                        try result.drain();
-                        break :blk row;
                     },
                     .many => result,
                     .none => blk: {

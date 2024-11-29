@@ -23,9 +23,12 @@ pub fn deinit(self: *const NullAdapter) void {
     _ = self;
 }
 
-pub fn connect(self: *const NullAdapter, repo: *const AdaptedRepo) !jetquery.Connection {
+pub fn connect(
+    self: *const NullAdapter,
+    options: jetquery.adapters.ConnectionOptions,
+) !jetquery.Connection {
     _ = self;
-    _ = repo;
+    _ = options;
     return error.JetQueryNullAdapterError;
 }
 
