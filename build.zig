@@ -14,11 +14,37 @@ pub fn build(b: *std.Build) !void {
     b.installArtifact(lib);
 
     const pg_dep = b.dependency("pg", .{ .target = target, .optimize = optimize });
+    try b.modules.put("pg", pg_dep.module("pg"));
     const jetcommon_dep = b.dependency("jetcommon", .{ .target = target, .optimize = optimize });
     const jetcommon_module = jetcommon_dep.module("jetcommon");
 
-    lib.root_module.addImport("pg", pg_dep.module("pg"));
     lib.root_module.addImport("jetcommon", jetcommon_module);
+
+    const PostgresqlSslMode = enum { auto, manual, disabled };
+    const postgresql_ssl = b.option(PostgresqlSslMode, "postgresql_ssl", "Enable TLS for PostgreSQL") orelse .auto;
+    const openssl_lib_name = b.option([]const u8, "postgresql_ssl_lib_name", "Name of SSL library");
+    const openssl_lib_path = b.option([]const u8, "postgresql_ssl_lib_path", "Path to SSL library");
+    const openssl_include_path = b.option([]const u8, "postgresql_ssl_include_path", "Path to SSL include directory");
+    const pg_module = switch (postgresql_ssl) {
+        .auto => b.dependency("pg", .{
+            .target = target,
+            .optimize = optimize,
+            .openssl_lib_name = openssl_lib_name orelse "ssl",
+            .openssl_lib_path = std.Build.LazyPath{ .cwd_relative = openssl_lib_path orelse try detectOpenSslPath(.lib) },
+            .openssl_include_path = std.Build.LazyPath{ .cwd_relative = openssl_include_path orelse try detectOpenSslPath(.include) },
+        }),
+        .manual => b.dependency("pg", .{
+            .target = target,
+            .optimize = optimize,
+            .openssl_lib_name = openssl_lib_name orelse "ssl",
+            .openssl_lib_path = std.Build.LazyPath{ .cwd_relative = openssl_lib_path orelse "" },
+            .openssl_include_path = std.Build.LazyPath{ .cwd_relative = openssl_include_path orelse "" },
+        }),
+        .disabled => b.dependency("pg", .{
+            .target = target,
+            .optimize = optimize,
+        }),
+    }.module("pg");
 
     const config_path = b.option([]const u8, "jetquery_config_path", "JetQuery configuration file path") orelse "jetquery.config.zig";
     const config_module = if (try fileExist(config_path))
@@ -27,7 +53,7 @@ pub fn build(b: *std.Build) !void {
         b.createModule(.{ .root_source_file = b.path("src/default_config.zig") });
 
     const jetquery_module = b.addModule("jetquery", .{ .root_source_file = b.path("src/jetquery.zig") });
-    jetquery_module.addImport("pg", pg_dep.module("pg"));
+    jetquery_module.addImport("pg", pg_module);
     jetquery_module.addImport("jetcommon", jetcommon_module);
     jetquery_module.addImport("jetquery.config", config_module);
 
@@ -152,4 +178,11 @@ fn fileExist(path: []const u8) !bool {
     file.close();
 
     return true;
+}
+
+fn detectOpenSslPath(context: enum { lib, include }) ![]const u8 {
+    return switch (context) {
+        .lib => "/usr/lib/",
+        .include => "/usr/include/",
+    };
 }

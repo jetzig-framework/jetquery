@@ -789,6 +789,7 @@ fn initPool(allocator: std.mem.Allocator, options: Options) !*pg.Pool {
         .connect = .{
             .port = options.port.?,
             .host = options.hostname.?,
+            .tls = .require,
         },
         .auth = .{
             .username = options.username orelse return configError("username"),
