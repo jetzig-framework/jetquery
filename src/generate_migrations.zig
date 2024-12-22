@@ -11,7 +11,7 @@ pub fn main() !void {
 
     const args = try std.process.argsAlloc(allocator);
     const migrations_module_path = args[1];
-    const migrations: [][]const u8 = if (args.len > 2) args[2..] else &.{};
+    const migrations: []const []const u8 = if (args.len > 2) args[2..] else &.{};
     const migrations_file = try std.fs.createFileAbsolute(migrations_module_path, .{});
     const migrations_module_dir = std.fs.path.dirname(migrations_module_path).?;
     const writer = migrations_file.writer();

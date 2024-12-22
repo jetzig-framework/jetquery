@@ -4,8 +4,8 @@
     .minimum_zig_version = "0.14.0",
     .dependencies = .{
         .pg = .{
-            .url = "https://github.com/karlseguin/pg.zig/archive/0bfc46029c6a3e8ded7a3e0544fcbcb5baba2208.tar.gz",
-            .hash = "1220fb3f43073a6f9f201764c3ae78aa87b29edbc7b021c1174b29b020967d0b146c",
+            .url = "https://github.com/karlseguin/pg.zig/archive/a03737e8c9404d1642e9b2fdea8e719dfae5cda8.tar.gz",
+            .hash = "1220eff52824f32e7ab225cd50bf962324ca14c498c7c197a554dc55e5bb612f119f",
         },
         .jetcommon = .{
             .url = "https://github.com/jetzig-framework/jetcommon/archive/86f24cfdf2aaa0e8ada4539a6edef882708ced2b.tar.gz",
