@@ -55,7 +55,7 @@ pub fn coerce(
                     // FIXME: For now we get away with this because postgres does not have a u8
                     // type but we may need a better way to identify strings if another database
                     // adapter does support u8.
-                    .Slice => if (@TypeOf(value) == []const u8)
+                    .slice => if (@TypeOf(value) == []const u8)
                         coerceInt(Adapter, T, value)
                     else
                         .{ .value = value },
@@ -68,7 +68,7 @@ pub fn coerce(
             },
             .float => switch (@typeInfo(info.child)) {
                 .float => switch (info.size) {
-                    .Slice => .{ .value = value },
+                    .slice => .{ .value = value },
                     else => .{ .value = value },
                 },
                 else => if (comptime canCoerceDelegate(info.child))
@@ -78,7 +78,7 @@ pub fn coerce(
             },
             .bool => switch (@typeInfo(info.child)) {
                 .bool => switch (info.size) {
-                    .Slice => .{ .value = value },
+                    .slice => .{ .value = value },
                     else => .{ .value = value },
                 },
                 .int, .comptime_int => .{ .value = value.* == 1 },
@@ -157,7 +157,7 @@ pub fn CoercedValue(Adapter: type, Target: type, Source: type) type {
 fn CoercedValueType(Adapter: type, Target: type, Source: type) type {
     return switch (@typeInfo(Source)) {
         .null => @TypeOf(null),
-        .pointer => |info| if (info.child == Target and info.size == .Slice)
+        .pointer => |info| if (info.child == Target and info.size == .slice)
             []const Target
         else
             Target,

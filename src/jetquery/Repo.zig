@@ -128,9 +128,8 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
             inline for (std.meta.fields(AdapterOptions)) |field| {
                 if (@hasField(@TypeOf(config), field.name)) {
                     @field(options, field.name) = @field(config, field.name);
-                } else if (field.default_value) |default| {
-                    const option: *field.type = @ptrCast(@alignCast(@constCast(default)));
-                    @field(options, field.name) = option.*;
+                } else if (field.defaultValue()) |default| {
+                    @field(options, field.name) = default;
                 } else {
                     var buf: [field.name.len]u8 = undefined;
                     @compileError(std.fmt.comptimePrint(
@@ -517,7 +516,7 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
         pub fn free(self: *AdaptedRepo, value: anytype) void {
             switch (@typeInfo(@TypeOf(value))) {
                 .pointer => |info| switch (info.size) {
-                    .Slice => {
+                    .slice => {
                         for (value) |item| self.free(item);
                         self.allocator.free(value);
                     },

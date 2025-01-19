@@ -151,7 +151,7 @@ pub const Node = union(enum) {
             ));
 
             return switch (@typeInfo(self.type)) {
-                .pointer => |info| if (info.size == .Slice and info.child == T)
+                .pointer => |info| if (info.size == .slice and info.child == T)
                     true
                 else
                     false,
@@ -945,7 +945,7 @@ fn isSqlStringWithArgsArray(T: type) bool {
         .pointer => |info| switch (@typeInfo(info.child)) {
             .array => |array_info| info.is_volatile == false and
                 array_info.child == u8 and
-                (info.size == .Slice or info.size == .One),
+                (info.size == .slice or info.size == .one),
             .int => |int_info| info.is_volatile == false and
                 int_info.signedness == .unsigned and
                 int_info.bits == 8,
@@ -1083,9 +1083,9 @@ fn isComptimeString(field: std.builtin.Type.StructField) bool {
 
     return switch (@typeInfo(field.type)) {
         .pointer => |info| blk: {
-            if (!info.is_volatile and !info.is_allowzero and info.size == .Slice) break :blk true;
+            if (!info.is_volatile and !info.is_allowzero and info.size == .slice) break :blk true;
             const child = @typeInfo(info.child);
-            if (!info.is_volatile and !info.is_allowzero and info.size == .One and child == .array and child.array.child == u8) break :blk true;
+            if (!info.is_volatile and !info.is_allowzero and info.size == .one and child == .array and child.array.child == u8) break :blk true;
             break :blk false;
         },
         else => false,

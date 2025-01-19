@@ -47,7 +47,7 @@ pub fn FieldValues(Table: type, relations: []const type, comptime fields: []cons
         new_fields[index] = .{
             .name = std.fmt.comptimePrint("{}", .{index}),
             .type = field.info.type,
-            .default_value = null,
+            .default_value_ptr = null,
             .is_comptime = false,
             .alignment = @alignOf(field.info.type),
         };
@@ -96,7 +96,7 @@ pub fn structField(comptime name: []const u8, T: type) std.builtin.Type.StructFi
         return .{
             .name = name ++ "",
             .type = T,
-            .default_value = null,
+            .default_value_ptr = null,
             .is_comptime = false,
             .alignment = @alignOf(T),
         };
@@ -108,7 +108,7 @@ pub fn structFieldDefault(comptime name: []const u8, default: anytype) std.built
         return .{
             .name = name ++ "",
             .type = @TypeOf(default),
-            .default_value = &default,
+            .default_value_ptr = &default,
             .is_comptime = false,
             .alignment = @alignOf(@TypeOf(default)),
         };
@@ -123,7 +123,7 @@ pub fn structFieldComptime(
         return .{
             .name = name ++ "",
             .type = @TypeOf(default),
-            .default_value = &default,
+            .default_value_ptr = &default,
             .is_comptime = true,
             .alignment = @alignOf(@TypeOf(default)),
         };
