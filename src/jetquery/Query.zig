@@ -1291,7 +1291,7 @@ fn Statement(
                 const relation_field = std.builtin.Type.StructField{
                     .name = "__jetquery_relation_names",
                     .type = [len][]const u8,
-                    .default_value = @ptrCast(&relation_names),
+                    .default_value_ptr = @ptrCast(&relation_names),
                     .is_comptime = true,
                     .alignment = @alignOf([options.relations.len][]const u8),
                 };
