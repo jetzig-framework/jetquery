@@ -3,13 +3,13 @@
     .version = "0.0.0",
     .minimum_zig_version = "0.14.0",
     .dependencies = .{
-        .pg = .{
-            .url = "https://github.com/karlseguin/pg.zig/archive/4ddae09948cb1563b394cd724b95de14cc88fc12.tar.gz",
-            .hash = "1220779868e6a2f387addec799f176342f5d9a0277139cdb51336e0c1c1b904fcffa",
-        },
         .jetcommon = .{
-            .url = "https://github.com/jetzig-framework/jetcommon/archive/86f24cfdf2aaa0e8ada4539a6edef882708ced2b.tar.gz",
-            .hash = "12200439fc28aa7fa08f0e8fea100f6724c34c9dbfaaae4feec482c80e5ac08ea4f6",
+            .url = "https://github.com/jetzig-framework/jetcommon/archive/5be57d534b3d469f5570cd4b373b8d61032b1b8b.tar.gz",
+            .hash = "122079c6ceb28fa93163c2f95e2f175bb8f93f3075fa34af63045671ab7dd824e756",
+        },
+        .pg = .{
+            .url = "https://github.com/karlseguin/pg.zig/archive/ae5ee02b6e4ac9877c4cb340f8251da1f35fc784.tar.gz",
+            .hash = "1220c255f637fecbf185e9f1bac0adc151e599c7666b15911b3227b0cc89c993acdc",
         },
     },
     .paths = .{
