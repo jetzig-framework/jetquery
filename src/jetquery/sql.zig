@@ -19,6 +19,7 @@ pub const QueryContext = enum {
     delete,
     delete_all,
     count,
+    returning,
     none,
 };
 

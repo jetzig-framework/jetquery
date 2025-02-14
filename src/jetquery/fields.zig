@@ -4,7 +4,7 @@ const jetcommon = @import("jetcommon");
 
 const Where = @import("sql/Where.zig");
 
-pub const FieldContext = enum { where, update, insert, limit, offset, order, none };
+pub const FieldContext = enum { where, update, insert, limit, offset, order, none, returning };
 
 pub const FieldInfo = struct {
     info: std.builtin.Type.StructField,
@@ -65,7 +65,7 @@ pub fn FieldValues(Table: type, relations: []const type, comptime fields: []cons
 pub fn ColumnType(Adapter: type, Table: type, comptime field_info: FieldInfo) type {
     switch (field_info.context) {
         .limit, .offset => return usize,
-        .where, .update, .insert, .order, .none => {},
+        .where, .update, .insert, .order, .none, .returning => {},
     }
 
     if (comptime @hasField(Table.Definition, field_info.name)) {
