@@ -178,13 +178,10 @@ fn renderReturning(
     comptime columns: []const jetquery.columns.Column,
 ) []const u8 {
     comptime {
-        var params_buf: [paramsBufSize(Adapter, field_infos, .insert, .column)]u8 = undefined;
-        var values_buf: [paramsBufSize(Adapter, field_infos, .insert, .value)]u8 = undefined;
+        const insert_slice = renderInsert(Adapter, Table, field_infos);
         const select_columns = renderSelectColumns(Adapter, relations, columns);
-        return std.fmt.comptimePrint("INSERT INTO {s} ({s}) VALUES ({s}) RETURNING{s}", .{
-            Adapter.identifier(Table.name),
-            renderParams(&params_buf, Adapter, field_infos, .insert, .column),
-            renderParams(&values_buf, Adapter, field_infos, .insert, .value),
+        return std.fmt.comptimePrint("{s} RETURNING{s}", .{
+            insert_slice,
             select_columns,
         });
     }
