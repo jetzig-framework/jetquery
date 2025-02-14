@@ -531,7 +531,6 @@ test "combined" {
         .where(.{ .name = "Hercules" })
         .limit(10)
         .orderBy(.{ .name = .ascending });
-    std.debug.print("\n\n\n\n\n", .{});
     try std.testing.expectEqualStrings(
         \\SELECT "cats"."name", "cats"."paws" FROM "cats" WHERE "cats"."name" = $1 ORDER BY "cats"."name" ASC LIMIT $2
     , query.sql);
