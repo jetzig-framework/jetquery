@@ -655,6 +655,7 @@ fn Statement(
             return self.extend(S, args, .insert);
         }
 
+        /// Return a subset of columns from the inserted record. An empty array will return all columns.
         pub fn returning(
             self: Self,
             comptime return_columns: anytype,

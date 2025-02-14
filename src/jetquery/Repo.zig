@@ -1144,7 +1144,7 @@ test "relations" {
     try std.testing.expectEqual(20, lila.id);
     const fluffy = try repo.Query(.Cat)
         .insert(.{ .id = lila.id, .name = "Fluffy", .paws = 4, .human_id = 1 })
-        .returning(.{.id, .paws})
+        .returning(.{})
         .execute(&repo) orelse return try std.testing.expect(false);
     defer repo.free(fluffy);
     try std.testing.expectEqual(20, fluffy.id);
