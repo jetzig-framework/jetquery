@@ -53,6 +53,13 @@ pub fn render(
             where_clauses,
             distinct,
         ),
+        .returning => renderReturning(
+            Adapter,
+            Table,
+            relations,
+            field_infos,
+            columns,
+        ),
         .none => "",
     };
 }
@@ -161,6 +168,23 @@ fn renderInsert(
             renderParams(&values_buf, Adapter, field_infos, .insert, .value),
         },
     );
+}
+
+fn renderReturning(
+    Adapter: type,
+    Table: type,
+    relations: []const type,
+    comptime field_infos: []const jetquery.fields.FieldInfo,
+    comptime columns: []const jetquery.columns.Column,
+) []const u8 {
+    comptime {
+        const insert_slice = renderInsert(Adapter, Table, field_infos);
+        const select_columns = renderSelectColumns(Adapter, relations, columns);
+        return std.fmt.comptimePrint("{s} RETURNING{s}", .{
+            insert_slice,
+            select_columns,
+        });
+    }
 }
 
 fn renderDelete(

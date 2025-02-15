@@ -95,6 +95,10 @@ pub fn Query(adapter: jetquery.adapters.Name, Schema: type, comptime model: anyt
             return InitialStatement(Adapter, Schema, Model).insert(args);
         }
 
+        pub fn returning(comptime columns: anytype) @TypeOf(InitialStatement(Adapter, Schema, Model).returning(columns)) {
+            return InitialStatement(Adapter, Schema, Model).returning(columns);
+        }
+
         /// Create a `DELETE` query. As a safety measure, a `delete()` query **must** have a
         /// `.where()` clause attached or it will not be executed. Use `deleteAll()` if you wish
         /// to delete all records.
@@ -297,7 +301,7 @@ fn defaultResultContext(query_context: sql.QueryContext) ResultContext {
     return switch (query_context) {
         .select => .many,
         .update, .update_all, .insert, .delete, .delete_all, .none => .none,
-        .count => .one,
+        .count, .returning => .one,
     };
 }
 
@@ -649,6 +653,31 @@ fn Statement(
                     timestampsFields(Adapter, Model, .insert)),
             });
             return self.extend(S, args, .insert);
+        }
+
+        /// Return a subset of columns from the inserted record. An empty array will return all columns.
+        pub fn returning(
+            self: Self,
+            comptime return_columns: anytype,
+        ) Statement(Adapter, .returning, Schema, Model, .{
+            .relations = options.relations,
+            .field_infos = options.field_infos,
+            .columns = &jetquery.columns.translate(Model, options.relations, return_columns),
+            .order_clauses = options.order_clauses,
+            .group_by = options.group_by,
+            .distinct = options.distinct,
+            .result_context = .one,
+        }) {
+            const S = Statement(Adapter, .returning, Schema, Model, .{
+                .relations = options.relations,
+                .field_infos = options.field_infos,
+                .columns = &jetquery.columns.translate(Model, options.relations, return_columns),
+                .order_clauses = options.order_clauses,
+                .group_by = options.group_by,
+                .distinct = options.distinct,
+                .result_context = .one,
+            });
+            return self.extend(S, .{}, .returning);
         }
 
         pub fn delete(self: Self) Statement(Adapter, .delete, Schema, Model, .{

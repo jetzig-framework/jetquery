@@ -333,6 +333,19 @@ test "insert" {
     try std.testing.expect(query.isValid());
 }
 
+test "insert with returning" {
+    const Schema = struct {
+        pub const Cat = Model(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});
+    };
+    const query = Query(TestAdapter, Schema, .Cat)
+        .insert(.{ .name = "Hercules", .paws = 4 })
+        .returning(.{.name});
+    try std.testing.expectEqualStrings(
+        \\INSERT INTO "cats" ("name", "paws") VALUES ($1, $2) RETURNING "cats"."name"
+    , query.sql);
+    try std.testing.expect(query.isValid());
+}
+
 test "update" {
     const Schema = struct {
         pub const Cat = Model(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});
@@ -518,7 +531,6 @@ test "combined" {
         .where(.{ .name = "Hercules" })
         .limit(10)
         .orderBy(.{ .name = .ascending });
-
     try std.testing.expectEqualStrings(
         \\SELECT "cats"."name", "cats"."paws" FROM "cats" WHERE "cats"."name" = $1 ORDER BY "cats"."name" ASC LIMIT $2
     , query.sql);
