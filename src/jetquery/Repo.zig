@@ -1137,7 +1137,7 @@ test "relations" {
     }
 
     const lila = try repo.Query(.Human)
-        .insert(.{ .id = 20, .name = "Lila"})
+        .insert(.{ .id = 20, .name = "Lila" })
         .returning(.{.id})
         .execute(&repo) orelse return try std.testing.expect(false);
     defer repo.free(lila);
@@ -1417,6 +1417,15 @@ test "transactions" {
         .execute(&repo);
     defer repo.free(no_cat);
     try std.testing.expect(no_cat == null);
+
+    const query = jetquery.Query(.postgresql, Schema, .Cat).insert(.{
+        .name = "Waiting",
+        .paws = 3,
+    }).returning(.{.name});
+    try repo.begin();
+    const waited = try repo.execute(query) orelse return std.testing.expect(false);
+    try repo.rollback();
+    try std.testing.expect(std.mem.eql(u8, waited.name, "Waiting"));
 
     try repo.begin();
     try repo.insert(.Cat, .{ .name = "Hercules", .paws = 4 });

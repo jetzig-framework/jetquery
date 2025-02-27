@@ -91,7 +91,6 @@ pub fn Result(AdaptedRepo: type) type {
 
             var array = std.ArrayList(@TypeOf(query).ResultType).init(self.allocator);
             while (try self.next(query)) |row| try array.append(row);
-            try self.drain();
             return try array.toOwnedSlice();
         }
 
