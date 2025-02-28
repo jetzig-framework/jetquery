@@ -454,6 +454,18 @@ test "find (with coerced id)" {
     try std.testing.expect(query.isValid());
 }
 
+test "find (and select without id)" {
+    const Schema = struct {
+        pub const Cat = Model(@This(), "cats", struct { id: i32, name: []const u8, paws: i32 }, .{});
+    };
+    const query = Query(TestAdapter, Schema, .Cat).find("1000").select(.{.name});
+
+    try std.testing.expectEqualStrings(
+        \\SELECT "cats"."name" FROM "cats" WHERE "cats"."id" = $1 ORDER BY "cats"."id" ASC LIMIT $2
+    , query.sql);
+    try std.testing.expect(query.isValid());
+}
+
 test "findBy" {
     const Schema = struct {
         pub const Cat = Model(@This(), "cats", struct { id: i32, name: []const u8, paws: i32 }, .{});
