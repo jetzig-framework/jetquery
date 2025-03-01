@@ -1,11 +1,12 @@
 .{
-    .name = "jetquery",
+    .name = .jetquery,
     .version = "0.0.0",
+    .fingerprint = 0x8fab0d79cef7d74c,
     .minimum_zig_version = "0.14.0",
     .dependencies = .{
         .jetcommon = .{
-            .url = "https://github.com/jetzig-framework/jetcommon/archive/5be57d534b3d469f5570cd4b373b8d61032b1b8b.tar.gz",
-            .hash = "122079c6ceb28fa93163c2f95e2f175bb8f93f3075fa34af63045671ab7dd824e756",
+            .url = "https://github.com/jetzig-framework/jetcommon/archive/fb4edc13759d87bfcd9b1f5fcefdf93f8c9c62dd.tar.gz",
+            .hash = "jetcommon-0.1.0-jPY_DS1HAAAP8xp5HSWB_ZY7m9JEYUmm8adQFrse0lwB",
         },
         .pg = .{
             .url = "https://github.com/karlseguin/pg.zig/archive/ae5ee02b6e4ac9877c4cb340f8251da1f35fc784.tar.gz",
