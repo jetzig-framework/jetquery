@@ -1418,12 +1418,12 @@ test "transactions" {
     defer repo.free(no_cat);
     try std.testing.expect(no_cat == null);
 
-    const query = jetquery.Query(.postgresql, Schema, .Cat).insert(.{
-        .name = "Waiting",
-        .paws = 3,
-    }).returning(.{.name});
     try repo.begin();
-    const waited = try repo.execute(query) orelse return std.testing.expect(false);
+    const waited = try repo.Query(.Cat)
+        .insert(.{ .name = "Waiting", .paws = 3 })
+        .returning(.{.name})
+        .execute(&repo) orelse return try std.testing.expect(false);
+    defer repo.free(waited);
     try repo.rollback();
     try std.testing.expect(std.mem.eql(u8, waited.name, "Waiting"));
 
