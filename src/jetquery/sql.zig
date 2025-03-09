@@ -62,21 +62,31 @@ fn FunctionType(comptime context: FunctionContext, comptime column_tag: anytype)
         ));
     }
 
+    const column_name = @tagName(column_tag);
+    const default_alias = @tagName(context) ++ "__" ++ @tagName(column_tag);
+
     return struct {
         comptime __jetquery_function: Function = .{
             .context = context,
             .column_name = @tagName(column_tag),
-            .alias = @tagName(context) ++ "__" ++ @tagName(column_tag),
+            .alias = default_alias,
         },
 
         pub fn as(comptime alias: []const u8) type {
             return struct {
                 comptime __jetquery_function: Function = .{
                     .context = context,
-                    .column_name = @tagName(column_tag),
+                    .column_name = column_name,
                     .alias = alias,
                 },
             };
+        }
+
+        pub fn toColumn(Model: type) jetquery.columns.Column {
+            var base_column = jetquery.columns.primaryColumn(Model, column_name);
+            base_column.function = context;
+            base_column.alias = default_alias;
+            return base_column;
         }
     };
 }
@@ -125,20 +135,32 @@ pub fn translateOrderBy(
 ) [orderBySize(@TypeOf(args))]jetquery.sql.OrderClause {
     comptime {
         switch (@typeInfo(@TypeOf(args))) {
+            // Single-argument short-hand column name:
+            // orderBy(.foo)
             .enum_literal => return .{.{
                 .column = Table.column(@tagName(args)),
                 .direction = .ascending,
             }},
+            // Single-argument short-hand with column object:
+            // orderBy(jetquery.sql.max(.foo))
+            .type => return .{.{
+                .column = args.toColumn(Table),
+                .direction = .ascending,
+            }},
+            // A tuple or struct - iterate further below
             .@"struct" => {},
             else => |tag| @compileError(
                 std.fmt.comptimePrint(
-                    "Unsupported `orderBy` argument: `{s}`. Expected [enum_literal, struct]",
+                    "Unsupported `orderBy` argument: `{s}`. Expected [enum_literal, struct, Column]",
                     .{@tagName(tag)},
                 ),
             ),
         }
         var clauses: [orderBySize(@TypeOf(args))]jetquery.sql.OrderClause = undefined;
-        const is_tuple = @typeInfo(@TypeOf(args)).@"struct".is_tuple;
+        const is_tuple = switch (@typeInfo(@TypeOf(args))) {
+            .@"struct" => |info| info.is_tuple,
+            else => false,
+        };
         const fields = std.meta.fields(@TypeOf(args));
 
         var index: usize = 0;
@@ -146,8 +168,17 @@ pub fn translateOrderBy(
             if (is_tuple) {
                 // Short-hand (default ascending):
                 // orderBy(.{ .foo, .bar, .baz })
+                const err = "Expected [enum_literal, Column], found: " ++ @typeName(@TypeOf(arg));
+                const col = switch (@typeInfo(@TypeOf(arg))) {
+                    .enum_literal => Table.column(@tagName(arg)),
+                    .type => if (@hasDecl(arg, "toColumn"))
+                        arg.toColumn(Table)
+                    else
+                        @compileError(err),
+                    else => @compileError(err),
+                };
                 clauses[index] = .{
-                    .column = Table.column(@tagName(arg)),
+                    .column = col,
                     .direction = .ascending,
                 };
                 index += 1;
@@ -162,6 +193,24 @@ pub fn translateOrderBy(
                         jetquery.sql.OrderDirection,
                         @tagName(@field(args, field.name)),
                     ),
+                };
+                index += 1;
+                continue;
+            } else if (arg.type == type and @hasDecl(@field(args, field.name), "toColumn")) {
+                // Explicit form with arbitrary name + Column:
+                // orderBy(.{ .any_name_here = jetquery.sql.max(.foo) })
+                clauses[index] = .{
+                    .column = @field(args, field.name).toColumn(Table),
+                    .direction = .ascending,
+                };
+                index += 1;
+                continue;
+            } else if (isOrderByCouplet(@TypeOf(@field(args, field.name)))) {
+                // Explicit form with arbitrary name + Column in couplet form:
+                // orderBy(.{ .any_name_here = .{ jetquery.sql.max(.foo), .desc } })
+                clauses[index] = .{
+                    .column = @field(args, field.name).@"0".toColumn(Table),
+                    .direction = @field(args, field.name).@"1",
                 };
                 index += 1;
                 continue;
@@ -196,17 +245,36 @@ pub fn translateOrderBy(
     }
 }
 
+fn isOrderByCouplet(T: type) bool {
+    // A tuple of .{ Column, OrderDirection }
+    // e.g.:
+    // .{ sql.max(.foo), .desc }
+    const arg: T = undefined;
+    return switch (@typeInfo(T)) {
+        .@"struct" => |info| info.is_tuple and
+            info.fields.len == 2 and
+            info.fields[0].type == type and
+            info.fields[0].is_comptime and
+            @hasDecl(arg.@"0", "toColumn") and
+            @typeInfo(info.fields[1].type) == .enum_literal,
+        else => false,
+    };
+}
+
 fn orderBySize(T: type) usize {
     const error_message = "Unsupported argument type for `orderBy`: `{s}`. Expected [enum_literal, struct]";
 
     return switch (@typeInfo(T)) {
-        .enum_literal => 1,
+        .enum_literal, .type => 1,
         .@"struct" => blk: {
             var size: usize = 0;
             for (std.meta.fields(T)) |field| {
                 size += switch (@typeInfo(field.type)) {
-                    .enum_literal => 1,
-                    .@"struct" => orderBySize(field.type),
+                    .enum_literal, .type => 1,
+                    .@"struct" => if (isOrderByCouplet(field.type))
+                        1
+                    else
+                        orderBySize(field.type),
                     else => |tag| @compileError(
                         std.fmt.comptimePrint(error_message, .{@tagName(tag)}),
                     ),

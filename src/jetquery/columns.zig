@@ -136,7 +136,7 @@ fn sizeOf(
     }
 }
 
-fn primaryColumn(
+pub fn primaryColumn(
     Table: type,
     comptime name: []const u8,
 ) Column {

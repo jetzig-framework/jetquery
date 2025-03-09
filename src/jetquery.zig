@@ -216,6 +216,34 @@ test "order by (short-hand)" {
     try std.testing.expect(query.isValid());
 }
 
+test "order by (synthetic column short-hand)" {
+    const Schema = struct {
+        pub const Cat = Model(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});
+    };
+    const query = Query(TestAdapter, Schema, .Cat)
+        .select(.{ .name, .paws, sql.max(.paws) })
+        .orderBy(sql.max(.paws));
+
+    try std.testing.expectEqualStrings(
+        \\SELECT "cats"."name", "cats"."paws", MAX("cats"."paws") FROM "cats" WHERE (1 = 1) ORDER BY MAX("cats"."paws") ASC
+    , query.sql);
+    try std.testing.expect(query.isValid());
+}
+
+test "order by (mixed regular and synthetic columns)" {
+    const Schema = struct {
+        pub const Cat = Model(@This(), "cats", struct { name: []const u8, paws: i32 }, .{});
+    };
+    const query = Query(TestAdapter, Schema, .Cat)
+        .select(.{ .name, .paws, sql.max(.paws) })
+        .orderBy(.{ .name, sql.max(.paws) });
+
+    try std.testing.expectEqualStrings(
+        \\SELECT "cats"."name", "cats"."paws", MAX("cats"."paws") FROM "cats" WHERE (1 = 1) ORDER BY "cats"."name" ASC, MAX("cats"."paws") ASC
+    , query.sql);
+    try std.testing.expect(query.isValid());
+}
+
 test "order by with relations (short-hand)" {
     const Schema = struct {
         pub const Human = Model(
@@ -274,7 +302,7 @@ test "order by with relations (explicit form)" {
     try std.testing.expect(query.isValid());
 }
 
-test "order by with relations and base table, short + explicit forms" {
+test "order by with relations and base table, short + explicit forms and synthetic columns" {
     const Schema = struct {
         pub const Human = Model(
             @This(),
@@ -291,14 +319,14 @@ test "order by with relations and base table, short + explicit forms" {
         pub const Cat = Model(
             @This(),
             "cats",
-            struct { id: i32, name: []const u8, paws: i32 },
+            struct { id: i32, name: []const u8, paws: i32, age: i32 },
             .{},
         );
 
         pub const Family = Model(
             @This(),
             "families",
-            struct { id: i32, name: []const u8 },
+            struct { id: i32, name: []const u8, wealth: i32 },
             .{},
         );
     };
@@ -308,12 +336,16 @@ test "order by with relations and base table, short + explicit forms" {
         .join(.inner, .family)
         .orderBy(.{
         .id = .descending,
-        .cat = .{ .name = .descending },
-        .family = .{ .id, .name },
+        .cat = .{
+            .name = .descending,
+            .max_paws = sql.max(.paws),
+            .min_age = .{ sql.min(.age), .desc },
+        },
+        .family = .{ .id, .name, sql.max(.wealth) },
     });
 
     try std.testing.expectEqualStrings(
-        \\SELECT "humans"."id", "humans"."cat_id", "humans"."family_id", "humans"."name" FROM "humans" INNER JOIN "cats" ON "humans"."cat_id" = "cats"."id" INNER JOIN "families" ON "humans"."family_id" = "families"."id" WHERE (1 = 1) ORDER BY "humans"."id" DESC, "cats"."name" DESC, "families"."id" ASC, "families"."name" ASC
+        \\SELECT "humans"."id", "humans"."cat_id", "humans"."family_id", "humans"."name" FROM "humans" INNER JOIN "cats" ON "humans"."cat_id" = "cats"."id" INNER JOIN "families" ON "humans"."family_id" = "families"."id" WHERE (1 = 1) ORDER BY "humans"."id" DESC, "cats"."name" DESC, MAX("cats"."paws") ASC, MIN("cats"."age") DESC, "families"."id" ASC, "families"."name" ASC, MAX("families"."wealth") ASC
     ,
         query.sql,
     );
@@ -867,8 +899,8 @@ test "hasMany" {
     try std.testing.expectEqualStrings(
         \\SELECT "humans"."id", "humans"."cat_id", "humans"."name" FROM "humans" WHERE "humans"."cat_id" = $1 ORDER BY "humans"."id" ASC
     ,
-    // Only the base query is generated at this point, the repo appends the where clause
-    // after fetching results of the first query. This is tested more thoroughly in `Repo.zig`
+        // Only the base query is generated at this point, the repo appends the where clause
+        // after fetching results of the first query. This is tested more thoroughly in `Repo.zig`
         query.auxiliary_queries[0].query.where(.{ .cat_id = 1 }).sql,
     );
     try std.testing.expect(query.isValid());
