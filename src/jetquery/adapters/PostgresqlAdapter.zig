@@ -626,11 +626,18 @@ pub fn uniqueColumnSql() []const u8 {
     return " UNIQUE";
 }
 
-pub fn referenceSql(comptime reference: jetquery.schema.Column.Reference) []const u8 {
-    return std.fmt.comptimePrint(
+pub fn referenceSql(
+    comptime reference: jetquery.schema.Column.Reference,
+    comptime reference_options: ?jetquery.schema.Column.ReferenceOptions,
+) []const u8 {
+    const reference_str = std.fmt.comptimePrint(
         " REFERENCES {s}({s})",
         .{ comptime identifier(reference[0]), comptime identifier(reference[1]) },
     );
+    if (reference_options) |reference_opts| {
+        return std.fmt.comptimePrint("{s} {s}", .{ reference_str, comptime deleteOption(reference_opts.on_delete) });
+    }
+    return reference_str;
 }
 
 pub fn reflect(
@@ -829,4 +836,15 @@ fn BindCoerce(T: type) type {
         jetquery.DateTime => DateTimePrimitive,
         else => T,
     };
+}
+
+fn deleteOption(comptime delete_option: ?jetquery.schema.Column.OnDeleteOption) []const u8 {
+    if (delete_option) |option| {
+        switch (option) {
+            .DELETE => return "ON DELETE CASCADE",
+            .NULL => return "ON DELETE SET NULL",
+        }
+    } else {
+        return "";
+    }
 }

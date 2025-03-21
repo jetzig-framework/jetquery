@@ -21,13 +21,25 @@ pub const Type = enum {
     bigint,
     double_precision,
 };
+
+pub const OnDeleteOption = enum {
+    CASCADE,
+    NULL,
+};
+
 pub const Reference = [2][]const u8;
+
+pub const ReferenceOptions = struct {
+    on_delete: ?OnDeleteOption = null,
+};
+
 pub const Options = struct {
     optional: bool = false,
     index: bool = false,
     index_name: ?[]const u8 = null,
     unique: bool = false,
     reference: ?Reference = null,
+    reference_options: ?ReferenceOptions = null,
     length: ?u16 = null,
     primary_key: bool = false,
 };
