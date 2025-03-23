@@ -1610,3 +1610,53 @@ test "optionals" {
         \\SELECT "things"."a", "things"."b", "things"."c", "things"."d", "things"."e", "things"."f", "things"."g" FROM "things" WHERE ("things"."a" IS NOT DISTINCT FROM $1 AND "things"."b" IS NOT DISTINCT FROM $2 AND "things"."c" IS NOT DISTINCT FROM $3 AND "things"."d" IS NOT DISTINCT FROM $4 AND "things"."e" IS NOT DISTINCT FROM $5 AND "things"."f" IS NOT DISTINCT FROM $6 AND "things"."g" IS NOT DISTINCT FROM $7)
     , query3.sql);
 }
+
+test "handle multiple relations back to same table - https://github.com/jetzig-framework/jetquery/issues/15" {
+    const Schema = struct {
+        pub const Address = Model(
+            @This(),
+            "addresses",
+            struct {
+                id: i32,
+                address: []const u8,
+            },
+            .{
+                .relations = .{
+                    .messages_from_address = hasMany(.Message, .{
+                        .foreign_key = "from_address_id",
+                    }),
+                    .messages_to_address = hasMany(.Message, .{
+                        .foreign_key = "to_address_id",
+                    }),
+                },
+            },
+        );
+
+        pub const Message = Model(
+            @This(),
+            "messages",
+            struct {
+                id: i32,
+                from_address_id: i32,
+                to_address_id: i32,
+                content: []const u8,
+            },
+            .{
+                .relations = .{
+                    .to_address = belongsTo(.Address, .{
+                        .foreign_key = "from_address_id",
+                    }),
+                    .from_address = belongsTo(.Address, .{
+                        .foreign_key = "to_address_id",
+                    }),
+                },
+            },
+        );
+    };
+    const query = Query(TestAdapter, Schema, .Message).include(.to_address, .{}).include(.from_address, .{});
+    // This should create a query where the relations are used as table aliases
+    try std.testing.expectEqualStrings(
+        \\SELECT "messages"."id", "messages"."from_address_id", "messages"."to_address_id", "messages"."content", "to_address"."id", "to_address"."address", "from_address"."id", "from_address"."address" FROM "messages" INNER JOIN "addresses" ON "messages"."from_address_id" = "addresses"."id" AS "to_address" INNER JOIN "addresses" ON "messages"."to_address_id" = "addresses"."id" AS "from_address" WHERE (1 = 1) ORDER BY "messages"."id" ASC
+    , query.sql);
+    try std.testing.expect(query.isValid());
+}
