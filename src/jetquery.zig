@@ -1656,7 +1656,7 @@ test "handle multiple relations back to same table - https://github.com/jetzig-f
     const query = Query(TestAdapter, Schema, .Message).include(.to_address, .{}).include(.from_address, .{});
     // This should create a query where the relations are used as table aliases
     try std.testing.expectEqualStrings(
-        \\SELECT "messages"."id", "messages"."from_address_id", "messages"."to_address_id", "messages"."content", "to_address"."id", "to_address"."address", "from_address"."id", "from_address"."address" FROM "messages" INNER JOIN "addresses" AS "from_address" ON "messages"."from_address_id" = "from_address"."id" INNER JOIN "addresses" AS "to_address" ON "messages"."to_address_id" = "to_address"."id" WHERE (1 = 1) ORDER BY "messages"."id" ASC
+        \\SELECT "messages"."id", "messages"."from_address_id", "messages"."to_address_id", "messages"."content", "to_address"."id", "to_address"."address", "from_address"."id", "from_address"."address" FROM "messages" INNER JOIN "addresses" AS "to_address" ON "messages"."to_address_id" = "to_address"."id" INNER JOIN "addresses" AS "from_address" ON "messages"."from_address_id" = "from_address"."id" WHERE (1 = 1) ORDER BY "messages"."id" ASC
     , query.sql);
     try std.testing.expect(query.isValid());
 }
