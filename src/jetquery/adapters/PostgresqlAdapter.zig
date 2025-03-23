@@ -485,13 +485,14 @@ pub fn innerJoinSql(
     const primary_key = options.primary_key orelse "id";
 
     return std.fmt.comptimePrint(
-        \\ INNER JOIN "{s}" ON "{s}"."{s}" = "{s}"."{s}"
+        \\ INNER JOIN "{s}" AS "{s}" ON "{s}"."{s}" = "{s}"."{s}"
     ,
         .{
             JoinTable.name,
+            relation_name,
             Table.name,
             foreign_key,
-            JoinTable.name,
+            relation_name,
             primary_key,
         },
     );
