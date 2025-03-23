@@ -33,10 +33,12 @@ pub fn build(b: *std.Build) !void {
 
     const migrations_path = b.option([]const u8, "jetquery_migrations_path", "Migrations path") orelse
         "migrations";
+    const test_filters = b.option([]const []const u8, "test-filter", "Skip tests that do not match any filter") orelse &[0][]const u8{};
     const lib_unit_tests = b.addTest(.{
         .root_source_file = b.path("src/jetquery.zig"),
         .target = target,
         .optimize = optimize,
+        .filters = test_filters,
     });
     lib_unit_tests.root_module.addImport("pg", pg_dep.module("pg"));
     lib_unit_tests.root_module.addImport("jetcommon", jetcommon_module);
@@ -58,6 +60,7 @@ pub fn build(b: *std.Build) !void {
         .root_source_file = b.path("src/jetquery/Migrate.zig"),
         .target = target,
         .optimize = optimize,
+        .filters = test_filters,
     });
     const run_migration_unit_tests = b.addRunArtifact(migration_unit_tests);
     test_step.dependOn(&run_migration_unit_tests.step);
@@ -99,6 +102,7 @@ pub fn build(b: *std.Build) !void {
         .root_source_file = b.path("src/jetquery/reflection/Reflect.zig"),
         .target = target,
         .optimize = optimize,
+        .filters = test_filters,
     });
     const run_reflect_unit_tests = b.addRunArtifact(reflect_unit_tests);
     reflect_unit_tests.root_module.addImport("jetquery", jetquery_module);
