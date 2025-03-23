@@ -473,9 +473,10 @@ fn renderSelectColumns(
             if (Relation.relation_type != .belongs_to) continue;
 
             for (Relation.select_columns, start..) |column, index| {
-                columns_buf_len += renderSelectColumn(
+                columns_buf_len += renderSelectColumnFromRelation(
                     Adapter,
                     column,
+                    Relation.relation_name,
                     index,
                     total_columns,
                 ).len;
@@ -503,9 +504,10 @@ fn renderSelectColumns(
             if (Relation.relation_type != .belongs_to) continue;
 
             for (Relation.select_columns, start..) |column, index| {
-                const column_tag = renderSelectColumn(
+                const column_tag = renderSelectColumnFromRelation(
                     Adapter,
                     column,
+                    Relation.relation_name,
                     index,
                     total_columns,
                 );
@@ -528,6 +530,21 @@ fn renderSelectColumn(
         return std.fmt.comptimePrint(
             " {s}{s}",
             .{ Adapter.columnSql(column), if (index + 1 < total) "," else "" },
+        );
+    }
+}
+
+fn renderSelectColumnFromRelation(
+    Adapter: type,
+    comptime column: jetquery.columns.Column,
+    comptime relation_name: []const u8,
+    comptime index: usize,
+    comptime total: usize,
+) []const u8 {
+    comptime {
+        return std.fmt.comptimePrint(
+            " {s}.{s}{s}",
+            .{ Adapter.identifier(relation_name), Adapter.identifier(column.name), if (index + 1 < total) "," else "" },
         );
     }
 }
