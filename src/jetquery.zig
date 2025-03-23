@@ -1644,10 +1644,10 @@ test "handle multiple relations back to same table - https://github.com/jetzig-f
             .{
                 .relations = .{
                     .to_address = belongsTo(.Address, .{
-                        .foreign_key = "from_address_id",
+                        .foreign_key = "to_address_id",
                     }),
                     .from_address = belongsTo(.Address, .{
-                        .foreign_key = "to_address_id",
+                        .foreign_key = "from_address_id",
                     }),
                 },
             },
