@@ -266,7 +266,7 @@ test "order by with relations (short-hand)" {
         .orderBy(.{ .cat = .name });
 
     try std.testing.expectEqualStrings(
-        \\SELECT "humans"."id", "humans"."cat_id", "humans"."name" FROM "humans" INNER JOIN "cats" ON "humans"."cat_id" = "cats"."id" WHERE (1 = 1) ORDER BY "cats"."name" ASC
+        \\SELECT "humans"."id", "humans"."cat_id", "humans"."name" FROM "humans" INNER JOIN "cats" AS "cat" ON "humans"."cat_id" = "cat"."id" WHERE (1 = 1) ORDER BY "cat"."name" ASC
     ,
         query.sql,
     );
@@ -295,7 +295,7 @@ test "order by with relations (explicit form)" {
         .orderBy(.{ .cat = .{ .name = .descending } });
 
     try std.testing.expectEqualStrings(
-        \\SELECT "humans"."id", "humans"."cat_id", "humans"."name" FROM "humans" INNER JOIN "cats" ON "humans"."cat_id" = "cats"."id" WHERE (1 = 1) ORDER BY "cats"."name" DESC
+        \\SELECT "humans"."id", "humans"."cat_id", "humans"."name" FROM "humans" INNER JOIN "cats" AS "cat" ON "humans"."cat_id" = "cat"."id" WHERE (1 = 1) ORDER BY "cat"."name" DESC
     ,
         query.sql,
     );
@@ -345,7 +345,7 @@ test "order by with relations and base table, short + explicit forms and synthet
     });
 
     try std.testing.expectEqualStrings(
-        \\SELECT "humans"."id", "humans"."cat_id", "humans"."family_id", "humans"."name" FROM "humans" INNER JOIN "cats" ON "humans"."cat_id" = "cats"."id" INNER JOIN "families" ON "humans"."family_id" = "families"."id" WHERE (1 = 1) ORDER BY "humans"."id" DESC, "cats"."name" DESC, MAX("cats"."paws") ASC, MIN("cats"."age") DESC, "families"."id" ASC, "families"."name" ASC, MAX("families"."wealth") ASC
+        \\SELECT "humans"."id", "humans"."cat_id", "humans"."family_id", "humans"."name" FROM "humans" INNER JOIN "cats" AS "cat" ON "humans"."cat_id" = "cat"."id" INNER JOIN "families" AS "family" ON "humans"."family_id" = "family"."id" WHERE (1 = 1) ORDER BY "humans"."id" DESC, "cat"."name" DESC, MAX("cat"."paws") ASC, MIN("cat"."age") DESC, "family"."id" ASC, "family"."name" ASC, MAX("family"."wealth") ASC
     ,
         query.sql,
     );
@@ -561,7 +561,7 @@ test "nested distinct().count()" {
     const query = Query(TestAdapter, Schema, .Human).include(.cat, .{}).where(.{ .name = "Bob" }).distinct(.{ .name, .{ .cat = .{.name} } }).count();
 
     try std.testing.expectEqualStrings(
-        \\SELECT COUNT(DISTINCT("humans"."name", "cats"."name")) FROM "humans" INNER JOIN "cats" ON "humans"."cat_id" = "cats"."id" WHERE "humans"."name" = $1
+        \\SELECT COUNT(DISTINCT("humans"."name", "cat"."name")) FROM "humans" INNER JOIN "cats" AS "cat" ON "humans"."cat_id" = "cat"."id" WHERE "humans"."name" = $1
     , query.sql);
     try std.testing.expect(query.isValid());
 }
@@ -780,7 +780,7 @@ test "belongsTo" {
         .findBy(.{ .name = "Bob" });
 
     try std.testing.expectEqualStrings(
-        \\SELECT "humans"."id", "humans"."cat_id", "humans"."name", "cats"."id", "cats"."name", "cats"."paws", "cats"."created_at", "cats"."updated_at" FROM "humans" INNER JOIN "cats" ON "humans"."cat_id" = "cats"."id" WHERE "humans"."name" = $1 ORDER BY "humans"."id" ASC LIMIT $2
+        \\SELECT "humans"."id", "humans"."cat_id", "humans"."name", "cat"."id", "cat"."name", "cat"."paws", "cat"."created_at", "cat"."updated_at" FROM "humans" INNER JOIN "cats" AS "cat" ON "humans"."cat_id" = "cat"."id" WHERE "humans"."name" = $1 ORDER BY "humans"."id" ASC LIMIT $2
     ,
         query.sql,
     );
@@ -821,7 +821,7 @@ test "belongsTo (multiple)" {
         .findBy(.{ .name = "Bob" });
 
     try std.testing.expectEqualStrings(
-        \\SELECT "humans"."id", "humans"."family_id", "humans"."cat_id", "humans"."name", "cats"."id", "cats"."name", "cats"."paws", "cats"."created_at", "cats"."updated_at", "families"."id", "families"."name" FROM "humans" INNER JOIN "cats" ON "humans"."cat_id" = "cats"."id" INNER JOIN "families" ON "humans"."family_id" = "families"."id" WHERE "humans"."name" = $1 ORDER BY "humans"."id" ASC LIMIT $2
+        \\SELECT "humans"."id", "humans"."family_id", "humans"."cat_id", "humans"."name", "cat"."id", "cat"."name", "cat"."paws", "cat"."created_at", "cat"."updated_at", "family"."id", "family"."name" FROM "humans" INNER JOIN "cats" AS "cat" ON "humans"."cat_id" = "cat"."id" INNER JOIN "families" AS "family" ON "humans"."family_id" = "family"."id" WHERE "humans"."name" = $1 ORDER BY "humans"."id" ASC LIMIT $2
     ,
         query.sql,
     );
@@ -863,7 +863,7 @@ test "belongsTo (with specified columns)" {
         .findBy(.{ .name = "Bob" });
 
     try std.testing.expectEqualStrings(
-        \\SELECT "humans"."name", "cats"."name", "cats"."paws", "families"."name" FROM "humans" INNER JOIN "cats" ON "humans"."cat_id" = "cats"."id" INNER JOIN "families" ON "humans"."family_id" = "families"."id" WHERE "humans"."name" = $1 ORDER BY "humans"."id" ASC LIMIT $2
+        \\SELECT "humans"."name", "cat"."name", "cat"."paws", "family"."name" FROM "humans" INNER JOIN "cats" AS "cat" ON "humans"."cat_id" = "cat"."id" INNER JOIN "families" AS "family" ON "humans"."family_id" = "family"."id" WHERE "humans"."name" = $1 ORDER BY "humans"."id" ASC LIMIT $2
     ,
         query.sql,
     );
@@ -944,7 +944,7 @@ test "nested where" {
     });
 
     try std.testing.expectEqualStrings(
-        \\SELECT "humans"."id", "humans"."family_id", "humans"."cat_id", "humans"."name", "cats"."id", "cats"."name", "cats"."paws", "cats"."created_at", "cats"."updated_at", "families"."id", "families"."name" FROM "humans" INNER JOIN "cats" ON "humans"."cat_id" = "cats"."id" INNER JOIN "families" ON "humans"."family_id" = "families"."id" WHERE ("humans"."name" = $1 AND "cats"."name" = $2 AND "families"."name" = $3) ORDER BY "humans"."id" ASC
+        \\SELECT "humans"."id", "humans"."family_id", "humans"."cat_id", "humans"."name", "cat"."id", "cat"."name", "cat"."paws", "cat"."created_at", "cat"."updated_at", "family"."id", "family"."name" FROM "humans" INNER JOIN "cats" AS "cat" ON "humans"."cat_id" = "cat"."id" INNER JOIN "families" AS "family" ON "humans"."family_id" = "family"."id" WHERE ("humans"."name" = $1 AND "cat"."name" = $2 AND "family"."name" = $3) ORDER BY "humans"."id" ASC
     ,
         query.sql,
     );
@@ -993,7 +993,7 @@ test "operator logic" {
     });
 
     try std.testing.expectEqualStrings(
-        \\SELECT "humans"."id", "humans"."family_id", "humans"."cat_id", "humans"."name", "cats"."id", "cats"."name", "cats"."paws", "cats"."created_at", "cats"."updated_at", "families"."id", "families"."name" FROM "humans" INNER JOIN "cats" ON "humans"."cat_id" = "cats"."id" INNER JOIN "families" ON "humans"."family_id" = "families"."id" WHERE ("humans"."name" = $1 OR "humans"."name" = $2 OR "cats"."name" = $3 AND NOT "families"."name" = $4) ORDER BY "humans"."id" ASC
+        \\SELECT "humans"."id", "humans"."family_id", "humans"."cat_id", "humans"."name", "cat"."id", "cat"."name", "cat"."paws", "cat"."created_at", "cat"."updated_at", "family"."id", "family"."name" FROM "humans" INNER JOIN "cats" AS "cat" ON "humans"."cat_id" = "cat"."id" INNER JOIN "families" AS "family" ON "humans"."family_id" = "family"."id" WHERE ("humans"."name" = $1 OR "humans"."name" = $2 OR "cat"."name" = $3 AND NOT "family"."name" = $4) ORDER BY "humans"."id" ASC
     ,
         query.sql,
     );
@@ -1270,7 +1270,7 @@ test "inner join" {
         .join(.inner, .computers)
         .select(.{.name});
     try std.testing.expectEqualStrings(
-        \\SELECT "humans"."name" FROM "humans" INNER JOIN "cats" ON "humans"."cat_id" = "cats"."id" INNER JOIN "computers" ON "humans"."id" = "computers"."human_id" WHERE (1 = 1) ORDER BY "humans"."id" ASC
+        \\SELECT "humans"."name" FROM "humans" INNER JOIN "cats" AS "cat" ON "humans"."cat_id" = "cat"."id" INNER JOIN "computers" AS "computers" ON "humans"."id" = "computers"."human_id" WHERE (1 = 1) ORDER BY "humans"."id" ASC
     , query.sql);
     try std.testing.expect(query.isValid());
 }
@@ -1309,7 +1309,7 @@ test "outer join" {
         .join(.outer, .computers)
         .select(.{.name});
     try std.testing.expectEqualStrings(
-        \\SELECT "humans"."name" FROM "humans" LEFT OUTER JOIN "cats" ON "humans"."cat_id" = "cats"."id" LEFT OUTER JOIN "computers" ON "humans"."id" = "computers"."human_id" WHERE (1 = 1) ORDER BY "humans"."id" ASC
+        \\SELECT "humans"."name" FROM "humans" LEFT OUTER JOIN "cats" AS "cat" ON "humans"."cat_id" = "cat"."id" LEFT OUTER JOIN "computers" AS "computers" ON "humans"."id" = "computers"."human_id" WHERE (1 = 1) ORDER BY "humans"."id" ASC
     , query.sql);
     try std.testing.expect(query.isValid());
 }
@@ -1348,7 +1348,7 @@ test "inner and outer join" {
         .join(.outer, .family)
         .select(.{.name});
     try std.testing.expectEqualStrings(
-        \\SELECT "humans"."name" FROM "humans" INNER JOIN "cats" ON "humans"."cat_id" = "cats"."id" LEFT OUTER JOIN "families" ON "humans"."family_id" = "families"."id" WHERE (1 = 1) ORDER BY "humans"."id" ASC
+        \\SELECT "humans"."name" FROM "humans" INNER JOIN "cats" AS "cat" ON "humans"."cat_id" = "cat"."id" LEFT OUTER JOIN "families" AS "family" ON "humans"."family_id" = "family"."id" WHERE (1 = 1) ORDER BY "humans"."id" ASC
     , query.sql);
     try std.testing.expect(query.isValid());
 }
@@ -1387,7 +1387,7 @@ test "inner and outer join with select on relation columns" {
         .join(.outer, .family)
         .select(.{ .name, .{ .family = .{.id}, .cat = .{.paws} } });
     try std.testing.expectEqualStrings(
-        \\SELECT "humans"."name", "families"."id", "cats"."paws" FROM "humans" INNER JOIN "cats" ON "humans"."cat_id" = "cats"."id" LEFT OUTER JOIN "families" ON "humans"."family_id" = "families"."id" WHERE (1 = 1) ORDER BY "humans"."id" ASC
+        \\SELECT "humans"."name", "family"."id", "cat"."paws" FROM "humans" INNER JOIN "cats" AS "cat" ON "humans"."cat_id" = "cat"."id" LEFT OUTER JOIN "families" AS "family" ON "humans"."family_id" = "family"."id" WHERE (1 = 1) ORDER BY "humans"."id" ASC
     , query.sql);
     try std.testing.expect(query.isValid());
 }
@@ -1522,7 +1522,7 @@ test "complex whereclause" {
     });
     try std.testing.expect(query.isValid());
     try std.testing.expectEqualStrings(
-        \\SELECT "cats"."id", "cats"."name", "cats"."age", "cats"."favorite_sport", "cats"."status" FROM "cats" INNER JOIN "homes" ON "cats"."id" = "homes"."cat_id" WHERE ("cats"."name" = $1 OR "cats"."name" = $2 AND ("cats"."age" > $3 AND "cats"."age" < $4) AND "cats"."favorite_sport" LIKE $5 AND "cats"."favorite_sport" <> $6 AND my_sql_function(age) = $7 AND ( NOT ("cats"."age" = $8 OR "cats"."age" = $9)) AND age / paws = $10 or age * paws < $11 AND ("cats"."status" IS NULL OR "cats"."status" = ANY ($12)) AND "homes"."zip_code" = $13) ORDER BY "cats"."id" ASC
+        \\SELECT "cats"."id", "cats"."name", "cats"."age", "cats"."favorite_sport", "cats"."status" FROM "cats" INNER JOIN "homes" AS "homes" ON "cats"."id" = "homes"."cat_id" WHERE ("cats"."name" = $1 OR "cats"."name" = $2 AND ("cats"."age" > $3 AND "cats"."age" < $4) AND "cats"."favorite_sport" LIKE $5 AND "cats"."favorite_sport" <> $6 AND my_sql_function(age) = $7 AND ( NOT ("cats"."age" = $8 OR "cats"."age" = $9)) AND age / paws = $10 or age * paws < $11 AND ("cats"."status" IS NULL OR "cats"."status" = ANY ($12)) AND "homes"."zip_code" = $13) ORDER BY "cats"."id" ASC
     , query.sql);
 }
 

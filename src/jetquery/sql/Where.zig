@@ -126,6 +126,7 @@ pub const Node = union(enum) {
         type: type,
         source_type: type,
         Table: type,
+        from: []const u8,
         field_info: std.builtin.Type.StructField,
         field_context: fields.FieldContext,
         path: []const u8,
@@ -276,7 +277,7 @@ pub const Node = union(enum) {
                 if (value.type == @TypeOf(null)) {
                     writer.print("{s}{s}.{s} IS NULL", .{
                         prefix,
-                        Adapter.identifier(value.Table.name),
+                        Adapter.identifier(value.from),
                         Adapter.identifier(value.name),
                     }) catch unreachable;
                 } else if (@typeInfo(value.type) == .optional) {
@@ -284,14 +285,14 @@ pub const Node = union(enum) {
                     // both `NULL` and a non-null value for optional types.
                     writer.print("{s}{s}.{s} IS NOT DISTINCT FROM {s}", .{
                         prefix,
-                        Adapter.identifier(value.Table.name),
+                        Adapter.identifier(value.from),
                         Adapter.identifier(value.name),
                         Adapter.paramSql(value.index),
                     }) catch unreachable;
                 } else {
                     writer.print("{s}{s}.{s} = {s}", .{
                         prefix,
-                        Adapter.identifier(value.Table.name),
+                        Adapter.identifier(value.from),
                         Adapter.identifier(value.name),
                         if (value.isArray(Adapter))
                             // XXX: This is PostgreSQL-specific - one day we'll need to figure
@@ -576,6 +577,7 @@ fn nodeTree(
             const value = Node.Value{
                 .field_context = field_context,
                 .Table = findRelation(Table, relations, path),
+                .from = findFrom(Table, relations, path),
                 .name = name,
                 .type = T,
                 .source_type = T,
@@ -592,6 +594,7 @@ fn nodeTree(
                 const value = Node.Value{
                     .field_context = field_context,
                     .Table = findRelation(Table, relations, path),
+                    .from = findFrom(Table, relations, path),
                     .name = name,
                     .type = Adapter.DateTimePrimitive,
                     .source_type = T,
@@ -626,6 +629,7 @@ fn nodeTree(
                             .type = fields.ComptimeErasedType(value_field.type),
                             .source_type = value_field.type,
                             .Table = Table,
+                            .from = Table.name,
                             .field_info = fields.ComptimeErasedStructField(value_field),
                             .field_context = field_context,
                             .path = makePath(path, std.fmt.comptimePrint("1.{d}", .{index})),
@@ -665,6 +669,7 @@ fn nodeTree(
                 .value = .{
                     .field_context = field_context,
                     .Table = findRelation(Table, relations, path),
+                    .from = findFrom(Table, relations, path),
                     .name = name,
                     .type = T,
                     .source_type = T,
@@ -678,6 +683,7 @@ fn nodeTree(
                 const value = Node.Value{
                     .field_context = field_context,
                     .Table = findRelation(Table, relations, path),
+                    .from = findFrom(Table, relations, path),
                     .name = name,
                     .type = T,
                     .source_type = T,
@@ -736,6 +742,15 @@ fn findRelation(Table: type, relations: []const type, comptime path: []const []c
     }
 }
 
+fn findFrom(Table: type, relations: []const type, comptime path: []const []const u8) []const u8 {
+    comptime {
+        if (path.len <= 1) return Table.name;
+        for (relations) |relation| {
+            if (std.mem.eql(u8, relation.relation_name, path[path.len - 2])) return relation.relation_name;
+        }
+        return Table.name;
+    }
+}
 fn assignValues(
     arg: anytype,
     Adapter: type,
@@ -1032,7 +1047,7 @@ fn makeOperand(
 
     return switch (@typeInfo(@TypeOf(arg[arg_index]))) {
         .enum_literal => .{
-            .column = columns.translate(Table, relations, .{arg[arg_index]})[0],
+            .column = columns.translate(Table, relations, .{arg[arg_index]}, .{})[0],
         },
         .type => functionColumn(arg[arg_index], Table, relations),
         else => blk: {
@@ -1042,16 +1057,17 @@ fn makeOperand(
             const A = switch (@typeInfo(Other)) {
                 .type => Adapter.Aggregate(functionColumn(Other).function.?),
                 .enum_literal => enum_blk: {
-                    const column = columns.translate(Table, relations, .{arg[other_arg_index]})[0];
+                    const column = columns.translate(Table, relations, .{arg[other_arg_index]}, .{})[0];
                     break :enum_blk column.type;
                 },
                 // We're comparing two values (not a column and a value),
-                // let Zig reconsile the types:
+                // let Zig reconcile the types:
                 else => fields.ComptimeErasedType(@TypeOf(arg[arg_index])),
             };
             const value: Node.Value = .{
                 .field_context = field_context,
                 .Table = findRelation(Table, relations, path),
+                .from = findFrom(Table, relations, path),
                 .name = name,
                 .type = A,
                 .source_type = @TypeOf(arg[arg_index]),
@@ -1071,6 +1087,7 @@ fn functionColumn(T: type, Table: type, relations: []const type) Node.Triplet.Op
             Table,
             relations,
             .{T},
+            .{},
         )[0] }
     else if (@hasDecl(T, "__jetquery_sql_string"))
         .{ .string = T.__jetquery_sql_string }
