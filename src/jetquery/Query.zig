@@ -438,7 +438,7 @@ fn Statement(
         ) Statement(Adapter, .select, Schema, Model, .{
             .relations = options.relations,
             .field_infos = options.field_infos,
-            .columns = &jetquery.columns.translate(Model, options.relations, select_columns),
+            .columns = &jetquery.columns.translate(Model, options.relations, select_columns, .{}),
             .order_clauses = options.order_clauses,
             .where_clauses = options.where_clauses,
             .group_by = options.group_by,
@@ -448,7 +448,7 @@ fn Statement(
             const S = Statement(Adapter, .select, Schema, Model, .{
                 .relations = options.relations,
                 .field_infos = options.field_infos,
-                .columns = &jetquery.columns.translate(Model, options.relations, select_columns),
+                .columns = &jetquery.columns.translate(Model, options.relations, select_columns, .{}),
                 .order_clauses = options.order_clauses,
                 .where_clauses = options.where_clauses,
                 .group_by = options.group_by,
@@ -599,7 +599,7 @@ fn Statement(
             .columns = &.{},
             .order_clauses = options.order_clauses,
             .result_context = .many,
-            .distinct = &jetquery.columns.translate(Model, options.relations, args),
+            .distinct = &jetquery.columns.translate(Model, options.relations, args, .{}),
             .where_clauses = options.where_clauses,
             .group_by = options.group_by,
         }) {
@@ -609,7 +609,7 @@ fn Statement(
                 .columns = &.{},
                 .order_clauses = options.order_clauses,
                 .result_context = .many,
-                .distinct = &jetquery.columns.translate(Model, options.relations, args),
+                .distinct = &jetquery.columns.translate(Model, options.relations, args, .{}),
                 .where_clauses = options.where_clauses,
                 .group_by = options.group_by,
             });
@@ -664,7 +664,7 @@ fn Statement(
         ) Statement(Adapter, .returning, Schema, Model, .{
             .relations = options.relations,
             .field_infos = options.field_infos,
-            .columns = &jetquery.columns.translate(Model, options.relations, return_columns),
+            .columns = &jetquery.columns.translate(Model, options.relations, return_columns, .{}),
             .order_clauses = options.order_clauses,
             .group_by = options.group_by,
             .distinct = options.distinct,
@@ -673,7 +673,7 @@ fn Statement(
             const S = Statement(Adapter, .returning, Schema, Model, .{
                 .relations = options.relations,
                 .field_infos = options.field_infos,
-                .columns = &jetquery.columns.translate(Model, options.relations, return_columns),
+                .columns = &jetquery.columns.translate(Model, options.relations, return_columns, .{}),
                 .order_clauses = options.order_clauses,
                 .group_by = options.group_by,
                 .distinct = options.distinct,
@@ -814,7 +814,7 @@ fn Statement(
             .order_clauses = options.order_clauses,
             .result_context = .many,
             .where_clauses = options.where_clauses,
-            .group_by = &jetquery.columns.translate(Model, options.relations, columns),
+            .group_by = &jetquery.columns.translate(Model, options.relations, columns, .{}),
             .having_clauses = options.having_clauses,
         }) {
             const S = Statement(Adapter, .select, Schema, Model, .{
@@ -822,7 +822,7 @@ fn Statement(
                 .field_infos = options.field_infos,
                 .columns = options.columns,
                 .order_clauses = options.order_clauses,
-                .group_by = &jetquery.columns.translate(Model, options.relations, columns),
+                .group_by = &jetquery.columns.translate(Model, options.relations, columns, .{}),
                 .result_context = .many,
                 .where_clauses = options.where_clauses,
                 .having_clauses = options.having_clauses,
@@ -846,13 +846,13 @@ fn Statement(
             .group_by = options.group_by,
             .having_clauses = options.having_clauses ++
                 .{sql.Where.tree(
-                Adapter,
-                Model,
-                options.relations,
-                @TypeOf(args),
-                .where,
-                options.field_infos.len,
-            )},
+                    Adapter,
+                    Model,
+                    options.relations,
+                    @TypeOf(args),
+                    .where,
+                    options.field_infos.len,
+                )},
         }) {
             const S = Statement(Adapter, .select, Schema, Model, .{
                 .relations = options.relations,
@@ -870,13 +870,13 @@ fn Statement(
                 .group_by = options.group_by,
                 .having_clauses = options.having_clauses ++
                     .{sql.Where.tree(
-                    Adapter,
-                    Model,
-                    options.relations,
-                    @TypeOf(args),
-                    .where,
-                    options.field_infos.len,
-                )},
+                        Adapter,
+                        Model,
+                        options.relations,
+                        @TypeOf(args),
+                        .where,
+                        options.field_infos.len,
+                    )},
             });
             return self.extend(S, args, .none);
         }
