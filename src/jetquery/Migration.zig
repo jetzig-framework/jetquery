@@ -191,11 +191,20 @@ const Command = struct {
             }
 
             fn writeColumn(column: Column, writer: anytype) !void {
+                var column_type: DataType = undefined;
+                if (column.type) |t| {
+                    column_type = t;
+                } else if (column.reference_column != null) {
+                    column_type = .integer;
+                } else {
+                    column_type = .string;
+                }
+
                 try writer.print(
                     \\t.column("{s}", .{s}, .{{
                 , .{
                     column.name orelse return error.MissingColumnName,
-                    @tagName(column.type orelse .string),
+                    @tagName(column_type),
                 });
                 var options_count: usize = 0;
                 inline for (comptime std.enums.values(Column.options)) |tag| {
@@ -570,7 +579,7 @@ test "migration from command line: create table" {
         \\            t.primaryKey("id", .{}),
         \\            t.column("name", .string, .{ .unique = true, .index = true }),
         \\            t.column("paws", .integer, .{}),
-        \\            t.column("human_id", .string, .{ .optional = true, .index = true, .reference = .{ "humans", "id" } }),
+        \\            t.column("human_id", .integer, .{ .optional = true, .index = true, .reference = .{ "humans", "id" } }),
         \\            t.timestamps(.{}),
         \\        },
         \\        .{},
