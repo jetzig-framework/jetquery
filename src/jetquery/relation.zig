@@ -94,6 +94,7 @@ pub fn translateRelationOptions(
         Source,
         &.{},
         if (@hasField(@TypeOf(options), "select")) options.select else .{},
+        .{ .from = @tagName(name) },
     );
 
     translated.limit = if (@hasField(@TypeOf(options), "limit"))

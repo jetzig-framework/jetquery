@@ -6,6 +6,7 @@ pub const Column = struct {
     name: []const u8,
     type: type,
     table: type,
+    from: ?[]const u8 = null,
     function: ?sql.FunctionContext = null,
     alias: ?[]const u8 = null,
     sql: ?[]const u8 = null,
@@ -21,15 +22,25 @@ pub const Column = struct {
     }
 };
 
+pub const TranslateOptions = struct {
+    from: ?[]const u8 = null,
+};
 pub fn translate(
     Table: type,
     relations: []const type,
     comptime maybe_args: anytype,
+    comptime options: TranslateOptions,
 ) [sizeOf(Table, relations, maybe_args)]Column {
     comptime {
         const args = if (@TypeOf(maybe_args) == @TypeOf(null)) return .{} else maybe_args;
 
-        if (args.len == 0) return Table.columns();
+        if (args.len == 0) {
+            var columns = Table.columns();
+            if (options.from) |from| {
+                for (&columns) |*column| column.from = from;
+            }
+            return columns;
+        }
 
         var fields: [sizeOf(Table, relations, args)]Column = undefined;
         var index: usize = 0;
@@ -48,6 +59,7 @@ pub fn translate(
             switch (@typeInfo(@TypeOf(arg))) {
                 .enum_literal, .@"enum" => {
                     fields[index] = primaryColumn(Table, @tagName(arg));
+                    fields[index].from = options.from;
                     index += 1;
                 },
                 .@"struct" => {
@@ -175,6 +187,7 @@ fn nestedColumns(
                                     .name = @tagName(nested_arg),
                                     .table = Relation.Source,
                                     .type = column.type,
+                                    .from = Relation.relation_name,
                                 };
                             }
                             index += 1;

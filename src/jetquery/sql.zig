@@ -24,7 +24,6 @@ pub const QueryContext = enum {
 };
 
 pub const OrderClause = struct {
-    // TODO: Allow ordering on relations.
     column: jetquery.columns.Column,
     direction: OrderDirection,
 };
@@ -227,6 +226,7 @@ pub fn translateOrderBy(
                         );
                         for (nested_clauses) |clause| {
                             clauses[index] = clause;
+                            clauses[index].column.from = relation.relation_name;
                             index += 1;
                         }
                         break :relations;
