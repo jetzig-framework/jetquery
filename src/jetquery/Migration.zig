@@ -191,7 +191,14 @@ const Command = struct {
             }
 
             fn writeColumn(column: Column, writer: anytype) !void {
-                const column_type = column.type orelse if (column.reference_column != null) .integer else .string;
+                var column_type: DataType = undefined;
+                if (column.type) |t| {
+                    column_type = t;
+                } else if (column.reference_column != null) {
+                    column_type = .integer;
+                } else {
+                    column_type = .string;
+                }
 
                 try writer.print(
                     \\t.column("{s}", .{s}, .{{
