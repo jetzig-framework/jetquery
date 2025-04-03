@@ -420,6 +420,11 @@ pub fn notNullSql() []const u8 {
     return " NOT NULL";
 }
 
+/// SQL fragment used to set a default value for a column.
+pub fn defaultValueSql(comptime default_value: []const u8) []const u8 {
+    return std.fmt.comptimePrint(" DEFAULT {s}", .{default_value});
+}
+
 /// SQL representing a bind parameter, e.g. `$1`.
 pub fn paramSql(comptime index: usize) []const u8 {
     return std.fmt.comptimePrint("${}", .{index + 1});

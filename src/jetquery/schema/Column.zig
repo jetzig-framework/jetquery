@@ -30,6 +30,7 @@ pub const Options = struct {
     reference: ?Reference = null,
     length: ?u16 = null,
     primary_key: bool = false,
+    default: ?[]const u8 = null,
 };
 
 pub fn init(
