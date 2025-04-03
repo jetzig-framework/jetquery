@@ -78,6 +78,11 @@ pub fn notNullSql() []const u8 {
     return "";
 }
 
+pub fn defaultValueSql(comptime default_value: []const u8) []const u8 {
+    _ = default_value;
+    return "";
+}
+
 pub fn countSql(comptime distinct: ?[]const jetquery.columns.Column) []const u8 {
     _ = distinct;
     return "";

@@ -208,8 +208,12 @@ const Command = struct {
                 });
                 var options_count: usize = 0;
                 inline for (comptime std.enums.values(Column.options)) |tag| {
-                    if (@field(column, @tagName(tag))) |option| {
-                        if (option) options_count += 1;
+                    if (tag != .default) {
+                        if (@field(column, @tagName(tag))) |option| {
+                            if (option) options_count += 1;
+                        }
+                    } else if (column.default != null) {
+                        options_count += 1;
                     }
                 }
 
@@ -217,12 +221,18 @@ const Command = struct {
 
                 var index: usize = 0;
                 inline for (comptime std.enums.values(Column.options)) |field| {
-                    if (@field(column, @tagName(field))) |option| {
-                        if (option) {
-                            const sep = if (index + 1 < options_count) "," else "";
-                            try writer.print(".{s} = true{s}", .{ @tagName(field), sep });
-                            index += 1;
+                    if (field != .default) {
+                        if (@field(column, @tagName(field))) |option| {
+                            if (option) {
+                                const sep = if (index + 1 < options_count) "," else "";
+                                try writer.print(".{s} = true{s}", .{ @tagName(field), sep });
+                                index += 1;
+                            }
                         }
+                    } else if (column.default) |default_value| {
+                        const sep = if (index + 1 < options_count) "," else "";
+                        try writer.print(".default = \"{s}\"{s}", .{ default_value, sep });
+                        index += 1;
                     }
                 }
 
@@ -246,8 +256,9 @@ const Command = struct {
             optional: ?bool = null,
             reference: ?bool = null,
             reference_column: ?[]const u8 = null,
+            default: ?[]const u8 = null,
 
-            pub const options = enum { unique, optional, index };
+            pub const options = enum { unique, optional, index, default };
 
             pub fn referenceInfo(self: Column) !?[2][]const u8 {
                 if (self.reference_column == null) return null;
@@ -348,6 +359,10 @@ const Command = struct {
                             token.set(.rename, modifier);
                         } else if (token.* == .column and token.*.column.reference == true) {
                             token.column.reference_column = modifier;
+                        } else if (token.* == .column and std.mem.eql(u8, modifier, "default")) {
+                            token.column.default = ""; // Set it to empty string to mark it needs a value
+                        } else if (token.* == .column and token.column.default != null and token.column.default.?.len == 0) {
+                            token.column.default = modifier;
                         } else {
                             return error.InvalidMigrationCommand;
                         }
@@ -557,7 +572,7 @@ test "default migration" {
 }
 
 test "migration from command line: create table" {
-    const command = "table:create:cats column:name:string:index:unique column:paws:integer column:human_id:index:optional:reference:humans.id";
+    const command = "table:create:cats column:name:string:index:unique column:paws:integer:default:4 column:bio:text:default:friendly_cat column:is_active:boolean:default:true column:no_default:string:optional column:human_id:index:optional:reference:humans.id";
 
     const migration = Migration.init(
         std.testing.allocator,
@@ -578,7 +593,10 @@ test "migration from command line: create table" {
         \\        &.{
         \\            t.primaryKey("id", .{}),
         \\            t.column("name", .string, .{ .unique = true, .index = true }),
-        \\            t.column("paws", .integer, .{}),
+        \\            t.column("paws", .integer, .{ .default = "4" }),
+        \\            t.column("bio", .text, .{ .default = "friendly_cat" }),
+        \\            t.column("is_active", .boolean, .{ .default = "true" }),
+        \\            t.column("no_default", .string, .{ .optional = true }),
         \\            t.column("human_id", .integer, .{ .optional = true, .index = true, .reference = .{ "humans", "id" } }),
         \\            t.timestamps(.{}),
         \\        },
@@ -588,6 +606,49 @@ test "migration from command line: create table" {
         \\
         \\pub fn down(repo: anytype) !void {
         \\    try repo.dropTable("cats", .{});
+        \\}
+        \\
+    , rendered);
+
+    // Verify that no DEFAULT clause appears for the no_default field
+    try std.testing.expect(!std.mem.containsAtLeast(u8, rendered, 1, "\"no_default\", .string, .{ .optional = true, .default"));
+}
+
+test "migration from command line: create table with default values of various types" {
+    const command = "table:create:defaults_test column:name:string:default:John column:count:integer:default:42 column:active:boolean:default:true column:no_default:string:optional column:price:decimal:default:19.99 column:last_update:datetime:default:now()";
+
+    const migration = Migration.init(
+        std.testing.allocator,
+        "test_defaults",
+        .{ .command = command },
+    );
+    const rendered = try migration.render();
+    defer std.testing.allocator.free(rendered);
+
+    try std.testing.expectEqualStrings(
+        \\const std = @import("std");
+        \\const jetquery = @import("jetquery");
+        \\const t = jetquery.schema.table;
+        \\
+        \\pub fn up(repo: anytype) !void {
+        \\    try repo.createTable(
+        \\        "defaults_test",
+        \\        &.{
+        \\            t.primaryKey("id", .{}),
+        \\            t.column("name", .string, .{ .default = "John" }),
+        \\            t.column("count", .integer, .{ .default = "42" }),
+        \\            t.column("active", .boolean, .{ .default = "true" }),
+        \\            t.column("no_default", .string, .{ .optional = true }),
+        \\            t.column("price", .decimal, .{ .default = "19.99" }),
+        \\            t.column("last_update", .datetime, .{ .default = "now()" }),
+        \\            t.timestamps(.{}),
+        \\        },
+        \\        .{},
+        \\    );
+        \\}
+        \\
+        \\pub fn down(repo: anytype) !void {
+        \\    try repo.dropTable("defaults_test", .{});
         \\}
         \\
     , rendered);

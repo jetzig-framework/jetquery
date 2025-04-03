@@ -128,6 +128,27 @@ test "migrate" {
             },
             .{ .relations = .{ .cats = jetquery.relation.hasMany(.Cat, .{}) } },
         );
+        pub const DefaultsTest = jetquery.Model(
+            @This(),
+            "defaults_test",
+            struct {
+                id: i32,
+                name: []const u8,
+                count: i32,
+                active: bool,
+                description: []const u8,
+                score: f32,
+                no_default: ?[]const u8,
+                price: f64,
+                small_count: i16,
+                big_count: i64,
+                precise_value: f64,
+                last_update: jetcommon.types.DateTime,
+                created_at: jetcommon.types.DateTime,
+                updated_at: jetcommon.types.DateTime,
+            },
+            .{},
+        );
     };
 
     var migrate_repo = try jetquery.Repo(.postgresql, MigrateSchema).init(
@@ -168,24 +189,68 @@ test "migrate" {
 
     try std.testing.expect(migration != null);
 
-    const query = test_repo.Query(.Human)
+    const human_cats_query = test_repo.Query(.Human)
         .join(.inner, .cats)
         .select(.{ .id, .name, .{ .cats = .{ .name, .paws, .created_at, .updated_at } } });
-    var result = try test_repo.execute(query);
+    var result = try test_repo.execute(human_cats_query);
     try result.drain();
     defer result.deinit();
 
+    {
+        const defaults_query = test_repo.Query(.DefaultsTest)
+            .select(.{ .id, .name, .count, .active, .description, .score, .no_default, .price, .small_count, .big_count, .precise_value, .last_update, .created_at, .updated_at });
+        var defaults_result = try test_repo.execute(defaults_query);
+        defer defaults_result.deinit();
+        try defaults_result.drain();
+    }
+
+    {
+        const jq = test_repo.Query(.DefaultsTest);
+
+        // Insert a new row with default values, overriding the name
+        try jq.insert(.{ .name = "Jane Smith" }).execute(&test_repo);
+
+        const inserted = try test_repo.Query(.DefaultsTest).first(&test_repo) orelse return error.NotFound;
+        defer test_repo.free(inserted);
+
+        try std.testing.expectEqual(42, inserted.count);
+        try std.testing.expect(inserted.active);
+        try std.testing.expectEqualStrings("Jane Smith", inserted.name); // Overriden
+        try std.testing.expectEqual(3.14, inserted.score);
+        try std.testing.expectEqual(19.99, inserted.price);
+        try std.testing.expectEqual(5, inserted.small_count);
+        try std.testing.expectEqual(9223372036854775807, inserted.big_count);
+        try std.testing.expectEqual(3.141592653589793, inserted.precise_value);
+        try std.testing.expectEqualStrings("This is a default description with 'quotes' and other special characters!", inserted.description);
+    }
+
     try migrate.rollback();
 
-    try std.testing.expectError(error.PG, test_repo.execute(query));
+    const new_defaults_query = test_repo.Query(.DefaultsTest)
+        .select(.{ .id, .name, .count });
+    try std.testing.expectError(error.PG, test_repo.execute(new_defaults_query));
 
+    // Human-cats query should still work after first rollback
+    var human_cats_result = try test_repo.execute(human_cats_query);
+    try human_cats_result.drain();
+    defer human_cats_result.deinit();
+
+    // After rolling back defaults_test, human table should still exist
     {
         const humans = try test_repo.Query(.Human).all(&test_repo);
         defer test_repo.free(humans);
     }
 
+    // Rollback the create_cats migration
     try migrate.rollback();
 
+    // After rolling back cats, human table should still exist but can't join to cats
+    try std.testing.expectError(error.PG, test_repo.execute(human_cats_query));
+
+    // Rollback the create_humans migration
+    try migrate.rollback();
+
+    // After rolling back humans, human table should no longer exist
     {
         const humans = test_repo.Query(.Human).all(&test_repo);
         try std.testing.expectError(error.PG, humans);

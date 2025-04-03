@@ -85,6 +85,13 @@ pub fn Adapter(comptime adapter_name: Name, AdaptedRepo: type) type {
             };
         }
 
+        /// SQL fragment used to set a default value for a column.
+        pub fn defaultValueSql(self: Self, comptime default_value: []const u8) []const u8 {
+            return switch (self) {
+                inline else => |adapter| @TypeOf(adapter).defaultValueSql(default_value),
+            };
+        }
+
         /// SQL representing a bind parameter, e.g. `$1`.
         pub fn paramSql(self: Self, comptime index: usize) []const u8 {
             return switch (self) {
@@ -240,7 +247,7 @@ pub fn Adapter(comptime adapter_name: Name, AdaptedRepo: type) type {
                 try timestamps.toSql(writer, self);
             } else {
                 try writer.print(
-                    \\{s}{s}{s}{s}{s}{s}
+                    \\{s}{s}{s}{s}{s}{s}{s}
                 , .{
                     self.identifier(column.name),
                     if (column.primary_key)
@@ -249,6 +256,10 @@ pub fn Adapter(comptime adapter_name: Name, AdaptedRepo: type) type {
                         self.columnTypeSql(column),
                     if (!column.primary_key and !column.options.optional)
                         self.notNullSql()
+                    else
+                        "",
+                    if (column.options.default) |default_value|
+                        self.defaultValueSql(default_value)
                     else
                         "",
                     if (column.primary_key) self.primaryKeySql(column) else "",
