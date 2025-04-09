@@ -259,7 +259,7 @@ pub const Connection = struct {
         var stmt = try pg.Stmt.init(self.connection, .{});
         errdefer stmt.deinit();
 
-        stmt.prepare(sql) catch |err| {
+        stmt.prepare(sql, null) catch |err| {
             try self.errorCallback(err, sql, repo, caller_info);
             return err;
         };
