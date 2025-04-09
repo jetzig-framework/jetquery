@@ -9,8 +9,8 @@
             .hash = "jetcommon-0.1.0-jPY_DS1HAAAP8xp5HSWB_ZY7m9JEYUmm8adQFrse0lwB",
         },
         .pg = .{
-            .url = "https://github.com/karlseguin/pg.zig/archive/ae5ee02b6e4ac9877c4cb340f8251da1f35fc784.tar.gz",
-            .hash = "1220c255f637fecbf185e9f1bac0adc151e599c7666b15911b3227b0cc89c993acdc",
+            .url = "https://github.com/karlseguin/pg.zig/archive/740b6bfe31bc3ebc81b7bc97fe883871da2604c7.tar.gz",
+            .hash = "pg-0.0.0-Wp_7gQr-BQAMQ8q9R0TzXrVgsyLVubJpg7mg_CSSIYqI",
         },
     },
     .paths = .{
