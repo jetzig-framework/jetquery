@@ -63,8 +63,7 @@ pub fn identifierAlloc(allocator: std.mem.Allocator, value: []const u8) ![]const
     return "";
 }
 
-pub fn columnSql(Table: type, comptime column: jetquery.columnsColumn) []const u8 {
-    _ = Table;
+pub fn columnSql(comptime column: jetquery.columns.Column) []const u8 {
     _ = column;
     return "";
 }
@@ -169,4 +168,9 @@ pub fn reflect(
     _ = allocator;
     _ = self;
     return .{ .allocator = repo.allocator, .tables = &.{}, .columns = &.{} };
+}
+
+pub fn orderSql(comptime order_clause: jetquery.sql.OrderClause) []const u8 {
+    _ = order_clause;
+    return "";
 }
