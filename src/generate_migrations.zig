@@ -28,6 +28,7 @@ pub fn main() !void {
     );
     for (migrations) |migration| {
         const basename = std.fs.path.basename(migration);
+        if (basename[0] == '.') continue;
         const version = basename[0.."2000-01-01_12-00-00".len];
         try std.fs.copyFileAbsolute(
             migration,
