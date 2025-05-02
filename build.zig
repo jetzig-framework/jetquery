@@ -33,6 +33,8 @@ pub fn build(b: *std.Build) !void {
 
     const migrations_path = b.option([]const u8, "jetquery_migrations_path", "Migrations path") orelse
         "migrations";
+    const seeders_path = b.option([]const u8, "jetquery_seeders_path", "Seeders path") orelse
+        "seeders";
     const test_filters = b.option([]const []const u8, "test-filter", "Skip tests that do not match any filter") orelse &[0][]const u8{};
     const lib_unit_tests = b.addTest(.{
         .root_source_file = b.path("src/jetquery.zig"),
@@ -80,6 +82,38 @@ pub fn build(b: *std.Build) !void {
     migration_unit_tests.root_module.addImport("jetquery", jetquery_module);
     migration_unit_tests.root_module.addImport("jetcommon", jetcommon_module);
 
+    const exe_generate_seeder = b.addExecutable(.{
+        .name = "seed",
+        .root_source_file = b.path("src/generate_seeders.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    const seeders_unit_tests = b.addTest(.{
+        .root_source_file = b.path("src/jetquery/Seed.zig"),
+        .target = target,
+        .optimize = optimize,
+        .filters = test_filters,
+    });
+    const run_seeders_unit_tests = b.addRunArtifact(seeders_unit_tests);
+    test_step.dependOn(&run_seeders_unit_tests.step);
+    seeders_unit_tests.step.dependOn(&exe_generate_seeder.step);
+
+    const run_generate_seeders_cmd = b.addRunArtifact(exe_generate_seeder);
+    const generated_seeders_path = run_generate_seeders_cmd.addOutputFileArg("seeders.zig");
+
+    // TODO: Change to findSeeders??? Maybe better to unify methods
+    for (try findMigrations(b.allocator, seeders_path)) |path| {
+        run_generate_seeders_cmd.addFileArg(.{ .cwd_relative = path });
+    }
+
+    const seeders_module = b.createModule(.{ .root_source_file = generated_seeders_path });
+    seeders_module.addImport("jetquery", jetquery_module);
+    seeders_module.addImport("jetquery.config", config_module);
+    seeders_unit_tests.root_module.addImport("seeders", seeders_module);
+    seeders_unit_tests.root_module.addImport("jetquery", jetquery_module);
+    seeders_unit_tests.root_module.addImport("jetcommon", jetcommon_module);
+
     const jetquery_migrate_module = b.addModule(
         "jetquery_migrate",
         .{ .root_source_file = b.path("src/jetquery/Migrate.zig") },
@@ -88,6 +122,15 @@ pub fn build(b: *std.Build) !void {
     jetquery_migrate_module.addImport("migrations", migrations_module);
     jetquery_migrate_module.addImport("jetquery.config", config_module);
     jetquery_migrate_module.addImport("jetcommon", jetcommon_module);
+
+    const jetquery_seeder_module = b.addModule(
+        "jetquery_seeder",
+        .{ .root_source_file = b.path("src/jetquery/Seed.zig") },
+    );
+    jetquery_seeder_module.addImport("jetquery", jetquery_module);
+    jetquery_seeder_module.addImport("seeders", seeders_module);
+    jetquery_seeder_module.addImport("jetquery.config", config_module);
+    jetquery_seeder_module.addImport("jetcommon", jetcommon_module);
 
     const jetquery_reflect_module = b.addModule(
         "jetquery_reflect",
