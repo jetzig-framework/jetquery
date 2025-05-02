@@ -2,7 +2,7 @@ const std = @import("std");
 const jetquery = @import("jetquery");
 const t = jetquery.schema.table;
 
-pub fn up(repo: anytype) !void {
+pub fn run(repo: anytype) !void {
     try repo.insert(
         .Cat,
         .{

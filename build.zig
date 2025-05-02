@@ -89,30 +89,29 @@ pub fn build(b: *std.Build) !void {
         .optimize = optimize,
     });
 
-    const seeders_unit_tests = b.addTest(.{
+    const seed_unit_tests = b.addTest(.{
         .root_source_file = b.path("src/jetquery/Seed.zig"),
         .target = target,
         .optimize = optimize,
         .filters = test_filters,
     });
-    const run_seeders_unit_tests = b.addRunArtifact(seeders_unit_tests);
-    test_step.dependOn(&run_seeders_unit_tests.step);
-    seeders_unit_tests.step.dependOn(&exe_generate_seeder.step);
+    const run_seed_unit_tests = b.addRunArtifact(seed_unit_tests);
+    test_step.dependOn(&run_seed_unit_tests.step);
+    seed_unit_tests.step.dependOn(&exe_generate_seeder.step);
 
     const run_generate_seeders_cmd = b.addRunArtifact(exe_generate_seeder);
     const generated_seeders_path = run_generate_seeders_cmd.addOutputFileArg("seeders.zig");
 
-    // TODO: Change to findSeeders??? Maybe better to unify methods
-    for (try findMigrations(b.allocator, seeders_path)) |path| {
+    for (try findSeeders(b.allocator, seeders_path)) |path| {
         run_generate_seeders_cmd.addFileArg(.{ .cwd_relative = path });
     }
 
     const seeders_module = b.createModule(.{ .root_source_file = generated_seeders_path });
     seeders_module.addImport("jetquery", jetquery_module);
     seeders_module.addImport("jetquery.config", config_module);
-    seeders_unit_tests.root_module.addImport("seeders", seeders_module);
-    seeders_unit_tests.root_module.addImport("jetquery", jetquery_module);
-    seeders_unit_tests.root_module.addImport("jetcommon", jetcommon_module);
+    seed_unit_tests.root_module.addImport("seeders", seeders_module);
+    seed_unit_tests.root_module.addImport("jetquery", jetquery_module);
+    seed_unit_tests.root_module.addImport("jetcommon", jetcommon_module);
 
     const jetquery_migrate_module = b.addModule(
         "jetquery_migrate",
@@ -129,7 +128,6 @@ pub fn build(b: *std.Build) !void {
     );
     jetquery_seeder_module.addImport("jetquery", jetquery_module);
     jetquery_seeder_module.addImport("seeders", seeders_module);
-    jetquery_seeder_module.addImport("jetquery.config", config_module);
     jetquery_seeder_module.addImport("jetcommon", jetcommon_module);
 
     const jetquery_reflect_module = b.addModule(
@@ -182,6 +180,40 @@ fn findMigrations(allocator: std.mem.Allocator, path: []const u8) ![][]const u8 
 
     std.mem.sort([]const u8, migrations.items, {}, cmpString);
     return try migrations.toOwnedSlice();
+}
+
+fn findSeeders(allocator: std.mem.Allocator, path: []const u8) ![][]const u8 {
+    const absolute_path = if (std.fs.path.isAbsolute(path))
+        path
+    else
+        std.fs.cwd().realpathAlloc(allocator, path) catch |err| {
+            switch (err) {
+                error.FileNotFound => return &.{},
+                else => return err,
+            }
+        };
+
+    var dir = std.fs.openDirAbsolute(absolute_path, .{ .iterate = true }) catch |err| {
+        switch (err) {
+            error.FileNotFound => return &.{},
+            else => return err,
+        }
+    };
+    defer dir.close();
+
+    var seeders = std.ArrayList([]const u8).init(allocator);
+
+    var it = dir.iterate();
+    while (try it.next()) |entry| {
+        switch (entry.kind) {
+            .file => try seeders.append(try std.fs.path.join(allocator, &.{ absolute_path, entry.name })),
+            .directory => try seeders.appendSlice(try findSeeders(allocator, entry.name)),
+            else => continue,
+        }
+    }
+
+    std.mem.sort([]const u8, seeders.items, {}, cmpString);
+    return try seeders.toOwnedSlice();
 }
 
 fn cmpString(_: void, lhs: []const u8, rhs: []const u8) bool {

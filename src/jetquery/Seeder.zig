@@ -10,31 +10,14 @@ const Seeder = @This();
 
 const SeederOptions = struct {
     seeders_path: ?[]const u8 = null,
-    command: ?[]const u8 = null,
 };
 
 pub fn init(allocator: std.mem.Allocator, name: []const u8, options: SeederOptions) Seeder {
     return .{ .allocator = allocator, .name = name, .options = options };
 }
 
-const Command = struct {
-    command: []const u8,
-    allocator: std.mem.Allocator,
-
-    pub fn write(self: Command, writer: anytype) !void {
-        const arg_iterator = std.mem.tokenizeAny(u8, self.command, &std.ascii.whitespace);
-        _ = arg_iterator;
-
-        try writer.print(
-            seeder_template,
-            .{"    // Write here to populate the database"},
-        );
-    }
-};
-
 const seeder_template =
     \\const std = @import("std");
-    \\const jetquery = @import("jetquery");
     \\
     \\pub fn run(repo: anytype) !void {{
     \\{s}
@@ -90,13 +73,8 @@ pub fn render(self: Seeder) ![]const u8 {
 
     var buf = std.ArrayList(u8).init(alloc);
     const writer = buf.writer();
+    try writer.writeAll(default_seeder);
 
-    if (self.options.command) |cmd| {
-        const command = Command{ .allocator = alloc, .command = cmd };
-        try command.write(writer);
-    } else {
-        try writer.writeAll(default_seeder);
-    }
     return try jetcommon.fmt.zig(
         self.allocator,
         buf.items,
@@ -140,13 +118,6 @@ inline fn hasEnum(T: type, comptime name: []const u8, VT: type) bool {
     return @typeInfo(FT) == .@"enum";
 }
 
-inline fn isType(name: []const u8) bool {
-    inline for (comptime std.enums.values(Command.DataType)) |tag| {
-        if (std.mem.eql(u8, name, @tagName(tag))) return true;
-    }
-    return false;
-}
-
 test "default seeder" {
     const seeder = Seeder.init(std.testing.allocator, "test_seeder", .{});
 
@@ -156,7 +127,7 @@ test "default seeder" {
     try std.testing.expectEqualStrings(default_seeder, rendered);
 }
 
-test "seeder from command line: create seeder" {
+test "seeder from command line: generate seeder" {
     const command = "iguana";
 
     const seeder = Seeder.init(
@@ -169,7 +140,6 @@ test "seeder from command line: create seeder" {
 
     try std.testing.expectEqualStrings(
         \\const std = @import("std");
-        \\const jetquery = @import("jetquery");
         \\
         \\pub fn run(repo: anytype) !void {
         \\}

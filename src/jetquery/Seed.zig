@@ -19,22 +19,20 @@ pub fn Seed(adapter_name: jetquery.adapters.Name, schema: anytype) type {
             return .{ .repo = repo };
         }
 
-        /// Run migrations. Create `jetquery_migrations` table if it does not exist. Skip migrations
-        /// already present in `jetquery_migrations`.
         pub fn seed(self: Self) !void {
-            log("\n* Running seeders.\n", .{});
+            log("\n* Running seeds.\n", .{});
 
             var count: usize = 0;
             inline for (seeders) |item| {
-                log("\n=== [SEEDER:BEGIN] {s} ===\n", .{item.name});
+                log("\n=== [SEED:BEGIN] {s} ===\n", .{item.name});
 
                 try item.runFn(self.repo);
                 count += 1;
 
-                log("\n=== [SEEDER:COMPLETE] {s} ===\n", .{item.name});
+                log("\n=== [SEED:COMPLETE] {s} ===\n", .{item.name});
             }
 
-            log("\n* Applied {} seeder(s).\n", .{count});
+            log("\n* Applied {} seed(s).\n", .{count});
         }
 
         fn log(comptime message: []const u8, args: anytype) void {
@@ -87,11 +85,11 @@ test "seed" {
         );
     };
 
-    var migrate_repo = try jetquery.Repo(.postgresql, .{}).init(
+    var seeder_repo = try jetquery.Repo(.postgresql, TestSchema).init(
         std.testing.allocator,
         .{
             .adapter = .{
-                .database = "migrate_test",
+                .database = "seeders_test",
                 .username = "postgres",
                 .hostname = "127.0.0.1",
                 .password = "password",
@@ -99,16 +97,16 @@ test "seed" {
             },
         },
     );
-    defer migrate_repo.deinit();
+    defer seeder_repo.deinit();
 
-    const migrate = Seeder(.postgresql).init(&migrate_repo);
-    try migrate.migrate();
+    const seeder = Seed(.postgresql, TestSchema).init(&seeder_repo);
+    try seeder.seed();
 
     var test_repo = try jetquery.Repo(.postgresql, TestSchema).init(
         std.testing.allocator,
         .{
             .adapter = .{
-                .database = "migrate_test",
+                .database = "seeders_test",
                 .username = "postgres",
                 .hostname = "127.0.0.1",
                 .password = "password",
@@ -118,10 +116,10 @@ test "seed" {
     );
     defer test_repo.deinit();
 
-    const migration = try migrate_repo.Query(.Migrations)
+    const migration = try seeder_repo.Query(.SeedersTest)
         .findBy(.{ .version = "2024-08-26_13-18-52" })
-        .execute(&migrate_repo);
-    defer migrate_repo.free(migration);
+        .execute(&seeder_repo);
+    defer seeder_repo.free(migration);
 
     try std.testing.expect(migration != null);
 
@@ -160,7 +158,7 @@ test "seed" {
         try std.testing.expectEqualStrings("This is a default description with 'quotes' and other special characters!", inserted.description);
     }
 
-    try migrate.rollback();
+    try seeder.rollback();
 
     const new_defaults_query = test_repo.Query(.DefaultsTest)
         .select(.{ .id, .name, .count });
@@ -178,13 +176,13 @@ test "seed" {
     }
 
     // Rollback the create_cats migration
-    try migrate.rollback();
+    try seeder.rollback();
 
     // After rolling back cats, human table should still exist but can't join to cats
     try std.testing.expectError(error.PG, test_repo.execute(human_cats_query));
 
     // Rollback the create_humans migration
-    try migrate.rollback();
+    try seeder.rollback();
 
     // After rolling back humans, human table should no longer exist
     {
@@ -208,6 +206,6 @@ fn resetDatabase() !void {
         },
     );
     defer repo.deinit();
-    try repo.dropDatabase("migrate_test", .{ .if_exists = true });
-    try repo.createDatabase("migrate_test", .{});
+    try repo.dropDatabase("seeders_test", .{ .if_exists = true });
+    try repo.createDatabase("seeders_test", .{});
 }
