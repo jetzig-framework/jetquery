@@ -86,7 +86,7 @@ test "seed" {
     };
 
     {
-        const Migration = @import("Migrate.zig");
+        const Migration = @import("jetquery_migrate");
         var migrate_repo = try jetquery.Repo(.postgresql, Migration.MigrateSchema).init(
             std.testing.allocator,
             .{

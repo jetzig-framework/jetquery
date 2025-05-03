@@ -106,14 +106,6 @@ pub fn build(b: *std.Build) !void {
         run_generate_seeders_cmd.addFileArg(.{ .cwd_relative = path });
     }
 
-    const seeders_module = b.createModule(.{ .root_source_file = generated_seeders_path });
-    seeders_module.addImport("jetquery", jetquery_module);
-    seeders_module.addImport("jetquery.config", config_module);
-    seed_unit_tests.root_module.addImport("migrations", migrations_module);
-    seed_unit_tests.root_module.addImport("seeders", seeders_module);
-    seed_unit_tests.root_module.addImport("jetquery", jetquery_module);
-    seed_unit_tests.root_module.addImport("jetcommon", jetcommon_module);
-
     const jetquery_migrate_module = b.addModule(
         "jetquery_migrate",
         .{ .root_source_file = b.path("src/jetquery/Migrate.zig") },
@@ -122,6 +114,15 @@ pub fn build(b: *std.Build) !void {
     jetquery_migrate_module.addImport("migrations", migrations_module);
     jetquery_migrate_module.addImport("jetquery.config", config_module);
     jetquery_migrate_module.addImport("jetcommon", jetcommon_module);
+
+    const seeders_module = b.createModule(.{ .root_source_file = generated_seeders_path });
+    seeders_module.addImport("jetquery", jetquery_module);
+    seeders_module.addImport("jetquery.config", config_module);
+    seed_unit_tests.root_module.addImport("migrations", migrations_module);
+    seed_unit_tests.root_module.addImport("jetquery_migrate", jetquery_migrate_module);
+    seed_unit_tests.root_module.addImport("seeders", seeders_module);
+    seed_unit_tests.root_module.addImport("jetquery", jetquery_module);
+    seed_unit_tests.root_module.addImport("jetcommon", jetcommon_module);
 
     const jetquery_seeder_module = b.addModule(
         "jetquery_seeder",
