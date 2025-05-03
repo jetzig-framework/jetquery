@@ -173,16 +173,16 @@ fn findFilesSorted(allocator: std.mem.Allocator, path: []const u8) ![][]const u8
     };
     defer dir.close();
 
-    var migrations = std.ArrayList([]const u8).init(allocator);
+    var files = std.ArrayList([]const u8).init(allocator);
 
     var it = dir.iterate();
     while (try it.next()) |entry| {
         if (entry.kind != .file) continue;
-        try migrations.append(try std.fs.path.join(allocator, &.{ absolute_path, entry.name }));
+        try files.append(try std.fs.path.join(allocator, &.{ absolute_path, entry.name }));
     }
 
-    std.mem.sort([]const u8, migrations.items, {}, cmpString);
-    return try migrations.toOwnedSlice();
+    std.mem.sort([]const u8, files.items, {}, cmpString);
+    return try files.toOwnedSlice();
 }
 
 fn cmpString(_: void, lhs: []const u8, rhs: []const u8) bool {
