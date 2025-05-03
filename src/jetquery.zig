@@ -11,6 +11,7 @@ pub const adapters = @import("jetquery/adapters.zig");
 pub const sql = @import("jetquery/sql.zig");
 pub const relation = @import("jetquery/relation.zig");
 pub const Migration = @import("jetquery/Migration.zig");
+pub const Seeder = @import("jetquery/Seeder.zig");
 pub const schema = @import("jetquery/schema.zig");
 pub const fields = @import("jetquery/fields.zig");
 pub const columns = @import("jetquery/columns.zig");
@@ -50,7 +51,7 @@ pub const CreateIndexOptions = struct {
     name: ?[]const u8 = null,
     if_not_exists: bool = false,
 };
-pub const Context = enum { migration, query, cli };
+pub const Context = enum { migration, seed, query, cli };
 
 pub const original_prefix = "__original_";
 
