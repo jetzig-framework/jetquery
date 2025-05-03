@@ -71,7 +71,7 @@ pub fn build(b: *std.Build) !void {
     const run_generate_migrations_cmd = b.addRunArtifact(exe_generate_migrations);
     const generated_migrations_path = run_generate_migrations_cmd.addOutputFileArg("migrations.zig");
 
-    for (try findMigrations(b.allocator, migrations_path)) |path| {
+    for (try findFilesSorted(b.allocator, migrations_path)) |path| {
         run_generate_migrations_cmd.addFileArg(.{ .cwd_relative = path });
     }
 
@@ -102,13 +102,14 @@ pub fn build(b: *std.Build) !void {
     const run_generate_seeders_cmd = b.addRunArtifact(exe_generate_seeder);
     const generated_seeders_path = run_generate_seeders_cmd.addOutputFileArg("seeders.zig");
 
-    for (try findSeeders(b.allocator, seeders_path)) |path| {
+    for (try findFilesSorted(b.allocator, seeders_path)) |path| {
         run_generate_seeders_cmd.addFileArg(.{ .cwd_relative = path });
     }
 
     const seeders_module = b.createModule(.{ .root_source_file = generated_seeders_path });
     seeders_module.addImport("jetquery", jetquery_module);
     seeders_module.addImport("jetquery.config", config_module);
+    seed_unit_tests.root_module.addImport("migrations", migrations_module);
     seed_unit_tests.root_module.addImport("seeders", seeders_module);
     seed_unit_tests.root_module.addImport("jetquery", jetquery_module);
     seed_unit_tests.root_module.addImport("jetcommon", jetcommon_module);
@@ -128,6 +129,7 @@ pub fn build(b: *std.Build) !void {
     );
     jetquery_seeder_module.addImport("jetquery", jetquery_module);
     jetquery_seeder_module.addImport("seeders", seeders_module);
+    jetquery_seeder_module.addImport("jetquery.config", config_module);
     jetquery_seeder_module.addImport("jetcommon", jetcommon_module);
 
     const jetquery_reflect_module = b.addModule(
@@ -151,7 +153,7 @@ pub fn build(b: *std.Build) !void {
     test_step.dependOn(&run_reflect_unit_tests.step);
 }
 
-fn findMigrations(allocator: std.mem.Allocator, path: []const u8) ![][]const u8 {
+fn findFilesSorted(allocator: std.mem.Allocator, path: []const u8) ![][]const u8 {
     const absolute_path = if (std.fs.path.isAbsolute(path))
         path
     else
@@ -180,40 +182,6 @@ fn findMigrations(allocator: std.mem.Allocator, path: []const u8) ![][]const u8 
 
     std.mem.sort([]const u8, migrations.items, {}, cmpString);
     return try migrations.toOwnedSlice();
-}
-
-fn findSeeders(allocator: std.mem.Allocator, path: []const u8) ![][]const u8 {
-    const absolute_path = if (std.fs.path.isAbsolute(path))
-        path
-    else
-        std.fs.cwd().realpathAlloc(allocator, path) catch |err| {
-            switch (err) {
-                error.FileNotFound => return &.{},
-                else => return err,
-            }
-        };
-
-    var dir = std.fs.openDirAbsolute(absolute_path, .{ .iterate = true }) catch |err| {
-        switch (err) {
-            error.FileNotFound => return &.{},
-            else => return err,
-        }
-    };
-    defer dir.close();
-
-    var seeders = std.ArrayList([]const u8).init(allocator);
-
-    var it = dir.iterate();
-    while (try it.next()) |entry| {
-        switch (entry.kind) {
-            .file => try seeders.append(try std.fs.path.join(allocator, &.{ absolute_path, entry.name })),
-            .directory => try seeders.appendSlice(try findSeeders(allocator, entry.name)),
-            else => continue,
-        }
-    }
-
-    std.mem.sort([]const u8, seeders.items, {}, cmpString);
-    return try seeders.toOwnedSlice();
 }
 
 fn cmpString(_: void, lhs: []const u8, rhs: []const u8) bool {

@@ -19,12 +19,7 @@ pub fn init(allocator: std.mem.Allocator, name: []const u8, options: SeederOptio
 const seeder_template =
     \\const std = @import("std");
     \\
-    \\pub fn run(repo: anytype) !void {{
-    \\{s}
-    \\}}
-    \\
-;
-const default_seeder = std.fmt.comptimePrint(seeder_template, .{
+    \\pub fn run(repo: anytype) !void {
     \\    // The `run` function runs when a seed is executed.
     \\    //
     \\    // This example seeder populates a table named `my_table` with the following columns:
@@ -42,7 +37,9 @@ const default_seeder = std.fmt.comptimePrint(seeder_template, .{
     \\            .my_integer = 69,
     \\        },
     \\    );
-});
+    \\}
+    \\
+;
 
 pub fn save(self: Seeder) ![]const u8 {
     const content = try self.render();
@@ -73,7 +70,7 @@ pub fn render(self: Seeder) ![]const u8 {
 
     var buf = std.ArrayList(u8).init(alloc);
     const writer = buf.writer();
-    try writer.writeAll(default_seeder);
+    try writer.writeAll(seeder_template);
 
     return try jetcommon.fmt.zig(
         self.allocator,
@@ -124,16 +121,14 @@ test "default seeder" {
     const rendered = try seeder.render();
     defer std.testing.allocator.free(rendered);
 
-    try std.testing.expectEqualStrings(default_seeder, rendered);
+    try std.testing.expectEqualStrings(seeder_template, rendered);
 }
 
 test "seeder from command line: generate seeder" {
-    const command = "iguana";
-
     const seeder = Seeder.init(
         std.testing.allocator,
         "test_seeder",
-        .{ .command = command },
+        .{},
     );
     const rendered = try seeder.render();
     defer std.testing.allocator.free(rendered);
@@ -142,6 +137,23 @@ test "seeder from command line: generate seeder" {
         \\const std = @import("std");
         \\
         \\pub fn run(repo: anytype) !void {
+        \\    // The `run` function runs when a seed is executed.
+        \\    //
+        \\    // This example seeder populates a table named `my_table` with the following columns:
+        \\    //
+        \\    // See https://www.jetzig.dev/documentation/sections/database/seeders for more details.
+        \\    //
+        \\    // Run `jetzig database migrate` to apply migrations and create the Schema.
+        \\    //
+        \\    // Then run `jetzig database seed` to execute all seeds in `src/app/database/seeders/`
+        \\    //
+        \\    try repo.insert(
+        \\        .MyTable,
+        \\        .{
+        \\            .my_string = "value",
+        \\            .my_integer = 69,
+        \\        },
+        \\    );
         \\}
         \\
     , rendered);

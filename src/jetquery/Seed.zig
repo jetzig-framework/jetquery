@@ -85,6 +85,26 @@ test "seed" {
         );
     };
 
+    {
+        const Migration = @import("Migrate.zig");
+        var migrate_repo = try jetquery.Repo(.postgresql, Migration.MigrateSchema).init(
+            std.testing.allocator,
+            .{
+                .adapter = .{
+                    .database = "seeders_test",
+                    .username = "postgres",
+                    .hostname = "127.0.0.1",
+                    .password = "password",
+                    .port = 5432,
+                },
+            },
+        );
+        defer migrate_repo.deinit();
+
+        const migrate = Migration.Migrate(.postgresql).init(&migrate_repo);
+        try migrate.migrate();
+    }
+
     var seeder_repo = try jetquery.Repo(.postgresql, TestSchema).init(
         std.testing.allocator,
         .{
@@ -99,8 +119,23 @@ test "seed" {
     );
     defer seeder_repo.deinit();
 
+    {
+        const human_count = try seeder_repo.execute(seeder_repo.Query(.Human).count());
+        try std.testing.expect(human_count != null);
+        try std.testing.expect(human_count.? == 0);
+
+        const cat_count = try seeder_repo.execute(seeder_repo.Query(.Cat).count());
+        try std.testing.expect(cat_count != null);
+        try std.testing.expect(cat_count.? == 0);
+    }
+
     const seeder = Seed(.postgresql, TestSchema).init(&seeder_repo);
     try seeder.seed();
+
+    // TODO: Why is this not working???
+    // Is not filling created_at, updated_at?
+    // try seeder_repo.Query(.Human).insert(.{ .name = "Hercules" }).execute(&seeder_repo);
+    // try seeder_repo.Query(.Human).insert(.{ .name = "Princes" }).execute(&seeder_repo);
 
     var test_repo = try jetquery.Repo(.postgresql, TestSchema).init(
         std.testing.allocator,
@@ -116,78 +151,14 @@ test "seed" {
     );
     defer test_repo.deinit();
 
-    const migration = try seeder_repo.Query(.SeedersTest)
-        .findBy(.{ .version = "2024-08-26_13-18-52" })
-        .execute(&seeder_repo);
-    defer seeder_repo.free(migration);
-
-    try std.testing.expect(migration != null);
-
-    const human_cats_query = test_repo.Query(.Human)
-        .join(.inner, .cats)
-        .select(.{ .id, .name, .{ .cats = .{ .name, .paws, .created_at, .updated_at } } });
-    var result = try test_repo.execute(human_cats_query);
-    try result.drain();
-    defer result.deinit();
-
     {
-        const defaults_query = test_repo.Query(.DefaultsTest)
-            .select(.{ .id, .name, .count, .active, .description, .score, .no_default, .price, .small_count, .big_count, .precise_value, .last_update, .created_at, .updated_at });
-        var defaults_result = try test_repo.execute(defaults_query);
-        defer defaults_result.deinit();
-        try defaults_result.drain();
-    }
+        const human_count = try test_repo.execute(seeder_repo.Query(.Human).count());
+        try std.testing.expect(human_count != null);
+        try std.testing.expect(human_count.? > 1);
 
-    {
-        const jq = test_repo.Query(.DefaultsTest);
-
-        // Insert a new row with default values, overriding the name
-        try jq.insert(.{ .name = "Jane Smith" }).execute(&test_repo);
-
-        const inserted = try test_repo.Query(.DefaultsTest).first(&test_repo) orelse return error.NotFound;
-        defer test_repo.free(inserted);
-
-        try std.testing.expectEqual(42, inserted.count);
-        try std.testing.expect(inserted.active);
-        try std.testing.expectEqualStrings("Jane Smith", inserted.name); // Overriden
-        try std.testing.expectEqual(3.14, inserted.score);
-        try std.testing.expectEqual(19.99, inserted.price);
-        try std.testing.expectEqual(5, inserted.small_count);
-        try std.testing.expectEqual(9223372036854775807, inserted.big_count);
-        try std.testing.expectEqual(3.141592653589793, inserted.precise_value);
-        try std.testing.expectEqualStrings("This is a default description with 'quotes' and other special characters!", inserted.description);
-    }
-
-    try seeder.rollback();
-
-    const new_defaults_query = test_repo.Query(.DefaultsTest)
-        .select(.{ .id, .name, .count });
-    try std.testing.expectError(error.PG, test_repo.execute(new_defaults_query));
-
-    // Human-cats query should still work after first rollback
-    var human_cats_result = try test_repo.execute(human_cats_query);
-    try human_cats_result.drain();
-    defer human_cats_result.deinit();
-
-    // After rolling back defaults_test, human table should still exist
-    {
-        const humans = try test_repo.Query(.Human).all(&test_repo);
-        defer test_repo.free(humans);
-    }
-
-    // Rollback the create_cats migration
-    try seeder.rollback();
-
-    // After rolling back cats, human table should still exist but can't join to cats
-    try std.testing.expectError(error.PG, test_repo.execute(human_cats_query));
-
-    // Rollback the create_humans migration
-    try seeder.rollback();
-
-    // After rolling back humans, human table should no longer exist
-    {
-        const humans = test_repo.Query(.Human).all(&test_repo);
-        try std.testing.expectError(error.PG, humans);
+        const cat_count = try test_repo.execute(seeder_repo.Query(.Cat).count());
+        try std.testing.expect(cat_count != null);
+        try std.testing.expect(cat_count.? > 1);
     }
 }
 
