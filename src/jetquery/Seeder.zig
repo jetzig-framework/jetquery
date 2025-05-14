@@ -34,7 +34,7 @@ const seeder_template =
     \\        .MyTable,
     \\        .{
     \\            .my_string = "value",
-    \\            .my_integer = 69,
+    \\            .my_integer = 100,
     \\        },
     \\    );
     \\}
@@ -151,7 +151,7 @@ test "seeder from command line: generate seeder" {
         \\        .MyTable,
         \\        .{
         \\            .my_string = "value",
-        \\            .my_integer = 69,
+        \\            .my_integer = 100,
         \\        },
         \\    );
         \\}

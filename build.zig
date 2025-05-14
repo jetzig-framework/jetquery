@@ -75,7 +75,10 @@ pub fn build(b: *std.Build) !void {
         run_generate_migrations_cmd.addFileArg(.{ .cwd_relative = path });
     }
 
-    const migrations_module = b.createModule(.{ .root_source_file = generated_migrations_path });
+    const migrations_module = b.addModule(
+        "jetquery_migrations",
+        .{ .root_source_file = generated_migrations_path },
+    );
     migrations_module.addImport("jetquery", jetquery_module);
     migrations_module.addImport("jetquery.config", config_module);
     migration_unit_tests.root_module.addImport("migrations", migrations_module);
@@ -115,7 +118,10 @@ pub fn build(b: *std.Build) !void {
     jetquery_migrate_module.addImport("jetquery.config", config_module);
     jetquery_migrate_module.addImport("jetcommon", jetcommon_module);
 
-    const seeders_module = b.createModule(.{ .root_source_file = generated_seeders_path });
+    const seeders_module = b.addModule(
+        "jetquery_seeders",
+        .{ .root_source_file = generated_seeders_path },
+    );
     seeders_module.addImport("jetquery", jetquery_module);
     seeders_module.addImport("jetquery.config", config_module);
     seed_unit_tests.root_module.addImport("migrations", migrations_module);
