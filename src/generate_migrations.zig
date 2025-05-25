@@ -12,8 +12,10 @@ pub fn main() !void {
     const args = try std.process.argsAlloc(allocator);
     const migrations_module_path = args[1];
     const migrations: []const []const u8 = if (args.len > 2) args[2..] else &.{};
-    const migrations_file = try std.fs.createFileAbsolute(migrations_module_path, .{});
-    const migrations_module_dir = std.fs.path.dirname(migrations_module_path).?;
+    const migrations_file = try std.fs.cwd().createFile(migrations_module_path, .{});
+    var migrations_module_dir = try std.fs.cwd().openDir(std.fs.path.dirname(migrations_module_path).?, .{});
+    defer migrations_module_dir.close();
+
     const writer = migrations_file.writer();
     try writer.writeAll(
         \\const jetquery = @import("jetquery");
@@ -30,9 +32,10 @@ pub fn main() !void {
         const basename = std.fs.path.basename(migration);
         if (basename[0] == '.') continue;
         const version = basename[0.."2000-01-01_12-00-00".len];
-        try std.fs.copyFileAbsolute(
+        try std.fs.cwd().copyFile(
             migration,
-            try std.fs.path.join(allocator, &.{ migrations_module_dir, basename }),
+            migrations_module_dir,
+            basename,
             .{},
         );
         try writer.print(

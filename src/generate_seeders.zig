@@ -12,8 +12,10 @@ pub fn main() !void {
     const args = try std.process.argsAlloc(allocator);
     const seeders_module_path = args[1];
     const seeders: []const []const u8 = if (args.len > 2) args[2..] else &.{};
-    const seeders_file = try std.fs.createFileAbsolute(seeders_module_path, .{});
-    const seeders_module_dir = std.fs.path.dirname(seeders_module_path).?;
+    const seeders_file = try std.fs.cwd().createFile(seeders_module_path, .{});
+    var seeders_module_dir = try std.fs.cwd().openDir(std.fs.path.dirname(seeders_module_path).?, .{});
+    defer seeders_module_dir.close();
+
     const writer = seeders_file.writer();
     try writer.writeAll(
         \\const jetquery = @import("jetquery");
@@ -27,9 +29,10 @@ pub fn main() !void {
     for (seeders) |seed| {
         const basename = std.fs.path.basename(seed);
         if (basename[0] == '.') continue;
-        try std.fs.copyFileAbsolute(
+        try std.fs.cwd().copyFile(
             seed,
-            try std.fs.path.join(allocator, &.{ seeders_module_dir, basename }),
+            seeders_module_dir,
+            basename,
             .{},
         );
         try writer.print(
