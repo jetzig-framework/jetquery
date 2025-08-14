@@ -34,8 +34,8 @@ jobs:
 
       - name: Setup Zig
         uses: mlugg/setup-zig@v2
-        with:
-          version: latest
+        #with:
+          #version: latest
 
       - name: Print Zig version
         run: zig version
