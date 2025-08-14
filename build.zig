@@ -4,11 +4,13 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const lib = b.addStaticLibrary(.{
+    const lib = b.addLibrary(.{
         .name = "jetquery",
-        .root_source_file = b.path("src/jetquery.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/jetquery.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
     });
 
     b.installArtifact(lib);
@@ -37,9 +39,11 @@ pub fn build(b: *std.Build) !void {
         "seeders";
     const test_filters = b.option([]const []const u8, "test-filter", "Skip tests that do not match any filter") orelse &[0][]const u8{};
     const lib_unit_tests = b.addTest(.{
-        .root_source_file = b.path("src/jetquery.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/jetquery.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
         .filters = test_filters,
     });
     lib_unit_tests.root_module.addImport("pg", pg_dep.module("pg"));
@@ -53,15 +57,19 @@ pub fn build(b: *std.Build) !void {
 
     const exe_generate_migrations = b.addExecutable(.{
         .name = "migrations",
-        .root_source_file = b.path("src/generate_migrations.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/generate_migrations.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
     });
 
     const migration_unit_tests = b.addTest(.{
-        .root_source_file = b.path("src/jetquery/Migrate.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/jetquery/Migrate.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
         .filters = test_filters,
     });
     const run_migration_unit_tests = b.addRunArtifact(migration_unit_tests);
@@ -87,15 +95,19 @@ pub fn build(b: *std.Build) !void {
 
     const exe_generate_seeder = b.addExecutable(.{
         .name = "seed",
-        .root_source_file = b.path("src/generate_seeders.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/generate_seeders.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
     });
 
     const seed_unit_tests = b.addTest(.{
-        .root_source_file = b.path("src/jetquery/Seed.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/jetquery/Seed.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
         .filters = test_filters,
     });
     const run_seed_unit_tests = b.addRunArtifact(seed_unit_tests);
@@ -149,9 +161,11 @@ pub fn build(b: *std.Build) !void {
     jetquery_reflect_module.addImport("jetcommon", jetcommon_module);
 
     const reflect_unit_tests = b.addTest(.{
-        .root_source_file = b.path("src/jetquery/reflection/Reflect.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/jetquery/reflection/Reflect.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
         .filters = test_filters,
     });
     const run_reflect_unit_tests = b.addRunArtifact(reflect_unit_tests);
