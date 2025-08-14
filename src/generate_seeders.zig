@@ -16,8 +16,8 @@ pub fn main() !void {
     var seeders_module_dir = try std.fs.cwd().openDir(std.fs.path.dirname(seeders_module_path).?, .{});
     defer seeders_module_dir.close();
 
-    const writer = seeders_file.writer();
-    try writer.writeAll(
+    //const writer = seeders_file.writer();
+    try seeders_file.writeAll(
         \\const jetquery = @import("jetquery");
         \\pub const Seeder = struct {
         \\    runFn: *const fn(repo: anytype) anyerror!void,
@@ -35,6 +35,7 @@ pub fn main() !void {
             basename,
             .{},
         );
+        // was seeders_file.writer
         try writer.print(
             \\    .{{
             \\        .runFn = @import("{0s}").run,
@@ -45,7 +46,7 @@ pub fn main() !void {
             .{try zigEscape(allocator, basename)},
         );
     }
-    try writer.writeAll(
+    try seeders_file.writeAll(
         \\};
         \\
     );

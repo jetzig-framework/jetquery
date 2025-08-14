@@ -16,8 +16,7 @@ pub fn main() !void {
     var migrations_module_dir = try std.fs.cwd().openDir(std.fs.path.dirname(migrations_module_path).?, .{});
     defer migrations_module_dir.close();
 
-    const writer = migrations_file.writer();
-    try writer.writeAll(
+    try migrations_file.writeAll(
         \\const jetquery = @import("jetquery");
         \\pub const Migration = struct {
         \\    upFn: *const fn(repo: anytype) anyerror!void,
@@ -38,6 +37,7 @@ pub fn main() !void {
             basename,
             .{},
         );
+        // was migrations_file.writer
         try writer.print(
             \\    .{{
             \\        .upFn = @import("{0s}").up,
@@ -50,7 +50,7 @@ pub fn main() !void {
             .{ try zigEscape(allocator, basename), try zigEscape(allocator, version) },
         );
     }
-    try writer.writeAll(
+    try migrations_file.writeAll(
         \\};
         \\
     );
