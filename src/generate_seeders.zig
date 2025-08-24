@@ -36,7 +36,7 @@ pub fn main() !void {
             basename,
             .{},
         );
-        try seeders_file.writer.print(
+        try seeders_file.deprecatedWriter().print(
             \\    .{{
             \\        .runFn = @import("{0s}").run,
             \\        .name = "{0s}",
@@ -55,7 +55,7 @@ pub fn main() !void {
 
 fn zigEscape(allocator: std.mem.Allocator, input: []const u8) ![]const u8 {
     var buf = ArrayListManaged(u8).init(allocator);
-    const writer = buf.writer();
-    try std.zig.stringEscape(input, "", .{}, writer);
+    var writer = buf.writer().adaptToNewApi(&.{});
+    try std.zig.stringEscape(input, &writer.new_interface);
     return try buf.toOwnedSlice();
 }
