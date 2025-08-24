@@ -51,10 +51,10 @@ pub fn defaultCallback(event: Event) !void {
     } else {
         var buf: [32]u8 = undefined;
         const formatted_duration = if (event.duration) |duration| {
-            var writer: std.Io.Writer = .fixed(&.{});
-            try std.fmt.bufPrint(&buf, " [{}]", .{
-                writer.printDurationSigned(duration),
-            });
+            var duration_buf: [32]u8 = undefined;
+            var writer: std.Io.Writer = .fixed(&duration_buf);
+            try writer.printDurationSigned(duration);
+            try std.fmt.bufPrint(&buf, " [{}]", .{duration_buf});
         } else "";
         std.debug.print("{s}{s}{s}{s}{s}", .{
             event.message orelse "",
