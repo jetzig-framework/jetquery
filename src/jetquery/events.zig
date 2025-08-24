@@ -50,10 +50,12 @@ pub fn defaultCallback(event: Event) !void {
         , .{ event.sql orelse "", @errorName(err.err), err.message });
     } else {
         var buf: [32]u8 = undefined;
-        const formatted_duration = if (event.duration) |duration|
-            try std.fmt.bufPrint(&buf, " [{}]", .{std.fmt.fmtDurationSigned(duration)})
-        else
-            "";
+        const formatted_duration = if (event.duration) |duration| {
+            var writer: std.Io.Writer = .fixed(&.{});
+            try std.fmt.bufPrint(&buf, " [{}]", .{
+                writer.printDurationSigned(duration),
+            });
+        } else "";
         std.debug.print("{s}{s}{s}{s}{s}", .{
             event.message orelse "",
             if (event.message) |_| "\n" else "",
