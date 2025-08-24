@@ -1,4 +1,5 @@
 const std = @import("std");
+const ArrayListManaged = std.array_list.Managed;
 
 const jetquery = @import("../../jetquery.zig");
 
@@ -123,7 +124,7 @@ pub fn renderUpdateRuntime(
 ) ![]const u8 {
     var value_index = first_value_index;
 
-    var params_buf = std.ArrayList(u8).init(allocator);
+    var params_buf = ArrayListManaged(u8).init(allocator);
     defer params_buf.deinit();
     const params_writer = params_buf.writer();
 

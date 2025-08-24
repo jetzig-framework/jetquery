@@ -1,4 +1,5 @@
 const std = @import("std");
+const ArrayListManaged = std.array_list.Managed;
 
 const jetquery = @import("../jetquery.zig");
 const AuxiliaryQuery = @import("Query.zig").AuxiliaryQuery;
@@ -72,7 +73,7 @@ pub fn Result(AdaptedRepo: type) type {
 
                         const aux_type = AuxType(ResultType, aux_query.relation);
 
-                        var aux_rows = std.ArrayList(aux_type).init(adapted_result.allocator);
+                        var aux_rows = ArrayListManaged(aux_type).init(adapted_result.allocator);
                         while (try aux_result.next(q)) |aux_row| {
                             try aux_rows.append(mergeAux(
                                 aux_type,
@@ -120,7 +121,7 @@ pub fn Result(AdaptedRepo: type) type {
                             @field(
                                 merged_row,
                                 init_aux_query.relation.relation_name,
-                            ) = std.ArrayList(aux_type).init(adapted_result.allocator);
+                            ) = ArrayListManaged(aux_type).init(adapted_result.allocator);
                         }
                         const aux_values = try map.aux_map.getOrPut(index);
                         aux_values.value_ptr.* = merged_row;
@@ -280,7 +281,7 @@ fn MergedRowType(auxiliary_queries: []const AuxiliaryQuery, ResultType: type) ty
     for (auxiliary_queries, 0..) |aux_query, index| {
         fields[index] = jetquery.fields.structField(
             aux_query.relation.relation_name,
-            std.ArrayList(AuxType(ResultType, aux_query.relation)),
+            ArrayListManaged(AuxType(ResultType, aux_query.relation)),
         );
     }
     return jetquery.fields.structType(&fields);
@@ -341,7 +342,7 @@ fn PrimaryKey(Query: type, comptime primary_key: []const u8) type {
 
 fn Map(QueryType: type, MergedRow: type, comptime primary_key: []const u8) type {
     return struct {
-        id_array: std.ArrayList(PrimaryKey(QueryType, primary_key)),
+        id_array: ArrayListManaged(PrimaryKey(QueryType, primary_key)),
         id_map: IdMap(QueryType, primary_key),
         aux_map: std.AutoHashMap(usize, MergedRow),
 
@@ -350,7 +351,7 @@ fn Map(QueryType: type, MergedRow: type, comptime primary_key: []const u8) type 
             const IM = IdMap(QueryType, primary_key);
             const AM = std.AutoHashMap(usize, MergedRow);
             return .{
-                .id_array = std.ArrayList(PK).init(allocator),
+                .id_array = ArrayListManaged(PK).init(allocator),
                 .id_map = IM.init(allocator),
                 .aux_map = AM.init(allocator),
             };

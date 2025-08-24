@@ -1,4 +1,5 @@
 const std = @import("std");
+const ArrayListManaged = std.array_list.Managed;
 
 const jetquery = @import("jetquery");
 const jetcommon = @import("jetcommon");
@@ -30,7 +31,7 @@ pub fn Reflect(adapter_name: jetquery.adapters.Name, Schema: type) type {
 
             const allocator = arena.allocator();
 
-            var buf = std.ArrayList(u8).init(allocator);
+            var buf = ArrayListManaged(u8).init(allocator);
             defer buf.deinit();
 
             const writer = buf.writer();
@@ -117,7 +118,7 @@ fn stringifyOptions(
         }
     }
 
-    var relations_buf = std.ArrayList(u8).init(allocator);
+    var relations_buf = ArrayListManaged(u8).init(allocator);
     defer relations_buf.deinit();
 
     const relations_writer = relations_buf.writer();
@@ -198,7 +199,7 @@ fn stringifyOptions(
 }
 
 fn stringifyModelOptions(allocator: std.mem.Allocator, model: type) ![]const u8 {
-    var buf = std.ArrayList(u8).init(allocator);
+    var buf = ArrayListManaged(u8).init(allocator);
     const writer = buf.writer();
 
     if (comptime hasDefaultOptions(model)) return ".{}";
@@ -256,7 +257,7 @@ fn stringifyRelationOptions(allocator: std.mem.Allocator, comptime relation: typ
     if (comptime relation.options.primary_key == null and
         relation.options.foreign_key == null) return ".{}";
 
-    var buf = std.ArrayList(u8).init(allocator);
+    var buf = ArrayListManaged(u8).init(allocator);
     const writer = buf.writer();
 
     try writer.print(".{{", .{});
@@ -318,7 +319,7 @@ fn translateTableName(
     // magic with plural nouns etc. - if the user modifies the default generated value, we use
     // that value going forward as it will now be in the schema.
     var it = std.mem.tokenizeScalar(u8, name, '_');
-    var buf = std.ArrayList([]const u8).init(allocator);
+    var buf = ArrayListManaged([]const u8).init(allocator);
     while (it.next()) |token| {
         var dup = try allocator.dupe(u8, token);
         dup[0] = std.ascii.toUpper(dup[0]);

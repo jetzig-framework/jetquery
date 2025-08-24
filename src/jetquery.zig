@@ -1,4 +1,5 @@
 const std = @import("std");
+const ArrayListManaged = std.array_list.Managed;
 
 pub const jetcommon = @import("jetcommon");
 
@@ -1010,7 +1011,7 @@ test "slice of []const u8 in whereclause" {
             .{},
         );
     };
-    var array = std.ArrayList([]const u8).init(std.testing.allocator);
+    var array = ArrayListManaged([]const u8).init(std.testing.allocator);
     defer array.deinit();
 
     try array.append("Bob");
@@ -1032,7 +1033,7 @@ test "slice of int in whereclause" {
             .{},
         );
     };
-    var array = std.ArrayList(u128).init(std.testing.allocator);
+    var array = ArrayListManaged(u128).init(std.testing.allocator);
     defer array.deinit();
 
     try array.append(2);
@@ -1054,7 +1055,7 @@ test "slice of float in whereclause" {
             .{},
         );
     };
-    var array = std.ArrayList(f64).init(std.testing.allocator);
+    var array = ArrayListManaged(f64).init(std.testing.allocator);
     defer array.deinit();
 
     try array.append(3.1415926535897932);
@@ -1076,7 +1077,7 @@ test "slice of bool in whereclause" {
             .{},
         );
     };
-    var array = std.ArrayList(bool).init(std.testing.allocator);
+    var array = ArrayListManaged(bool).init(std.testing.allocator);
     defer array.deinit();
 
     try array.append(true);

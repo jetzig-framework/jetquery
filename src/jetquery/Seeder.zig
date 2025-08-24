@@ -1,4 +1,5 @@
 const std = @import("std");
+const ArrayListManaged = std.array_list.Managed;
 
 const jetcommon = @import("jetcommon");
 
@@ -68,7 +69,7 @@ pub fn render(self: Seeder) ![]const u8 {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var buf = std.ArrayList(u8).init(alloc);
+    var buf = ArrayListManaged(u8).init(alloc);
     const writer = buf.writer();
     try writer.writeAll(seeder_template);
 

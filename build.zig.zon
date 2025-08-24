@@ -2,15 +2,15 @@
     .name = .jetquery,
     .version = "0.0.0",
     .fingerprint = 0x8fab0d79cef7d74c,
-    .minimum_zig_version = "0.15.0-dev.1425+7ee6dab39",
+    .minimum_zig_version = "0.15.1",
     .dependencies = .{
         .jetcommon = .{
-            .url = "https://github.com/jetzig-framework/jetcommon/archive/ff1f2cf50e6d0b35bfdadc77f9d21cf2a3e05b26.tar.gz",
-            .hash = "jetcommon-0.1.0-jPY_DdNIAAA7pPOLsOkd5BH4juCnM4F71sNLK2aiwMs6",
+            .url = "https://github.com/jetzig-framework/jetcommon/archive/f613f2cb9084d4b1c19ea89f5dab9ad7ba4fa3c4.tar.gz",
+            .hash = "jetcommon-0.1.0-jPY_DRRJAADaN4sQby3c31hyFSAgqIP90D4DYcTNVquG",
         },
         .pg = .{
-            .url = "https://github.com/karlseguin/pg.zig/archive/6a164b282eb69bb033b05301aa839be3bfdb8dd8.tar.gz",
-            .hash = "pg-0.0.0-Wp_7gWYABgDCWzy0PvaGuwpn1PxTqihfYowektiN11n7",
+            .url = "https://github.com/karlseguin/pg.zig/archive/4c2602bad095f9d85b16711d12aa3a2bc7e169cc.tar.gz",
+            .hash = "pg-0.0.0-Wp_7gQ8FBgCRArfpYn9OdkUhGOUHVRXxB6h9S6lYu7bC",
         },
     },
     .paths = .{

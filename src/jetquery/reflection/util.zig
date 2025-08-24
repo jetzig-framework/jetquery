@@ -1,4 +1,5 @@
 const std = @import("std");
+const ArrayListManaged = std.array_list.Managed;
 
 /// Very basic noun plural->singular conversion. This is used for translating database tables
 /// into model names. If the user modifies the model name in the generated schema then any
@@ -47,7 +48,7 @@ pub fn modelize(allocator: std.mem.Allocator, input: []const u8) ![]const u8 {
     defer allocator.free(singularized);
 
     var it = std.mem.tokenizeScalar(u8, singularized, '_');
-    var buf = std.ArrayList(u8).init(allocator);
+    var buf = ArrayListManaged(u8).init(allocator);
     while (it.next()) |slice| {
         const duped = try allocator.dupe(u8, slice);
         defer allocator.free(duped);
@@ -69,7 +70,7 @@ pub fn zigEscape(
     comptime context: enum { id, string },
     input: []const u8,
 ) ![]const u8 {
-    var buf = std.ArrayList(u8).init(allocator);
+    var buf = ArrayListManaged(u8).init(allocator);
     const writer = buf.writer();
     const formatter = switch (context) {
         .id => std.zig.fmtId(input),

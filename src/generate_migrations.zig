@@ -1,4 +1,5 @@
 const std = @import("std");
+const ArrayListManaged = std.array_list.Managed;
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -58,7 +59,7 @@ pub fn main() !void {
 }
 
 fn zigEscape(allocator: std.mem.Allocator, input: []const u8) ![]const u8 {
-    var buf = std.ArrayList(u8).init(allocator);
+    var buf = ArrayListManaged(u8).init(allocator);
     const writer = buf.writer();
     try std.zig.stringEscape(input, "", .{}, writer);
     return try buf.toOwnedSlice();

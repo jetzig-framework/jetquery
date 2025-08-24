@@ -1,4 +1,5 @@
 const std = @import("std");
+const ArrayListManaged = std.array_list.Managed;
 
 const jetquery = @import("../jetquery.zig");
 
@@ -554,7 +555,7 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
             comptime columns: []const jetquery.schema.Column,
             comptime options: jetquery.CreateTableOptions,
         ) !void {
-            var buf = std.ArrayList(u8).init(self.allocator);
+            var buf = ArrayListManaged(u8).init(self.allocator);
             defer buf.deinit();
 
             const writer = buf.writer();
@@ -591,7 +592,7 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
             comptime name: []const u8,
             comptime options: jetquery.DropTableOptions,
         ) !void {
-            var buf = std.ArrayList(u8).init(self.allocator);
+            var buf = ArrayListManaged(u8).init(self.allocator);
             defer buf.deinit();
 
             const writer = buf.writer();
@@ -615,7 +616,7 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
             comptime name: []const u8,
             comptime options: jetquery.AlterTableOptions,
         ) !void {
-            var buf = std.ArrayList(u8).init(self.allocator);
+            var buf = ArrayListManaged(u8).init(self.allocator);
             defer buf.deinit();
             const writer = buf.writer();
 
@@ -672,7 +673,7 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
             options: struct {},
         ) !void {
             _ = options;
-            var buf = std.ArrayList(u8).init(self.allocator);
+            var buf = ArrayListManaged(u8).init(self.allocator);
             defer buf.deinit();
             const database = try self.adapter.identifierAlloc(self.allocator, name);
             defer self.allocator.free(database);
@@ -699,7 +700,7 @@ pub fn Repo(adapter_name: jetquery.adapters.Name, Schema: type) type {
             name: []const u8,
             options: jetquery.DropDatabaseOptions,
         ) !void {
-            var buf = std.ArrayList(u8).init(self.allocator);
+            var buf = ArrayListManaged(u8).init(self.allocator);
             defer buf.deinit();
             const database = try self.adapter.identifierAlloc(self.allocator, name);
             defer self.allocator.free(database);

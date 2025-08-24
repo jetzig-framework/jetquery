@@ -1,4 +1,5 @@
 const std = @import("std");
+const ArrayListManaged = std.array_list.Managed;
 
 const jetcommon = @import("jetcommon");
 
@@ -395,13 +396,13 @@ const Command = struct {
         var arg_iterator = std.mem.tokenizeAny(u8, self.command, &std.ascii.whitespace);
         var token_iterator = TokenIterator{ .arg_iterator = &arg_iterator };
 
-        var up_buf = std.ArrayList(u8).init(self.allocator);
+        var up_buf = ArrayListManaged(u8).init(self.allocator);
         const up_writer = up_buf.writer();
 
-        var down_buf = std.ArrayList(u8).init(self.allocator);
+        var down_buf = ArrayListManaged(u8).init(self.allocator);
         const down_writer = down_buf.writer();
 
-        var columns = std.ArrayList(Command.Token.Column).init(self.allocator);
+        var columns = ArrayListManaged(Command.Token.Column).init(self.allocator);
         var maybe_table: ?Command.Token.Table = null;
 
         while (try token_iterator.next()) |token| {
@@ -503,7 +504,7 @@ pub fn render(self: Migration) ![]const u8 {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var buf = std.ArrayList(u8).init(alloc);
+    var buf = ArrayListManaged(u8).init(alloc);
     const writer = buf.writer();
 
     if (self.options.command) |cmd| {

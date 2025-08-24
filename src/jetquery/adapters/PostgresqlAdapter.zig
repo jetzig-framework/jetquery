@@ -1,4 +1,5 @@
 const std = @import("std");
+const ArrayListManaged = std.array_list.Managed;
 const builtin = @import("builtin");
 
 const pg = @import("pg");
@@ -89,7 +90,7 @@ pub fn Result(AdaptedRepo: type) type {
         pub fn all(self: *Self, query: anytype) ![]@TypeOf(query).ResultType {
             defer self.deinit();
 
-            var array = std.ArrayList(@TypeOf(query).ResultType).init(self.allocator);
+            var array = ArrayListManaged(@TypeOf(query).ResultType).init(self.allocator);
             while (try self.next(query)) |row| try array.append(row);
             return try array.toOwnedSlice();
         }
@@ -674,7 +675,7 @@ pub fn reflectTables(
     var result = try repo.executeSql(sql, .{});
     defer result.deinit();
 
-    var tables = std.ArrayList(jetquery.Reflection.TableInfo).init(allocator);
+    var tables = ArrayListManaged(jetquery.Reflection.TableInfo).init(allocator);
     while (try result.postgresql.result.next()) |row| {
         try tables.append(.{
             .name = try allocator.dupe(u8, row.get([]const u8, 0)),
@@ -695,7 +696,7 @@ pub fn reflectColumns(
     var result = try repo.executeSql(sql, .{});
     defer result.deinit();
 
-    var columns = std.ArrayList(jetquery.Reflection.ColumnInfo).init(allocator);
+    var columns = ArrayListManaged(jetquery.Reflection.ColumnInfo).init(allocator);
     while (try result.postgresql.result.next()) |row| {
         try columns.append(.{
             .table = try allocator.dupe(u8, row.get([]const u8, 0)),
@@ -714,7 +715,7 @@ fn reflectPrimaryKeys(
     allocator: std.mem.Allocator,
     repo: anytype,
 ) ![]const jetquery.Reflection.PrimaryKeyInfo {
-    var primary_keys = std.ArrayList(jetquery.Reflection.PrimaryKeyInfo).init(allocator);
+    var primary_keys = ArrayListManaged(jetquery.Reflection.PrimaryKeyInfo).init(allocator);
 
     var result = try repo.executeSql(
         \\select "pg_class"."relname",
@@ -745,7 +746,7 @@ fn reflectForeignKeys(
     allocator: std.mem.Allocator,
     repo: anytype,
 ) ![]const jetquery.Reflection.ForeignKeyInfo {
-    var foreign_keys = std.ArrayList(jetquery.Reflection.ForeignKeyInfo).init(allocator);
+    var foreign_keys = ArrayListManaged(jetquery.Reflection.ForeignKeyInfo).init(allocator);
 
     var result = try repo.executeSql(
         \\select "information_schema"."table_constraints"."table_name",

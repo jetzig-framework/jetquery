@@ -1,5 +1,5 @@
 const std = @import("std");
-
+const ArrayListManaged = std.array_list.Managed;
 pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
@@ -193,7 +193,7 @@ fn findFilesSorted(allocator: std.mem.Allocator, path: []const u8) ![][]const u8
     };
     defer dir.close();
 
-    var files = std.ArrayList([]const u8).init(allocator);
+    var files = ArrayListManaged([]const u8).init(allocator);
 
     var it = dir.iterate();
     while (try it.next()) |entry| {
