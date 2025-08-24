@@ -36,8 +36,7 @@ pub fn main() !void {
             basename,
             .{},
         );
-        // was seeders_file.writer
-        try writer.print(
+        try seeders_file.writer.print(
             \\    .{{
             \\        .runFn = @import("{0s}").run,
             \\        .name = "{0s}",

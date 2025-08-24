@@ -38,8 +38,7 @@ pub fn main() !void {
             basename,
             .{},
         );
-        // was migrations_file.writer
-        try writer.print(
+        try migrations.writer.print(
             \\    .{{
             \\        .upFn = @import("{0s}").up,
             \\        .downFn = @import("{0s}").down,
