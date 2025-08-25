@@ -72,9 +72,10 @@ pub fn zigEscape(
 ) ![]const u8 {
     var buf = ArrayListManaged(u8).init(allocator);
     const writer = buf.writer();
+    var new_writer = writer.adaptToNewApi(&.{});
     const formatter = switch (context) {
         .id => std.zig.fmtId(input),
-        .string => std.zig.stringEscape(input),
+        .string => std.zig.stringEscape(input, &new_writer.new_interface),
     };
 
     try writer.print("{}", .{formatter});
