@@ -21,6 +21,7 @@ pub fn Seed(adapter_name: jetquery.adapters.Name, schema: anytype) type {
 
         pub fn seed(self: Self) !void {
             log("\n* Running seeds.\n", .{});
+            @setEvalBranchQuota(10000);
 
             var count: usize = 0;
             inline for (seeders) |item| {
@@ -32,7 +33,7 @@ pub fn Seed(adapter_name: jetquery.adapters.Name, schema: anytype) type {
                 log("\n=== [SEED:COMPLETE] {s} ===\n", .{item.name});
             }
 
-            log("\n* Applied {} seed(s).\n", .{count});
+            log("\n* Applied {d} seed(s).\n", .{count});
         }
 
         fn log(comptime message: []const u8, args: anytype) void {

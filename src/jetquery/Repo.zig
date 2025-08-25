@@ -1197,7 +1197,7 @@ test "timestamps" {
     );
 
     const now = std.time.microTimestamp();
-    std.time.sleep(std.time.ns_per_ms);
+    std.Thread.sleep(std.time.ns_per_ms);
 
     try repo.Query(.Cat).insert(.{ .name = "Hercules", .paws = 4 }).execute(&repo);
 

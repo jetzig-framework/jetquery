@@ -1,5 +1,7 @@
 const std = @import("std");
 const ArrayListManaged = std.array_list.Managed;
+const Allocator = std.mem.Allocator;
+const ArenaAllocator = std.heap.ArenaAllocator;
 
 const jetquery = @import("jetquery");
 const jetcommon = @import("jetcommon");
@@ -21,12 +23,12 @@ pub fn Reflect(adapter_name: jetquery.adapters.Name, Schema: type) type {
         repo: *AdaptedRepo,
         options: ReflectOptions,
 
-        pub fn init(allocator: std.mem.Allocator, repo: *AdaptedRepo, options: ReflectOptions) Self {
+        pub fn init(allocator: Allocator, repo: *AdaptedRepo, options: ReflectOptions) Self {
             return .{ .repo = repo, .allocator = allocator, .options = options };
         }
 
         pub fn generateSchema(self: Self) ![]const u8 {
-            var arena = std.heap.ArenaAllocator.init(self.allocator);
+            var arena: ArenaAllocator = .init(self.allocator);
             defer arena.deinit();
 
             const allocator = arena.allocator();
@@ -40,14 +42,17 @@ pub fn Reflect(adapter_name: jetquery.adapters.Name, Schema: type) type {
                 \\{s}
                 \\const jetquery = {s};
                 \\
-            , .{ self.options.header, self.options.import_jetquery });
+            , .{
+                self.options.header,
+                self.options.import_jetquery,
+            });
 
             const reflection = try self.repo.adapter.reflect(allocator, self.repo);
             const map = try reflection.tableMap(allocator);
             var written = std.BufSet.init(allocator);
 
             // Write tables already defined in the schema first to preserve schema order if
-            // edited by user ....
+            // edited by user ...
             inline for (comptime std.meta.declarations(Schema)) |decl| {
                 if (map.get(@field(Schema, decl.name).name)) |table| {
                     try writeModel(allocator, Schema, reflection, table, writer);
@@ -71,13 +76,12 @@ pub fn Reflect(adapter_name: jetquery.adapters.Name, Schema: type) type {
 }
 
 fn writeModel(
-    allocator: std.mem.Allocator,
+    allocator: Allocator,
     comptime schema: type,
     reflection: jetquery.Reflection,
     table: jetquery.Reflection.TableInfo,
     writer: anytype,
 ) !void {
-    const model_name = try translateTableName(allocator, schema, table.name);
     try writer.print(
         \\
         \\pub const {s} = jetquery.Model(
@@ -85,7 +89,10 @@ fn writeModel(
         \\"{s}",
         \\struct {{
         \\
-    , .{ model_name, try util.zigEscape(allocator, .string, table.name) });
+    , .{
+        try translateTableName(allocator, schema, table.name),
+        try util.zigEscape(allocator, .string, table.name),
+    });
 
     for (reflection.columns) |column| {
         if (!std.mem.eql(u8, column.table, table.name)) continue;
@@ -93,7 +100,10 @@ fn writeModel(
             \\{s}: {s},
             \\
         ,
-            .{ try util.zigEscape(allocator, .id, column.name), column.zigType() },
+            .{
+                try util.zigEscape(allocator, .id, column.name),
+                column.zigType(),
+            },
         );
     }
 

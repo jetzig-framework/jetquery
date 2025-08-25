@@ -658,8 +658,11 @@ fn nodeTree(
                 if (path.len == 0) unreachable;
 
                 var t: type = OG;
+
                 for (path[0 .. path.len - 1]) |c| {
-                    t = std.meta.FieldType(t, std.enums.nameCast(std.meta.FieldEnum(t), c));
+                    const field_enum = std.meta.FieldEnum(t);
+                    const name_cast = std.enums.nameCast(field_enum, c);
+                    t = @FieldType(t, name_cast);
                 }
                 const value: t = undefined;
                 const condition = @field(value, path[path.len - 1]);
