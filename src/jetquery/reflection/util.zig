@@ -74,7 +74,7 @@ pub fn zigEscape(
     const writer = buf.writer();
     const formatter = switch (context) {
         .id => std.zig.fmtId(input),
-        .string => std.zig.fmtEscapes(input),
+        .string => std.zig.stringEscape(input),
     };
 
     try writer.print("{}", .{formatter});
