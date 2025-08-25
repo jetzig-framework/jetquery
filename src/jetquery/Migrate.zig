@@ -228,7 +228,8 @@ test "migrate" {
 
     const new_defaults_query = test_repo.Query(.DefaultsTest)
         .select(.{ .id, .name, .count });
-    try std.testing.expectError(error.PG, test_repo.execute(new_defaults_query));
+    const new_defaults_result = test_repo.execute(new_defaults_query);
+    try std.testing.expect(new_defaults_result == error.PG);
 
     // Human-cats query should still work after first rollback
     var human_cats_result = try test_repo.execute(human_cats_query);
@@ -245,7 +246,8 @@ test "migrate" {
     try migrate.rollback();
 
     // After rolling back cats, human table should still exist but can't join to cats
-    try std.testing.expectError(error.PG, test_repo.execute(human_cats_query));
+    const human_cats_result2 = test_repo.execute(human_cats_query);
+    try std.testing.expect(human_cats_result2 == error.PG);
 
     // Rollback the create_humans migration
     try migrate.rollback();
@@ -253,7 +255,7 @@ test "migrate" {
     // After rolling back humans, human table should no longer exist
     {
         const humans = test_repo.Query(.Human).all(&test_repo);
-        try std.testing.expectError(error.PG, humans);
+        try std.testing.expect(humans == error.PG);
     }
 }
 

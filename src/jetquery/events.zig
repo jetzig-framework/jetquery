@@ -55,8 +55,8 @@ pub fn defaultCallback(event: Event) !void {
             var writer: std.Io.Writer = .fixed(&duration_buf);
             try writer.printDurationSigned(duration);
         }
-        const formatted_duration = if (event.duration) |_| {
-            try std.fmt.bufPrint(&buf, " [{s}]", .{duration_buf});
+        const formatted_duration = if (event.duration) |_| blk: {
+            break :blk std.fmt.bufPrint(&buf, " [{s}]", .{duration_buf}) catch "";
         } else "";
         std.debug.print("{s}{s}{s}{s}{s}", .{
             event.message orelse "",

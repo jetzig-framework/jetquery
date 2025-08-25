@@ -15,7 +15,11 @@ pub fn build(b: *std.Build) !void {
 
     b.installArtifact(lib);
 
-    const pg_dep = b.dependency("pg", .{ .target = target, .optimize = optimize });
+    const pg_dep = b.dependency("pg", .{
+        .target = target,
+        .optimize = optimize,
+        .openssl_lib_name = "ssl",
+    });
     const jetcommon_dep = b.dependency("jetcommon", .{ .target = target, .optimize = optimize });
     const jetcommon_module = jetcommon_dep.module("jetcommon");
 
