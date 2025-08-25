@@ -659,7 +659,7 @@ fn nodeTree(
 
                 var t: type = OG;
                 for (path[0 .. path.len - 1]) |c| {
-                    t = @FieldType(t, std.enums.nameCast(std.meta.FieldEnum(t), c));
+                    t = @FieldType(t, c);
                 }
                 const value: t = undefined;
                 const condition = @field(value, path[path.len - 1]);
