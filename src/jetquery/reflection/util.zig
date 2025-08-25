@@ -78,6 +78,6 @@ pub fn zigEscape(
         .string => std.zig.stringEscape(input, &new_writer.new_interface),
     };
 
-    try writer.print("{}", .{formatter});
+    try writer.print("{s}", .{formatter});
     return try buf.toOwnedSlice();
 }
