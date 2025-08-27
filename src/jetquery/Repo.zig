@@ -1374,8 +1374,8 @@ test "aggregate count() with HAVING" {
 test "missing config options" {
     try resetDatabase();
 
-    const repo = Repo(.postgresql, struct {}).init(std.testing.allocator, .{ .adapter = .{} });
-    try std.testing.expectError(error.JetQueryConfigError, repo);
+    const result = Repo(.postgresql, struct {}).init(std.testing.allocator, .{ .adapter = .{} });
+    try std.testing.expect(result == error.JetQueryConfigError);
 }
 
 test "transactions" {
@@ -1469,10 +1469,8 @@ test "alterTable" {
 
     try repo.createTable("cats", &.{}, .{});
 
-    try std.testing.expectError(
-        error.PG,
-        repo.Query(.Cat).select(.{ .name, .paws }).all(&repo),
-    );
+    const result1 = repo.Query(.Cat).select(.{ .name, .paws }).all(&repo);
+    try std.testing.expect(result1 == error.PG);
 
     try repo.alterTable("cats", .{
         .columns = .{
@@ -1486,26 +1484,20 @@ test "alterTable" {
     const cats = try repo.Query(.Cat).select(.{ .name, .paws }).all(&repo);
     try std.testing.expect(cats.len == 0); // Empty table but valid select columns.
 
-    try std.testing.expectError(
-        error.PG,
-        repo.Query(.Dog).select(.{ .name, .paws }).all(&repo),
-    );
+    const result2 = repo.Query(.Dog).select(.{ .name, .paws }).all(&repo);
+    try std.testing.expect(result2 == error.PG);
 
     try repo.alterTable("cats", .{ .rename = "dogs" });
 
-    try std.testing.expectError(
-        error.PG,
-        repo.Query(.Cat).select(.{ .name, .paws }).all(&repo),
-    );
+    const result3 = repo.Query(.Cat).select(.{ .name, .paws }).all(&repo);
+    try std.testing.expect(result3 == error.PG);
 
     const dogs = try repo.Query(.Dog).select(.{ .name, .paws }).all(&repo);
     try std.testing.expect(dogs.len == 0); // Empty table but valid select columns.
 
     try repo.alterTable("dogs", .{ .columns = .{ .drop = &.{"paws"} } });
-    try std.testing.expectError(
-        error.PG,
-        repo.Query(.Dog).select(.{ .name, .paws }).all(&repo),
-    );
+    const result4 = repo.Query(.Dog).select(.{ .name, .paws }).all(&repo);
+    try std.testing.expect(result4 == error.PG);
 
     try repo.alterTable(
         "dogs",

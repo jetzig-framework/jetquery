@@ -70,17 +70,13 @@ pub fn zigEscape(
     comptime context: enum { id, string },
     input: []const u8,
 ) ![]const u8 {
-    var writer: std.Io.Writer.Allocating = .init(allocator);
-    defer writer.deinit();
+    var buf = ArrayListManaged(u8).init(allocator);
+    const writer = buf.writer();
+    const formatter = switch (context) {
+        .id => std.zig.fmtId(input),
+        .string => std.zig.fmtString(input),
+    };
 
-    switch (context) {
-        .id => {
-            var formatter = std.zig.fmtId(input);
-            try formatter.format(&writer.writer);
-        },
-        .string => {
-            try std.zig.stringEscape(input, &writer.writer);
-        },
-    }
-    return writer.toOwnedSlice();
+    try writer.print("{any}", .{formatter});
+    return try buf.toOwnedSlice();
 }
