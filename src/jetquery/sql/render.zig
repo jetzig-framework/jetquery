@@ -526,6 +526,7 @@ fn renderSelectColumn(
     comptime total: usize,
 ) []const u8 {
     comptime {
+        @setEvalBranchQuota(100000);
         return std.fmt.comptimePrint(
             " {s}{s}",
             .{ Adapter.columnSql(column), if (index + 1 < total) "," else "" },
@@ -640,7 +641,7 @@ fn renderParams(
                 },
             },
         };
-
+        @setEvalBranchQuota(100000);
         const param = std.fmt.comptimePrint(template, args);
         @memcpy(buf[cursor .. cursor + param.len], param);
         cursor += param.len;

@@ -44,6 +44,7 @@ pub fn FieldValues(Table: type, relations: []const type, comptime fields: []cons
     _ = relations;
     var new_fields: [fields.len]std.builtin.Type.StructField = undefined;
     for (fields, 0..) |field, index| {
+        @setEvalBranchQuota(100000);
         new_fields[index] = .{
             .name = std.fmt.comptimePrint("{}", .{index}),
             .type = field.info.type,

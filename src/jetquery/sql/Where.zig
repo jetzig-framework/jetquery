@@ -928,7 +928,7 @@ fn assignValue(
 // ```
 fn isTriplet(T: type) bool {
     if (@typeInfo(T) != .@"struct") return false;
-
+    @setEvalBranchQuota(100000);
     const struct_fields = std.meta.fields(T);
 
     if (struct_fields.len != 3) return false;
