@@ -1,6 +1,7 @@
 const std = @import("std");
 const ArrayListManaged = std.array_list.Managed;
 pub fn build(b: *std.Build) !void {
+    @setEvalBranchQuota(100000);
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 

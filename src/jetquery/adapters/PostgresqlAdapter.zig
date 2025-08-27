@@ -352,7 +352,7 @@ pub fn release(self: *PostgresqlAdapter, connection: jetquery.Connection) void {
 /// Output column type as SQL.
 pub fn columnTypeSql(comptime column: jetquery.schema.Column) []const u8 {
     return switch (column.type) {
-        .string => " VARCHAR" ++ std.fmt.comptimePrint("({})", .{column.options.length orelse 255}),
+        .string => " VARCHAR" ++ std.fmt.comptimePrint("({d})", .{column.options.length orelse 255}),
         .integer => " INTEGER",
         .boolean => " BOOLEAN",
         .float => " REAL",
@@ -428,17 +428,17 @@ pub fn defaultValueSql(comptime default_value: []const u8) []const u8 {
 
 /// SQL representing a bind parameter, e.g. `$1`.
 pub fn paramSql(comptime index: usize) []const u8 {
-    return std.fmt.comptimePrint("${}", .{index + 1});
+    return std.fmt.comptimePrint("${d}", .{index + 1});
 }
 
 /// SQL representing a bind parameter, e.g. `$1`.
 pub fn paramSqlBuf(buf: []u8, index: usize) ![]const u8 {
-    return try std.fmt.bufPrint(buf, "${}", .{index + 1});
+    return try std.fmt.bufPrint(buf, "${d}", .{index + 1});
 }
 
 /// SQL representing an array bind parameter with an `ANY` call, e.g. `ANY ($1)`.
 pub fn anyParamSql(comptime index: usize) []const u8 {
-    return std.fmt.comptimePrint("ANY (${})", .{index + 1});
+    return std.fmt.comptimePrint("ANY (${d})", .{index + 1});
 }
 
 pub fn orderSql(comptime order_clause: jetquery.sql.OrderClause) []const u8 {
@@ -568,7 +568,7 @@ fn indexNameSize(comptime table_name: []const u8, comptime column_names: []const
         if (size > max_identifier_len) {
             @compileError(
                 std.fmt.comptimePrint(
-                    "Generated index name length {} longer than {} characters. Specify `.index_name` to manually set a name for this index.",
+                    "Generated index name length {d} longer than {d} characters. Specify `.index_name` to manually set a name for this index.",
                     .{ size, max_identifier_len },
                 ),
             );

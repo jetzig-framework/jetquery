@@ -658,6 +658,7 @@ fn nodeTree(
                 if (path.len == 0) unreachable;
 
                 var t: type = OG;
+
                 for (path[0 .. path.len - 1]) |c| {
                     t = @FieldType(t, c);
                 }
