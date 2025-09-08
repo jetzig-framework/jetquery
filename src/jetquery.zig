@@ -1,5 +1,5 @@
 const std = @import("std");
-const ArrayListManaged = std.array_list.Managed;
+const ArrayList = std.ArrayList;
 
 pub const jetcommon = @import("jetcommon");
 
@@ -1011,11 +1011,11 @@ test "slice of []const u8 in whereclause" {
             .{},
         );
     };
-    var array = ArrayListManaged([]const u8).init(std.testing.allocator);
-    defer array.deinit();
+    var array: ArrayList([]const u8) = .empty;
+    defer array.deinit(std.testing.allocator);
 
-    try array.append("Bob");
-    try array.append("Jane");
+    try array.append(std.testing.allocator, "Bob");
+    try array.append(std.testing.allocator, "Jane");
 
     const query = Query(TestAdapter, Schema, .Human).where(.{ .name = array.items });
     try std.testing.expectEqualStrings(
@@ -1033,11 +1033,11 @@ test "slice of int in whereclause" {
             .{},
         );
     };
-    var array = ArrayListManaged(u128).init(std.testing.allocator);
-    defer array.deinit();
+    var array: ArrayList(u128) = .empty;
+    defer array.deinit(std.testing.allocator);
 
-    try array.append(2);
-    try array.append(1231231238128381283);
+    try array.append(std.testing.allocator, 2);
+    try array.append(std.testing.allocator, 1231231238128381283);
 
     const query = Query(TestAdapter, Schema, .Human).where(.{ .cats = array.items });
     try std.testing.expectEqualStrings(
@@ -1055,11 +1055,11 @@ test "slice of float in whereclause" {
             .{},
         );
     };
-    var array = ArrayListManaged(f64).init(std.testing.allocator);
-    defer array.deinit();
+    var array: ArrayList(f64) = .empty;
+    defer array.deinit(std.testing.allocator);
 
-    try array.append(3.1415926535897932);
-    try array.append(2.7182818284590452);
+    try array.append(std.testing.allocator, 3.1415926535897932);
+    try array.append(std.testing.allocator, 2.7182818284590452);
 
     const query = Query(TestAdapter, Schema, .Human).where(.{ .favorite_number = array.items });
     try std.testing.expectEqualStrings(
@@ -1077,11 +1077,11 @@ test "slice of bool in whereclause" {
             .{},
         );
     };
-    var array = ArrayListManaged(bool).init(std.testing.allocator);
-    defer array.deinit();
+    var array: ArrayList(bool) = .empty;
+    defer array.deinit(std.testing.allocator);
 
-    try array.append(true);
-    try array.append(false);
+    try array.append(std.testing.allocator, true);
+    try array.append(std.testing.allocator, false);
 
     const query = Query(TestAdapter, Schema, .Human).where(.{ .has_cats = array.items });
     try std.testing.expectEqualStrings(

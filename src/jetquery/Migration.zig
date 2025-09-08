@@ -1,9 +1,12 @@
 const std = @import("std");
-const ArrayListManaged = std.array_list.Managed;
+const ArrayList = std.ArrayList;
+const Allocator = std.mem.Allocator;
+const Writer = std.Io.Writer;
+const ArenaAllocator = std.heap.ArenaAllocator;
 
 const jetcommon = @import("jetcommon");
 
-allocator: std.mem.Allocator,
+allocator: Allocator,
 name: []const u8,
 options: MigrationOptions,
 
@@ -14,13 +17,13 @@ const MigrationOptions = struct {
     command: ?[]const u8 = null,
 };
 
-pub fn init(allocator: std.mem.Allocator, name: []const u8, options: MigrationOptions) Migration {
+pub fn init(allocator: Allocator, name: []const u8, options: MigrationOptions) Migration {
     return .{ .allocator = allocator, .name = name, .options = options };
 }
 
 const Command = struct {
     command: []const u8,
-    allocator: std.mem.Allocator,
+    allocator: Allocator,
 
     const Action = enum { create, drop, alter, rename };
 
@@ -54,7 +57,7 @@ const Command = struct {
             rename: ?[]const u8 = null,
             action: ?Action = null,
 
-            pub fn writeUp(self: Table, columns: []const Column, writer: anytype) !void {
+            pub fn writeUp(self: Table, columns: []const Column, writer: *Writer) !void {
                 switch (self.action orelse .create) {
                     .create => try self.writeCreateTable(columns, writer),
                     .drop => try self.writeDropTable(writer),
@@ -63,7 +66,7 @@ const Command = struct {
                 }
             }
 
-            pub fn writeDown(self: Table, writer: anytype) !void {
+            pub fn writeDown(self: Table, writer: *Writer) !void {
                 if ((self.action orelse .create) == .create) {
                     try writer.print(
                         \\try repo.dropTable("{s}", .{{}});
@@ -76,7 +79,7 @@ const Command = struct {
                 }
             }
 
-            fn writeCreateTable(self: Table, columns: []const Column, writer: anytype) !void {
+            fn writeCreateTable(self: Table, columns: []const Column, writer: *Writer) !void {
                 try writer.print(
                     \\try repo.createTable("{s}",
                 , .{
@@ -96,13 +99,13 @@ const Command = struct {
                 try writer.writeAll(".{},);");
             }
 
-            fn writeDropTable(self: Table, writer: anytype) !void {
+            fn writeDropTable(self: Table, writer: *Writer) !void {
                 try writer.print(
                     \\try repo.dropTable("{s}", .{{}});
                 , .{self.name orelse return error.MissingTableName});
             }
 
-            fn writeAlterTable(self: Table, columns: []const Column, writer: anytype) !void {
+            fn writeAlterTable(self: Table, columns: []const Column, writer: *Writer) !void {
                 try writer.print(
                     \\try repo.alterTable("{s}", .{{
                 , .{self.name orelse return error.MissingTableName});
@@ -130,7 +133,7 @@ const Command = struct {
                 try writer.writeAll("});");
             }
 
-            fn writeAlterAddColumns(columns: []const Column, writer: anytype) !void {
+            fn writeAlterAddColumns(columns: []const Column, writer: *Writer) !void {
                 const has_add_column = for (columns) |column| {
                     if (column.action orelse .create == .create) break true;
                 } else false;
@@ -146,7 +149,7 @@ const Command = struct {
                 if (has_add_column) try writer.writeAll("},");
             }
 
-            fn writeAlterDropColumns(columns: []const Column, writer: anytype) !void {
+            fn writeAlterDropColumns(columns: []const Column, writer: *Writer) !void {
                 const has_drop_column = for (columns) |column| {
                     if (column.action orelse .create == .drop) break true;
                 } else false;
@@ -166,7 +169,7 @@ const Command = struct {
                 if (has_drop_column) try writer.writeAll("},");
             }
 
-            fn writeAlterRenameColumns(columns: []const Column, writer: anytype) !void {
+            fn writeAlterRenameColumns(columns: []const Column, writer: *Writer) !void {
                 var count: usize = 0;
                 for (columns) |column| {
                     if (column.action orelse .create == .rename) {
@@ -191,7 +194,7 @@ const Command = struct {
                 }
             }
 
-            fn writeColumn(column: Column, writer: anytype) !void {
+            fn writeColumn(column: Column, writer: *Writer) !void {
                 var column_type: DataType = undefined;
                 if (column.type) |t| {
                     column_type = t;
@@ -392,17 +395,24 @@ const Command = struct {
         }
     };
 
-    pub fn write(self: Command, writer: anytype) !void {
-        var arg_iterator = std.mem.tokenizeAny(u8, self.command, &std.ascii.whitespace);
+    pub fn write(self: Command, allocator: Allocator, writer: *Writer) !void {
+        var arg_iterator = std.mem.tokenizeAny(
+            u8,
+            self.command,
+            &std.ascii.whitespace,
+        );
+
         var token_iterator = TokenIterator{ .arg_iterator = &arg_iterator };
 
-        var up_buf = ArrayListManaged(u8).init(self.allocator);
-        const up_writer = up_buf.writer();
+        var alloc_up: Writer.Allocating = .init(allocator);
+        defer alloc_up.deinit();
 
-        var down_buf = ArrayListManaged(u8).init(self.allocator);
-        const down_writer = down_buf.writer();
+        var alloc_down: Writer.Allocating = .init(allocator);
+        defer alloc_down.deinit();
 
-        var columns = ArrayListManaged(Command.Token.Column).init(self.allocator);
+        var columns: ArrayList(Command.Token.Column) = .empty;
+        defer columns.deinit(allocator);
+
         var maybe_table: ?Command.Token.Table = null;
 
         while (try token_iterator.next()) |token| {
@@ -417,10 +427,13 @@ const Command = struct {
         }
 
         if (maybe_table) |table| {
-            try table.writeUp(columns.items, up_writer);
-            try table.writeDown(down_writer);
+            try table.writeUp(columns.items, &alloc_up.writer);
+            try table.writeDown(&alloc_down.writer);
         }
-        try writer.print(migration_template, .{ up_buf.items, down_buf.items });
+        try writer.print(
+            migration_template,
+            .{ try alloc_up.toOwnedSlice(), try alloc_down.toOwnedSlice() },
+        );
     }
 };
 
@@ -477,8 +490,8 @@ const default_migration = std.fmt.comptimePrint(migration_template, .{
     \\    try repo.dropTable("my_table", .{});
 });
 
-pub fn save(self: Migration) ![]const u8 {
-    const content = try self.render();
+pub fn save(self: Migration, allocator: Allocator) ![]const u8 {
+    const content = try self.render(allocator);
 
     var dir = if (self.options.migrations_path) |path|
         try std.fs.openDirAbsolute(path, .{})
@@ -488,34 +501,32 @@ pub fn save(self: Migration) ![]const u8 {
 
     var timestamp_buf: [19]u8 = undefined;
     const prefix = try timestamp(&timestamp_buf);
-    const filename = try std.mem.concat(self.allocator, u8, &.{ prefix, "_", self.name, ".zig" });
+    const filename = try std.mem.concat(allocator, u8, &.{ prefix, "_", self.name, ".zig" });
     const migration_file = try dir.createFile(filename, .{ .exclusive = true });
     defer migration_file.close();
 
-    const writer = migration_file.writer();
-    try writer.writeAll(content);
-    const realpath = try dir.realpathAlloc(self.allocator, filename);
+    const writer = migration_file.writer(.{});
+    try writer.interface.writeAll(content);
+    const realpath = try dir.realpathAlloc(allocator, filename);
 
     return realpath;
 }
 
-pub fn render(self: Migration) ![]const u8 {
-    var arena = std.heap.ArenaAllocator.init(self.allocator);
+pub fn render(self: Migration, allocator: Allocator) ![]const u8 {
+    var arena: ArenaAllocator = .init(allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var buf = ArrayListManaged(u8).init(alloc);
-    const writer = buf.writer();
+    var aw: Writer.Allocating = try .init(allocator);
+    defer aw.deinit();
 
     if (self.options.command) |cmd| {
         const command = Command{ .allocator = alloc, .command = cmd };
-        try command.write(writer);
-    } else {
-        try writer.writeAll(default_migration);
-    }
+        try command.write(allocator, &aw.writer);
+    } else try aw.writer.writeAll(default_migration);
     return try jetcommon.fmt.zig(
-        self.allocator,
-        buf.items,
+        allocator,
+        try aw.toOwnedSlice(),
         "Found errors in generated migration.",
     );
 }
@@ -564,9 +575,9 @@ inline fn isType(name: []const u8) bool {
 }
 
 test "default migration" {
-    const migration = Migration.init(std.testing.allocator, "test_migration", .{});
+    const migration: Migration = .init(std.testing.allocator, "test_migration", .{});
 
-    const rendered = try migration.render();
+    const rendered = try migration.render(std.testing.allocator);
     defer std.testing.allocator.free(rendered);
 
     try std.testing.expectEqualStrings(default_migration, rendered);
@@ -575,12 +586,12 @@ test "default migration" {
 test "migration from command line: create table" {
     const command = "table:create:cats column:name:string:index:unique column:paws:integer:default:4 column:bio:text:default:friendly_cat column:is_active:boolean:default:true column:no_default:string:optional column:human_id:index:optional:reference:humans.id";
 
-    const migration = Migration.init(
+    const migration: Migration = .init(
         std.testing.allocator,
         "test_migration",
         .{ .command = command },
     );
-    const rendered = try migration.render();
+    const rendered = try migration.render(std.testing.allocator);
     defer std.testing.allocator.free(rendered);
 
     try std.testing.expectEqualStrings(
@@ -618,12 +629,12 @@ test "migration from command line: create table" {
 test "migration from command line: create table with default values of various types" {
     const command = "table:create:defaults_test column:name:string:default:John column:count:integer:default:42 column:active:boolean:default:true column:no_default:string:optional column:price:decimal:default:19.99 column:last_update:datetime:default:now()";
 
-    const migration = Migration.init(
+    const migration: Migration = .init(
         std.testing.allocator,
         "test_defaults",
         .{ .command = command },
     );
-    const rendered = try migration.render();
+    const rendered = try migration.render(std.testing.allocator);
     defer std.testing.allocator.free(rendered);
 
     try std.testing.expectEqualStrings(
@@ -658,12 +669,12 @@ test "migration from command line: create table with default values of various t
 test "migration from command line: drop table" {
     const command = "table:drop:cats";
 
-    const migration = Migration.init(
+    const migration: Migration = .init(
         std.testing.allocator,
         "test_migration",
         .{ .command = command },
     );
-    const rendered = try migration.render();
+    const rendered = try migration.render(std.testing.allocator);
     defer std.testing.allocator.free(rendered);
 
     try std.testing.expectEqualStrings(
@@ -688,12 +699,12 @@ test "migration from command line: alter table" {
     // migration is not coherent.
     const command = "table:alter:cats column:color:string:index:unique column:rename:paws:feet column:drop:name rename:dogs";
 
-    const migration = Migration.init(
+    const migration: Migration = .init(
         std.testing.allocator,
         "test_migration",
         .{ .command = command },
     );
-    const rendered = try migration.render();
+    const rendered = try migration.render(std.testing.allocator);
     defer std.testing.allocator.free(rendered);
 
     try std.testing.expectEqualStrings(
