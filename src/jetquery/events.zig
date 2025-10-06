@@ -49,7 +49,7 @@ pub fn defaultCallback(event: Event) !void {
             \\
         , .{ event.sql orelse "", @errorName(err.err), err.message });
     } else {
-        var buf: [32]u8 = undefined;
+        var buf: [35]u8 = undefined;
         var duration_buf: [32]u8 = undefined;
         if (event.duration) |duration| {
             var writer: std.Io.Writer = .fixed(&duration_buf);
