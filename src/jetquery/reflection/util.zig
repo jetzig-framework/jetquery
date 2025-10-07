@@ -77,6 +77,6 @@ pub fn zigEscape(
         .string => std.zig.fmtString(input),
     };
 
-    try writer.print("{any}", .{formatter});
+    try writer.print("{f}", .{formatter});
     return try buf.toOwnedSlice();
 }

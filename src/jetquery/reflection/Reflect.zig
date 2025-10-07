@@ -66,7 +66,7 @@ pub fn Reflect(adapter_name: jetquery.adapters.Name, Schema: type) type {
                 try writeModel(allocator, Schema, reflection, table, writer);
             }
 
-            return try self.allocator.dupe(u8, try jetcommon.fmt.zig(
+            return self.allocator.dupe(u8, try jetcommon.fmt.zig(
                 allocator,
                 buf.items,
                 "Found errors in generated schema.",

@@ -5,8 +5,8 @@
     .minimum_zig_version = "0.15.1",
     .dependencies = .{
         .jetcommon = .{
-            .url = "https://github.com/jetzig-framework/jetcommon/archive/f613f2cb9084d4b1c19ea89f5dab9ad7ba4fa3c4.tar.gz",
-            .hash = "jetcommon-0.1.0-jPY_DRRJAADaN4sQby3c31hyFSAgqIP90D4DYcTNVquG",
+            .url = "https://github.com/jetzig-framework/jetcommon/archive/da50c67de931bcfe68dc54633b406315152e0c60.tar.gz",
+            .hash = "jetcommon-0.1.0-jPY_DdhIAAAk0zqZQf6adpaL5s2g115R8TDZ9j-VboCO",
         },
         .pg = .{
             .url = "https://github.com/karlseguin/pg.zig/archive/4c2602bad095f9d85b16711d12aa3a2bc7e169cc.tar.gz",

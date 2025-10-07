@@ -1,12 +1,13 @@
 const std = @import("std");
+const Build = std.Build;
 const ArrayListManaged = std.array_list.Managed;
-pub fn build(b: *std.Build) !void {
-    @setEvalBranchQuota(100000);
+pub fn build(b: *Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
     const lib = b.addLibrary(.{
         .name = "jetquery",
+        .linkage = .static,
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/jetquery.zig"),
             .target = target,
@@ -21,7 +22,11 @@ pub fn build(b: *std.Build) !void {
         .optimize = optimize,
         .openssl_lib_name = "ssl",
     });
-    const jetcommon_dep = b.dependency("jetcommon", .{ .target = target, .optimize = optimize });
+
+    const jetcommon_dep = b.dependency("jetcommon", .{
+        .target = target,
+        .optimize = optimize,
+    });
     const jetcommon_module = jetcommon_dep.module("jetcommon");
 
     lib.root_module.addImport("pg", pg_dep.module("pg"));
@@ -126,19 +131,17 @@ pub fn build(b: *std.Build) !void {
         run_generate_seeders_cmd.addFileArg(.{ .cwd_relative = path });
     }
 
-    const jetquery_migrate_module = b.addModule(
-        "jetquery_migrate",
-        .{ .root_source_file = b.path("src/jetquery/Migrate.zig") },
-    );
+    const jetquery_migrate_module = b.addModule("jetquery_migrate", .{
+        .root_source_file = b.path("src/jetquery/Migrate.zig"),
+    });
     jetquery_migrate_module.addImport("jetquery", jetquery_module);
     jetquery_migrate_module.addImport("migrations", migrations_module);
     jetquery_migrate_module.addImport("jetquery.config", config_module);
     jetquery_migrate_module.addImport("jetcommon", jetcommon_module);
 
-    const seeders_module = b.addModule(
-        "jetquery_seeders",
-        .{ .root_source_file = generated_seeders_path },
-    );
+    const seeders_module = b.addModule("jetquery_seeders", .{
+        .root_source_file = generated_seeders_path,
+    });
     seeders_module.addImport("jetquery", jetquery_module);
     seeders_module.addImport("jetquery.config", config_module);
     seed_unit_tests.root_module.addImport("migrations", migrations_module);
@@ -147,10 +150,9 @@ pub fn build(b: *std.Build) !void {
     seed_unit_tests.root_module.addImport("jetquery", jetquery_module);
     seed_unit_tests.root_module.addImport("jetcommon", jetcommon_module);
 
-    const jetquery_seeder_module = b.addModule(
-        "jetquery_seeder",
-        .{ .root_source_file = b.path("src/jetquery/Seed.zig") },
-    );
+    const jetquery_seeder_module = b.addModule("jetquery_seeder", .{
+        .root_source_file = b.path("src/jetquery/Seed.zig"),
+    });
     jetquery_seeder_module.addImport("jetquery", jetquery_module);
     jetquery_seeder_module.addImport("seeders", seeders_module);
     jetquery_seeder_module.addImport("jetquery.config", config_module);
@@ -198,7 +200,7 @@ fn findFilesSorted(allocator: std.mem.Allocator, path: []const u8) ![][]const u8
     };
     defer dir.close();
 
-    var files = ArrayListManaged([]const u8).init(allocator);
+    var files: ArrayListManaged([]const u8) = .init(allocator);
 
     var it = dir.iterate();
     while (try it.next()) |entry| {
