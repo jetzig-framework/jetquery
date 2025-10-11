@@ -142,8 +142,12 @@ pub fn uniqueColumnSql() []const u8 {
     return "";
 }
 
-pub fn referenceSql(comptime reference: jetquery.schema.Column.Reference) []const u8 {
+pub fn referenceSql(
+    comptime reference: jetquery.schema.Column.Reference,
+    comptime reference_options: ?jetquery.schema.Column.ReferenceOptions,
+) []const u8 {
     _ = reference;
+    _ = reference_options;
     return "";
 }
 
