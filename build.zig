@@ -17,10 +17,18 @@ pub fn build(b: *Build) !void {
 
     b.installArtifact(lib);
 
+    // OpenSSL configuration options - these will be passed through to pg.zig
+    // If not specified, pg.zig will disable OpenSSL support
+    const openssl_lib_name = b.option([]const u8, "openssl_lib_name", "OpenSSL library name (e.g., 'ssl')");
+    const openssl_lib_path = b.option(Build.LazyPath, "openssl_lib_path", "Path to OpenSSL library directory");
+    const openssl_include_path = b.option(Build.LazyPath, "openssl_include_path", "Path to OpenSSL include directory");
+
     const pg_dep = b.dependency("pg", .{
         .target = target,
         .optimize = optimize,
-        .openssl_lib_name = "ssl",
+        .openssl_lib_name = openssl_lib_name,
+        .openssl_lib_path = openssl_lib_path,
+        .openssl_include_path = openssl_include_path,
     });
 
     const jetcommon_dep = b.dependency("jetcommon", .{
