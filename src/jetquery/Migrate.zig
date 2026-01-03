@@ -85,6 +85,7 @@ pub fn Migrate(adapter_name: jetquery.adapters.Name) type {
         fn isMigrated(self: Self, migration: Migration) !bool {
             const result = try self.repo.Query(.Migrations)
                 .findBy(.{ .version = migration.version }).execute(self.repo);
+            defer self.repo.free(result);
 
             return result != null;
         }
