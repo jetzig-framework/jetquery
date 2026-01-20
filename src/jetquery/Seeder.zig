@@ -57,8 +57,9 @@ pub fn save(self: Seeder) ![]const u8 {
     const seeder_file = try dir.createFile(filename, .{ .exclusive = true });
     defer seeder_file.close();
 
-    const writer = seeder_file.writer();
-    try writer.writeAll(content);
+    var write_buffer: [1024]u8 = undefined;
+    var writer = seeder_file.writer(&write_buffer);
+    try writer.interface.writeAll(content);
     const realpath = try dir.realpathAlloc(self.allocator, filename);
 
     return realpath;
