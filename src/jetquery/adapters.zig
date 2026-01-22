@@ -214,9 +214,10 @@ pub fn Adapter(comptime adapter_name: Name, AdaptedRepo: type) type {
         pub fn referenceSql(
             self: Self,
             comptime reference: jetquery.schema.Column.Reference,
+            comptime reference_options: ?jetquery.schema.Column.ReferenceOptions,
         ) []const u8 {
             return switch (self) {
-                inline else => |adapter| @TypeOf(adapter).referenceSql(reference),
+                inline else => |adapter| @TypeOf(adapter).referenceSql(reference, reference_options),
             };
         }
 
@@ -265,7 +266,7 @@ pub fn Adapter(comptime adapter_name: Name, AdaptedRepo: type) type {
                     if (column.primary_key) self.primaryKeySql(column) else "",
                     if (column.options.unique) self.uniqueColumnSql() else "",
                     if (column.options.reference) |reference|
-                        self.referenceSql(reference)
+                        self.referenceSql(reference, column.options.reference_options)
                     else
                         "",
                 });
