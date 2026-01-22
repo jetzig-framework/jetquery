@@ -492,8 +492,9 @@ pub fn save(self: Migration) ![]const u8 {
     const migration_file = try dir.createFile(filename, .{ .exclusive = true });
     defer migration_file.close();
 
-    const writer = migration_file.writer();
-    try writer.writeAll(content);
+    var write_buffer: [1024]u8 = undefined;
+    var writer = migration_file.writer(&write_buffer);
+    try writer.interface.writeAll(content);
     const realpath = try dir.realpathAlloc(self.allocator, filename);
 
     return realpath;
